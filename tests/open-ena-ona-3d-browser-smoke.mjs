@@ -201,6 +201,33 @@ async function startEphemeralPostgres() {
     "--dbname", "postgres",
     "--file", join(projectRoot, "migrations", "002_open_ena_auth_security.sql"),
   ], { stdio: "ignore", timeout: 60_000 });
+  execFileSync("psql", [
+    "--no-psqlrc",
+    "--set", "ON_ERROR_STOP=1",
+    "--host", "127.0.0.1",
+    "--port", String(port),
+    "--username", "postgres",
+    "--dbname", "postgres",
+    "--file", join(projectRoot, "migrations", "004_open_ena_disposable_accounts.sql"),
+  ], { stdio: "ignore", timeout: 60_000 });
+  execFileSync("psql", [
+    "--no-psqlrc",
+    "--set", "ON_ERROR_STOP=1",
+    "--host", "127.0.0.1",
+    "--port", String(port),
+    "--username", "postgres",
+    "--dbname", "postgres",
+    "--file", join(projectRoot, "migrations", "008_open_ena_disposable_expiry_after_lock.sql"),
+  ], { stdio: "ignore", timeout: 60_000 });
+  execFileSync("psql", [
+    "--no-psqlrc",
+    "--set", "ON_ERROR_STOP=1",
+    "--host", "127.0.0.1",
+    "--port", String(port),
+    "--username", "postgres",
+    "--dbname", "postgres",
+    "--file", join(projectRoot, "migrations", "009_open_ena_login_failure_windows.sql"),
+  ], { stdio: "ignore", timeout: 60_000 });
   return `postgresql://postgres@127.0.0.1:${port}/postgres`;
 }
 

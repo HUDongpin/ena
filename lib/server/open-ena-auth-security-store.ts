@@ -22,9 +22,55 @@ export type OpenEnaDisposableLogin = {
   password: string;
 };
 
+export type OpenEnaLoginBlockingScope = "pair" | "source" | "both";
+
+export type OpenEnaLoginCredentialDecision =
+  | {
+      outcome: "authenticated";
+      kind: "owner" | "disposable";
+      principalRef: string | null;
+      sessionToken: string;
+    }
+  | { outcome: "invalid" };
+
+export type OpenEnaLoginAuthenticationResult =
+  | OpenEnaLoginCredentialDecision
+  | {
+      outcome: "blocked";
+      retryAfterSeconds: number;
+      blockingScope: OpenEnaLoginBlockingScope;
+    };
+
+export type OpenEnaLoginAuthentication = {
+  sourceRef: string;
+  pairRef: string;
+  sourceLimit: number;
+  pairLimit: number;
+  windowSeconds: number;
+  authenticate(context: {
+    query: OpenEnaAuthSecurityQuery;
+  }): Promise<OpenEnaLoginCredentialDecision>;
+};
+
+export type OpenEnaAuthSecurityClient = {
+  query(
+    sql: string,
+    params?: unknown[],
+  ): Promise<{ rows: Array<Record<string, unknown>> }>;
+  release(error?: Error): void;
+  on(event: "error", listener: (error: Error) => void): void;
+  removeListener(event: "error", listener: (error: Error) => void): void;
+};
+
+export type OpenEnaAuthSecurityStoreOptions = {
+  /** Checked-out client for one login transaction. Required for authenticateLogin. */
+  connect?: () => Promise<OpenEnaAuthSecurityClient>;
+};
+
 export type OpenEnaAuthSecurityStore = OpenEnaSessionRevocationLookup & {
   consumeLoginAttempt(input: OpenEnaLoginAttempt): Promise<boolean>;
   consumeDisposableCredential(input: OpenEnaDisposableLogin): Promise<string | null>;
+  authenticateLogin(input: OpenEnaLoginAuthentication): Promise<OpenEnaLoginAuthenticationResult>;
   revokeSession(jti: string, expiresAtSeconds: number): Promise<void>;
 };
 
@@ -50,8 +96,49 @@ function deriveDisposablePasswordHash(password: string, salt: Buffer) {
   });
 }
 
+const LOGIN_SCOPE_REF = /^[A-Za-z0-9_-]{1,128}$/u;
+const LOGIN_LOCK_TIMEOUT = "8s";
+const LOGIN_STATEMENT_TIMEOUT = "12s";
+const LOGIN_FAILURE_PRUNE = "SELECT open_ena_prune_login_failure_windows(32)";
+const LOGIN_IDLE_IN_TRANSACTION_TIMEOUT = "12s";
+
 function validUsernameRef(value: string) {
   return /^[A-Za-z0-9_-]{43}$/u.test(value);
+}
+
+function validLoginLimit(value: number) {
+  return Number.isSafeInteger(value) && value >= 1 && value <= 10_000;
+}
+
+function validLoginWindow(value: number) {
+  return Number.isSafeInteger(value) && value >= 1 && value <= 86_400;
+}
+
+function retryAfterSeconds(value: unknown) {
+  const parsed = typeof value === "number"
+    ? value
+    : typeof value === "string"
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 86_400) {
+    throw new TypeError("Invalid login throttle retry.");
+  }
+  return parsed;
+}
+
+function blockingScope(value: unknown): OpenEnaLoginBlockingScope {
+  if (value === "pair" || value === "source" || value === "both") return value;
+  throw new TypeError("Invalid login throttle scope.");
+}
+
+function authenticatedDecision(
+  value: OpenEnaLoginCredentialDecision,
+): value is Extract<OpenEnaLoginCredentialDecision, { outcome: "authenticated" }> {
+  return value.outcome === "authenticated"
+    && (value.kind === "owner" || value.kind === "disposable")
+    && typeof value.sessionToken === "string"
+    && value.sessionToken.length > 0
+    && (value.principalRef === null || typeof value.principalRef === "string");
 }
 
 function validDisposablePrincipalRef(value: unknown): value is string {
@@ -82,8 +169,46 @@ export function openEnaAuthSecurityConfigurationReady(
     && openEnaRequestOriginConfigurationReady(environment);
 }
 
+export async function consumeDisposableCredentialOnQuery(
+  query: OpenEnaAuthSecurityQuery,
+  input: OpenEnaDisposableLogin,
+) {
+  if (!validUsernameRef(input.usernameRef) || typeof input.password !== "string") return null;
+  const candidate = await query(
+    "SELECT password_salt, password_hash FROM open_ena_disposable_accounts WHERE username_ref = $1 LIMIT 1",
+    [input.usernameRef],
+  );
+  const row = candidate.rows[0];
+  if (!row) {
+    await deriveDisposablePasswordHash(input.password, OPEN_ENA_DISPOSABLE_DUMMY_SALT);
+    return null;
+  }
+  if (
+    !Buffer.isBuffer(row.password_salt)
+    || row.password_salt.length !== 16
+    || !Buffer.isBuffer(row.password_hash)
+    || row.password_hash.length !== 32
+  ) {
+    await deriveDisposablePasswordHash(input.password, OPEN_ENA_DISPOSABLE_DUMMY_SALT);
+    throw new TypeError("Invalid disposable credential material.");
+  }
+  const calculated = await deriveDisposablePasswordHash(input.password, row.password_salt);
+  if (!timingSafeEqual(calculated, row.password_hash)) return null;
+  const result = await query(
+    "SELECT open_ena_consume_disposable_account($1,$2) AS principal_ref",
+    [input.usernameRef, calculated],
+  );
+  const principalRef = result.rows[0]?.principal_ref;
+  if (principalRef === null || principalRef === undefined) return null;
+  if (!validDisposablePrincipalRef(principalRef)) {
+    throw new TypeError("Invalid disposable principal result.");
+  }
+  return principalRef;
+}
+
 export function createPostgresOpenEnaAuthSecurityStore(
   query: OpenEnaAuthSecurityQuery,
+  options: OpenEnaAuthSecurityStoreOptions = {},
 ): OpenEnaAuthSecurityStore {
   return {
     async consumeLoginAttempt(input) {
@@ -114,40 +239,128 @@ export function createPostgresOpenEnaAuthSecurityStore(
       }
     },
     async consumeDisposableCredential(input) {
-      if (!validUsernameRef(input.usernameRef) || typeof input.password !== "string") return null;
       try {
-        const candidate = await query(
-          "SELECT password_salt, password_hash FROM open_ena_disposable_accounts WHERE username_ref = $1 LIMIT 1",
-          [input.usernameRef],
-        );
-        const row = candidate.rows[0];
-        if (!row) {
-          await deriveDisposablePasswordHash(input.password, OPEN_ENA_DISPOSABLE_DUMMY_SALT);
-          return null;
-        }
-        if (
-          !Buffer.isBuffer(row.password_salt)
-          || row.password_salt.length !== 16
-          || !Buffer.isBuffer(row.password_hash)
-          || row.password_hash.length !== 32
-        ) {
-          await deriveDisposablePasswordHash(input.password, OPEN_ENA_DISPOSABLE_DUMMY_SALT);
-          throw new TypeError("Invalid disposable credential material.");
-        }
-        const calculated = await deriveDisposablePasswordHash(input.password, row.password_salt);
-        if (!timingSafeEqual(calculated, row.password_hash)) return null;
-        const result = await query(
-          "SELECT open_ena_consume_disposable_account($1,$2) AS principal_ref",
-          [input.usernameRef, calculated],
-        );
-        const principalRef = result.rows[0]?.principal_ref;
-        if (principalRef === null || principalRef === undefined) return null;
-        if (!validDisposablePrincipalRef(principalRef)) {
-          throw new TypeError("Invalid disposable principal result.");
-        }
-        return principalRef;
+        return await consumeDisposableCredentialOnQuery(query, input);
       } catch (error) {
         throw new Error("Durable disposable credential store is unavailable.", { cause: error });
+      }
+    },
+    async authenticateLogin(input) {
+      if (
+        !LOGIN_SCOPE_REF.test(input.sourceRef)
+        || !LOGIN_SCOPE_REF.test(input.pairRef)
+        || !validLoginLimit(input.sourceLimit)
+        || !validLoginLimit(input.pairLimit)
+        || !validLoginWindow(input.windowSeconds)
+      ) {
+        throw new Error("Durable login throttle store is unavailable.");
+      }
+      const connect = options.connect;
+      if (!connect) throw new Error("Durable login throttle store is unavailable.");
+      let client: OpenEnaAuthSecurityClient | null = null;
+      let open = false;
+      let released = false;
+      let clientError: Error | null = null;
+      const onClientError = (error: Error) => {
+        clientError ??= error instanceof Error ? error : new Error("Login database connection failed.");
+      };
+      const throwIfBroken = () => {
+        if (clientError) throw clientError;
+      };
+      const releaseClient = () => {
+        if (!client || released) return;
+        released = true;
+        try {
+          if (clientError) client.release(clientError);
+          else client.release();
+        } finally {
+          client.removeListener("error", onClientError);
+        }
+      };
+      try {
+        client = await connect();
+        client.on("error", onClientError);
+        await client.query("BEGIN");
+        open = true;
+        throwIfBroken();
+        await client.query("SELECT set_config('lock_timeout', $1, true)", [LOGIN_LOCK_TIMEOUT]);
+        await client.query("SELECT set_config('statement_timeout', $1, true)", [LOGIN_STATEMENT_TIMEOUT]);
+        await client.query(
+          "SELECT set_config('idle_in_transaction_session_timeout', $1, true)",
+          [LOGIN_IDLE_IN_TRANSACTION_TIMEOUT],
+        );
+        throwIfBroken();
+        const tx: OpenEnaAuthSecurityQuery = async (sql, params) => {
+          throwIfBroken();
+          if (released || !client) throw new Error("Login database connection is closed.");
+          const result = await client.query(sql, params as unknown[]);
+          throwIfBroken();
+          return { rows: result.rows };
+        };
+        const finish = async (verdict: OpenEnaLoginAuthenticationResult) => {
+          throwIfBroken();
+          if (!client) throw new Error("Login database connection is closed.");
+          await client.query("COMMIT");
+          open = false;
+          try {
+            if (!clientError) await client.query(LOGIN_FAILURE_PRUNE);
+          } catch {
+            // Retention cleanup runs after commit and must not change the login verdict.
+          }
+          return verdict;
+        };
+        const guard = await tx(
+          "SELECT blocked, retry_after_seconds, blocking_scope FROM open_ena_login_failure_guard($1,$2,$3,$4,$5)",
+          [
+            input.sourceRef,
+            input.pairRef,
+            input.sourceLimit,
+            input.pairLimit,
+            input.windowSeconds,
+          ],
+        );
+        const row = guard.rows[0];
+        if (typeof row?.blocked !== "boolean") {
+          throw new TypeError("Invalid login guard result.");
+        }
+        if (row.blocked) {
+          return await finish({
+            outcome: "blocked",
+            retryAfterSeconds: retryAfterSeconds(row.retry_after_seconds),
+            blockingScope: blockingScope(row.blocking_scope),
+          });
+        }
+        const decision = await input.authenticate({ query: tx });
+        throwIfBroken();
+        if (decision.outcome === "invalid") {
+          await tx(
+            "SELECT open_ena_record_login_failure($1,$2,$3,$4,$5)",
+            [
+              input.sourceRef,
+              input.pairRef,
+              input.sourceLimit,
+              input.pairLimit,
+              input.windowSeconds,
+            ],
+          );
+          return await finish({ outcome: "invalid" });
+        }
+        if (!authenticatedDecision(decision)) {
+          throw new TypeError("Invalid login authentication decision.");
+        }
+        await tx("SELECT open_ena_clear_login_pair($1,$2)", [input.sourceRef, input.pairRef]);
+        return await finish(decision);
+      } catch (error) {
+        if (open && client && !released && !clientError) {
+          await client.query("ROLLBACK").catch((rollbackError: unknown) => {
+            if (!clientError && rollbackError instanceof Error) clientError = rollbackError;
+          });
+        }
+        open = false;
+        const cause = clientError ?? error;
+        throw new Error("Durable login throttle store is unavailable.", { cause });
+      } finally {
+        releaseClient();
       }
     },
     async isSessionRevoked(jti) {
@@ -201,6 +414,7 @@ export type OpenEnaAuthSecurityPool = {
     sql: string,
     params?: unknown[],
   ): Promise<{ rows: Array<Record<string, unknown>> }>;
+  connect?(): Promise<OpenEnaAuthSecurityClient>;
   on(event: "error", listener: (error: Error) => void): unknown;
   end(): Promise<void> | void;
 };
@@ -341,6 +555,7 @@ async function createPoolBackedStore(
         logAuthStoreFailure("pool-error", error);
         discardGeneration(generation);
       });
+      const connect = pool.connect?.bind(pool);
       return createPostgresOpenEnaAuthSecurityStore(async (sql, params) => {
         try {
           const result = await pool.query(sql, params as unknown[]);
@@ -352,7 +567,7 @@ async function createPoolBackedStore(
           }
           throw error;
         }
-      });
+      }, connect ? { connect } : undefined);
     } catch (error) {
       logAuthStoreFailure(
         attempt >= OPEN_ENA_AUTH_STORE_CREATE_ATTEMPTS ? "create-exhausted" : "create-retry",
