@@ -22,8 +22,9 @@ The migration manifests retain historical source hashes only.
 
 ## Routing
 
-Both `www.open-ena.com` and `www.ena.hk` are intended to serve the same Vercel
-`ena` production deployment, built from this repository's `main` branch. Requests
+Both `www.open-ena.com` and `www.ena.hk` are intended to serve the same ENA
+production release, built from this repository's `main` branch. See
+[Current production hosting](#current-production-hosting) for where it runs. Requests
 to `/` use the existing `/en` Home route, and `/about` uses `/en/about`. Localized
 navigation stays on the visited domain. Existing ENA feature routes remain local.
 The canonical metadata origin remains `https://www.ena.hk`.
@@ -32,6 +33,23 @@ The exact-host redirect from `open-ena.com` to `www.open-ena.com` preserves path
 and query strings. Old `/team/` and `/publications/` image paths redirect to the
 copies under `/open-ena-about/`; the former root logo and favicon URLs also resolve
 to ENA-owned assets. Publication structured data uses the actual ENA image paths.
+
+## Current production hosting
+
+As of 2026-10-20, `www.ena.hk` no longer runs on Vercel. It runs on Alibaba Cloud
+as the standalone Linux release (CI artifact `ena-linux-x64-<sha>`) behind nginx.
+Build, install and environment steps are in
+[self-hosted-release.md](self-hosted-release.md).
+
+- The `x-ena-release` response header shows the deployed commit. It can lag
+  `main`; a merge is live only after that release is installed on the server.
+- `OPEN_ENA_*` settings (username, password of at least 12 characters, session
+  secret of at least 32 characters, account ID, public and allowed origins, auth
+  database URL) are set on the server. Changing them in Vercel has no effect on
+  production. Restart the service after changing them.
+- To verify: `open-ena.com` DNS still resolved to Vercel addresses on 2026-10-20.
+
+The Vercel sections below record the 2026-10-19 handover and are historical.
 
 ## Production handover
 
