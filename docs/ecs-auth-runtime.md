@@ -32,6 +32,21 @@ its supplementary groups, so a Unix-socket connection with peer authentication
 uses the same identity as the application. It does not create databases, change
 database credentials, or apply migrations.
 
+Before deploying the source-reservation login handler, apply
+`migrations/009_open_ena_login_source_reservations.sql` to the existing migration
+002 auth schema through the database operator procedure. This credential-update
+script checks both reservation/refund function contracts and stops before
+prompting for a password or changing the environment when either is missing.
+It does not apply 009 itself.
+
+Separate login limits for different visitors require
+`OPEN_ENA_TRUSTED_CLIENT_IP_HEADER` to name a header that the operator-owned
+ingress proxy forcibly rewrites or strips. Never enable an arbitrary
+client-supplied header. Missing or invalid trusted addresses share a conservative
+fallback bucket and can temporarily block one another. This script's direct
+loopback verification uses that fallback. The credential-update script does not
+invent or change the trusted-header configuration.
+
 Enter the intended password twice at the hidden prompts, then type `APPLY`.
 The password must contain at least 12 characters. Do not put it in a command
 argument, paste it into a saved Cloud Assistant command, or commit it.

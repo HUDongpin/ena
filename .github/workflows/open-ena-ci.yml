@@ -130,7 +130,7 @@ jobs:
       - name: Initialize isolated Open ENA PostgreSQL schema in migration order
         run: |
           set -euo pipefail
-          for migration in migrations/001_open_ena_billable.sql migrations/002_open_ena_auth_security.sql migrations/003_open_ena_ai_consent.sql migrations/004_open_ena_disposable_accounts.sql migrations/005_ena_plugin_lab.sql migrations/006_open_ena_billable_leases.sql migrations/007_open_ena_ai_consent_idempotency.sql migrations/008_open_ena_disposable_expiry_after_lock.sql; do
+          for migration in migrations/001_open_ena_billable.sql migrations/002_open_ena_auth_security.sql migrations/003_open_ena_ai_consent.sql migrations/004_open_ena_disposable_accounts.sql migrations/005_ena_plugin_lab.sql migrations/006_open_ena_billable_leases.sql migrations/007_open_ena_ai_consent_idempotency.sql migrations/008_open_ena_disposable_expiry_after_lock.sql migrations/009_open_ena_login_source_reservations.sql; do
             echo "Applying ${migration}"
             psql "${OPEN_ENA_CI_DATABASE_URL}" --set ON_ERROR_STOP=1 --file "${migration}"
           done
@@ -297,10 +297,12 @@ jobs:
           node tests/review-server-migration-006-upgrade.mjs --evidence-dir output/review-regressions/migration-006
           node tests/review-server-migration-007-upgrade.mjs --evidence-dir output/review-regressions/migration-007
           node --import tsx tests/review-server-migration-008-upgrade.mts --evidence-dir output/review-regressions/migration-008
+          node --import tsx tests/review-auth-login-source-postgres.mjs --evidence-dir output/review-regressions/auth-login-source
           node --import tsx tests/review-server-plugin-transactions.mjs
       - name: Verify AI operation ownership, release proofs, and explicit retries
         run: |
           node tests/open-ena-ai-operation-retry-browser.mjs
+          node tests/open-ena-ai-terminal-browser.mjs
           node tests/review-ui-ai-operation-ownership-browser.mjs output/review-regressions/ai-operation-ownership.json
           node --import tsx tests/review-ai-request-scope-browser.mts output/review-regressions/ai-request-scope.json
           for store in memory postgres; do
@@ -316,9 +318,11 @@ jobs:
           node tests/open-ena-model-v3-order-clear-browser.mjs
           node tests/open-ena-pairwise-empty-group-browser.mjs
           node tests/open-ena-longitudinal-preparation-cancel-browser.mjs
+          node tests/open-ena-longitudinal-recovery-browser.mjs
           node tests/review-data-xlsx-browser.mjs
           node tests/review-artifact-utf8-browser.mjs output/review-regressions/artifact-utf8
           node tests/review-csv-utf8-browser.mjs output/review-regressions/csv-utf8
+          node tests/open-ena-csv-download-browser.mjs
           node tests/review-ui-import-failure-ownership-browser.mjs output/review-regressions/import-ownership.json
           OPEN_ENA_REVIEW_REPORT=output/review-regressions/analytics-consent.json node tests/review-ui-analytics-consent-browser.mjs
       - name: Verify literal labels, current exports, and native controls

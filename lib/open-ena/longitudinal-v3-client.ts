@@ -21,6 +21,7 @@ const REMOTE_POLL_INTERVAL_MS = 250;
 const REMOTE_CLEANUP_DEADLINE_MS = 10_000;
 const MAX_REMOTE_METADATA_BYTES = 64 * 1024;
 const MAX_REMOTE_ARTIFACT_BYTES = 128 * 1024 * 1024;
+const MAX_RETRY_AFTER_SECONDS = 24 * 60 * 60;
 const COMPUTE_CONTRACT_VERSION = "3dena.contract.v1";
 const REMOTE_SUBMISSION_VERSION = "3dena.open-ena-longitudinal-remote-submit.v3";
 const REMOTE_CAPABILITY_VERSION = "3dena.longitudinal-compute-capability.v2";
@@ -131,12 +132,25 @@ export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
   readonly decision: OpenEnaLongitudinalRouteDecisionV3;
   readonly canContinueLocally: boolean;
   readonly canDisableInference: boolean;
+  readonly httpStatus: number | null;
+  readonly serverCode: string | null;
+  readonly retryAfterSeconds: number | null;
+  readonly retryNotBefore: number | null;
+  readonly recovery: "sign-in" | "rate-limit" | "request" | "retry";
+  readonly canRetryRemote: boolean;
 
   constructor(
     code: OpenEnaLongitudinalExecutionClientErrorCodeV3,
     message: string,
     decision: OpenEnaLongitudinalRouteDecisionV3,
-    options: { canContinueLocally: boolean; canDisableInference: boolean },
+    options: {
+      canContinueLocally: boolean;
+      canDisableInference: boolean;
+      httpStatus?: number;
+      serverCode?: string | null;
+      retryAfterSeconds?: number | null;
+      retryNotBefore?: number | null;
+    },
   ) {
     super(message);
     this.name = "OpenEnaLongitudinalExecutionClientErrorV3";
@@ -144,6 +158,19 @@ export class OpenEnaLongitudinalExecutionClientErrorV3 extends Error {
     this.decision = decision;
     this.canContinueLocally = options.canContinueLocally;
     this.canDisableInference = options.canDisableInference;
+    this.httpStatus = options.httpStatus ?? null;
+    this.serverCode = options.serverCode ?? null;
+    this.retryAfterSeconds = options.retryAfterSeconds ?? null;
+    this.retryNotBefore = options.retryNotBefore ?? null;
+    this.recovery = this.httpStatus === 401
+      ? "sign-in"
+      : this.httpStatus === 429
+        ? "rate-limit"
+        : this.httpStatus !== null && this.httpStatus >= 400 && this.httpStatus < 500
+          && ![408, 409].includes(this.httpStatus)
+          ? "request"
+          : "retry";
+    this.canRetryRemote = this.recovery === "retry" || this.recovery === "rate-limit";
   }
 }
 
@@ -151,12 +178,22 @@ function recoverableRemoteError(
   code: Exclude<OpenEnaLongitudinalExecutionClientErrorCodeV3, "REMOTE_CONFIRMATION_REQUIRED">,
   message: string,
   decision: OpenEnaLongitudinalRouteDecisionV3,
+  httpError?: RemoteHttpErrorV3,
 ): OpenEnaLongitudinalExecutionClientErrorV3 {
   return new OpenEnaLongitudinalExecutionClientErrorV3(
     code,
     message,
     decision,
-    { canContinueLocally: true, canDisableInference: true },
+    {
+      canContinueLocally: true,
+      canDisableInference: true,
+      ...(httpError ? {
+        httpStatus: httpError.httpStatus,
+        serverCode: httpError.serverCode,
+        retryAfterSeconds: httpError.retryAfterSeconds,
+        retryNotBefore: httpError.retryNotBefore,
+      } : {}),
+    },
   );
 }
 
@@ -371,11 +408,31 @@ function computeHeaders(capability: RemoteCapabilityV3, accept = "application/js
   });
 }
 
-async function jsonResponse(response: Response, label: string): Promise<unknown> {
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new Error(`${label} returned HTTP ${response.status}.`);
+class RemoteHttpErrorV3 extends Error {
+  readonly httpStatus: number;
+  serverCode: string | null = null;
+  readonly retryAfterSeconds: number | null;
+  readonly retryNotBefore: number | null;
+
+  constructor(response: Response, label: string) {
+    super(`${label} returned HTTP ${response.status}.`);
+    this.httpStatus = response.status;
+    const receivedAt = Date.now();
+    const header = response.headers.get("retry-after");
+    // Bound both numeric delays and the standard HTTP-date form. Do not accept
+    // arbitrary Date.parse inputs such as a bare decimal or negative number.
+    const seconds = header !== null && /^\d{1,5}$/u.test(header)
+      ? Number(header)
+      : header !== null && /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/u.test(header)
+        ? Math.max(0, Math.ceil((Date.parse(header) - receivedAt) / 1_000))
+        : NaN;
+    this.retryAfterSeconds = Number.isSafeInteger(seconds) && seconds >= 0 && seconds <= MAX_RETRY_AFTER_SECONDS
+      ? seconds : null;
+    this.retryNotBefore = this.retryAfterSeconds === null ? null : receivedAt + this.retryAfterSeconds * 1_000;
   }
+}
+
+async function boundedJsonResponse(response: Response, label: string, signal?: AbortSignal): Promise<unknown> {
   const declared = response.headers.get("content-length");
   if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) > MAX_REMOTE_METADATA_BYTES)) {
     await response.body?.cancel().catch(() => undefined);
@@ -385,9 +442,16 @@ async function jsonResponse(response: Response, label: string): Promise<unknown>
   if (!reader) throw new Error(`${label} returned an empty body.`);
   const chunks: Uint8Array[] = [];
   let total = 0;
+  const cancelRead = () => { void reader.cancel().catch(() => undefined); };
+  signal?.addEventListener("abort", cancelRead, { once: true });
   try {
     while (true) {
+      if (signal?.aborted) {
+        cancelRead();
+        throw abortError("The persistent trajectory response was cancelled.");
+      }
       const { done, value } = await reader.read();
+      if (signal?.aborted) throw abortError("The persistent trajectory response was cancelled.");
       if (done) break;
       total += value.byteLength;
       if (total > MAX_REMOTE_METADATA_BYTES) {
@@ -397,6 +461,7 @@ async function jsonResponse(response: Response, label: string): Promise<unknown>
       chunks.push(value);
     }
   } finally {
+    signal?.removeEventListener("abort", cancelRead);
     reader.releaseLock();
   }
   const bytes = new Uint8Array(total);
@@ -407,6 +472,29 @@ async function jsonResponse(response: Response, label: string): Promise<unknown>
   } catch {
     throw new Error(`${label} returned invalid JSON.`);
   }
+}
+
+async function jsonResponse(response: Response, label: string, signal?: AbortSignal): Promise<unknown> {
+  if (response.ok) return boundedJsonResponse(response, label, signal);
+  const failure = new RemoteHttpErrorV3(response, label);
+  if (!/^application\/(?:json|[a-z0-9.+-]+\+json)(?:\s*;|$)/iu.test(response.headers.get("content-type")?.trim() ?? "")) {
+    await response.body?.cancel().catch(() => undefined);
+    throw failure;
+  }
+  try {
+    const value = await boundedJsonResponse(response, label, signal);
+    const envelope = remoteRecord(value, "error envelope");
+    const detail = remoteRecord(envelope.error, "error envelope.error");
+    // Preserve only a bounded machine code; server prose may contain raw data
+    // and must never become user-facing recovery copy.
+    if (typeof detail.code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/u.test(detail.code)) {
+      failure.serverCode = detail.code;
+    }
+  } catch {
+    // HTTP status and Retry-After remain usable for empty, malformed or oversized
+    // bodies. The owning request still handles cancellation and hard deadlines.
+  }
+  throw failure;
 }
 
 function waitRemote(milliseconds: number, signal?: AbortSignal): Promise<void> {
@@ -505,7 +593,7 @@ async function deleteRemoteJob(
         headers,
         signal: controller.signal,
       });
-      const value = await jsonResponse(response, "Persistent trajectory deletion");
+      const value = await jsonResponse(response, "Persistent trajectory deletion", controller.signal);
       const receipt = remoteRecord(value, "deletion receipt");
       remoteExact(receipt, [
         "schemaVersion", "jobId", "cancelled", "inputDeleted", "resultDeleted", "deletedAt",
@@ -548,7 +636,7 @@ async function fetchRemoteBundle(
     headers: computeHeaders(capability),
     signal,
   });
-  const referenceValue = await jsonResponse(referenceResponse, "Persistent trajectory result reference");
+  const referenceValue = await jsonResponse(referenceResponse, "Persistent trajectory result reference", signal);
   const reference = remoteRecord(referenceValue, "result reference");
   remoteExact(reference, ["schemaVersion", "jobId", "sha256", "byteLength", "resultUrl", "exportUrl", "expiresAt"], "result reference");
   if (reference.schemaVersion !== "3dena.job-result-reference.v1"
@@ -566,8 +654,7 @@ async function fetchRemoteBundle(
     signal,
   });
   if (!artifactResponse.ok) {
-    await artifactResponse.body?.cancel().catch(() => undefined);
-    throw new Error(`Persistent trajectory artifact returned HTTP ${artifactResponse.status}.`);
+    await jsonResponse(artifactResponse, "Persistent trajectory artifact", signal);
   }
   const artifactBytes = await boundedResponseBytes(artifactResponse, Number(reference.byteLength));
   const artifactSha256 = await sha256Hex(artifactBytes);
@@ -698,7 +785,7 @@ async function runRemote(
       }),
       signal: controller.signal,
     });
-    capability = parseRemoteCapability(await jsonResponse(response, "Persistent trajectory submission"));
+    capability = parseRemoteCapability(await jsonResponse(response, "Persistent trajectory submission", controller.signal));
     phase = "poll";
     options.onProgress?.({ progress: 0.1, stage: "remote-wait" });
     while (true) {
@@ -709,7 +796,7 @@ async function runRemote(
         signal: controller.signal,
       });
       const status = parseRemoteStatus(
-        await jsonResponse(statusResponse, "Persistent trajectory status"),
+        await jsonResponse(statusResponse, "Persistent trajectory status", controller.signal),
         capability,
       );
       options.onProgress?.({ progress: progressForRemoteState(status.state), stage: "remote-wait" });
@@ -754,11 +841,13 @@ async function runRemote(
     }
     if (error instanceof OpenEnaLongitudinalExecutionClientErrorV3) throw error;
     const detail = caughtMessage(error);
+    const httpError = error instanceof RemoteHttpErrorV3 ? error : undefined;
     if (phase === "submission") {
       throw recoverableRemoteError(
         "REMOTE_SUBMISSION_FAILED",
         `Persistent trajectory submission failed. ${detail}`,
         decision,
+        httpError,
       );
     }
     if (phase === "poll") {
@@ -766,12 +855,14 @@ async function runRemote(
         "REMOTE_POLL_FAILED",
         `Persistent trajectory status polling failed. ${detail}`,
         decision,
+        httpError,
       );
     }
     throw recoverableRemoteError(
       "REMOTE_RESULT_FAILED",
       `Persistent trajectory result retrieval or verification failed. ${detail}`,
       decision,
+      httpError,
     );
   } finally {
     clearTimeout(timeout);

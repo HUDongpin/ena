@@ -20,11 +20,13 @@ import {
   openEnaAuthSecurityConfigurationReady,
   type OpenEnaAuthFailureReason,
   type OpenEnaAuthSecurityStore,
+  type OpenEnaLoginAttemptResult,
 } from "@/lib/server/open-ena-auth-security-store";
+import { openEnaAuthErrorResponse, openEnaAuthRequestLocale } from "@/lib/server/open-ena-auth-response";
 
 export const OPEN_ENA_LOGIN_MAX_REQUEST_BYTES = 16 * 1024;
 export const OPEN_ENA_LOGIN_SOURCE_ATTEMPTS = 5;
-export const OPEN_ENA_LOGIN_ACCOUNT_ATTEMPTS = 10;
+export const OPEN_ENA_LOGIN_UNATTRIBUTED_ATTEMPTS = 10;
 export const OPEN_ENA_LOGIN_WINDOW_SECONDS = 15 * 60;
 
 type LoginRouteDependencies = {
@@ -46,20 +48,6 @@ function redirectToWorkspace(origin: string, locale: Locale, invalid = false) {
   const destination = new URL(`/${locale}/open-ena`, origin);
   if (invalid) destination.searchParams.set("auth", "invalid");
   return NextResponse.redirect(destination, { status: 303 });
-}
-
-function noStoreResponse(body: string, status: number, headers?: HeadersInit) {
-  return new NextResponse(body, {
-    status,
-    headers: { "Cache-Control": "no-store", ...headers },
-  });
-}
-
-function authFailureResponse(reason: OpenEnaAuthFailureReason) {
-  return new NextResponse(openEnaAuthFailureBody(reason), {
-    status: 503,
-    headers: { "Cache-Control": "no-store", ...openEnaAuthFailureHeaders(reason) },
-  });
 }
 
 function declaredContentLength(headers: Headers) {
@@ -116,7 +104,7 @@ async function parseLoginForm(request: Request) {
   return new URLSearchParams(body);
 }
 
-function accountRef(environment: OpenEnaAuthEnvironment) {
+function deploymentRef(environment: OpenEnaAuthEnvironment) {
   const accountId = environment.OPEN_ENA_ACCOUNT_ID?.trim() ?? "";
   return createHash("sha256").update(accountId, "utf8").digest("base64url");
 }
@@ -154,6 +142,13 @@ export function createOpenEnaLoginPostHandler(
     ?? ((principalRef: string) => createOpenEnaSessionTokenV3(Date.now(), environment, principalRef));
 
   return async function handleOpenEnaLoginPost(request: Request) {
+    let locale = openEnaAuthRequestLocale(request);
+    const noStoreResponse = (body: string, status: number, headers?: HeadersInit) => openEnaAuthErrorResponse(request, {
+      body, status, headers, locale, failure: status === 429 ? "throttled" : "request",
+    });
+    const authFailureResponse = (reason: OpenEnaAuthFailureReason) => openEnaAuthErrorResponse(request, {
+      body: openEnaAuthFailureBody(reason), status: 503, headers: openEnaAuthFailureHeaders(reason), locale, failure: "unavailable",
+    });
     const requestOrigin = resolveOpenEnaRequestOrigin(
       request.headers,
       new URL(request.url).origin,
@@ -176,7 +171,7 @@ export function createOpenEnaLoginPostHandler(
       }
       return noStoreResponse("Invalid login request", 400);
     }
-    const locale = formLocale(formData.get("locale"));
+    locale = formLocale(formData.get("locale"));
     const username = formData.get("username")?.trim() ?? "";
     const password = formData.get("password") ?? "";
 
@@ -195,25 +190,23 @@ export function createOpenEnaLoginPostHandler(
     }
     if (!securityStore) return authFailureResponse("store-unavailable");
 
-    const accountReference = accountRef(environment);
+    const accountReference = deploymentRef(environment);
     const source = loginSourceRef(request.headers, environment, accountReference);
-    let attemptAllowed = false;
+    let attempt: OpenEnaLoginAttemptResult;
     try {
-      attemptAllowed = await securityStore.consumeLoginAttempt({
+      attempt = await securityStore.reserveLoginAttempt({
         sourceRef: source.ref,
-        accountRef: accountReference,
-        sourceLimit: source.attributed
+        limit: source.attributed
           ? OPEN_ENA_LOGIN_SOURCE_ATTEMPTS
-          : OPEN_ENA_LOGIN_ACCOUNT_ATTEMPTS,
-        accountLimit: OPEN_ENA_LOGIN_ACCOUNT_ATTEMPTS,
+          : OPEN_ENA_LOGIN_UNATTRIBUTED_ATTEMPTS,
         windowSeconds: OPEN_ENA_LOGIN_WINDOW_SECONDS,
       });
     } catch {
       return authFailureResponse("store-error");
     }
-    if (!attemptAllowed) {
+    if (!attempt.allowed) {
       return noStoreResponse("Too many login attempts", 429, {
-        "Retry-After": String(OPEN_ENA_LOGIN_WINDOW_SECONDS),
+        "Retry-After": String(attempt.retryAfterSeconds),
       });
     }
 
@@ -243,6 +236,16 @@ export function createOpenEnaLoginPostHandler(
         response.headers.set("Cache-Control", "no-store");
         return response;
       }
+    }
+
+    try {
+      // Retain earlier failures and other in-flight attempts at this source.
+      // Never retry a refund: an ambiguous transport failure may have committed.
+      await securityStore.refundLoginAttempt(attempt.reservation);
+    } catch {
+      // Admission and credential verification have already succeeded. Retain
+      // the charged slot conservatively; withholding the verified session now
+      // would burn a consumed disposable credential with no recovery path.
     }
 
     const response = redirectToWorkspace(requestOrigin, locale);

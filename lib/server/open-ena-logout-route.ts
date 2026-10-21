@@ -14,6 +14,7 @@ import {
   type OpenEnaAuthFailureReason,
   type OpenEnaAuthSecurityStore,
 } from "@/lib/server/open-ena-auth-security-store";
+import { openEnaAuthErrorResponse, openEnaAuthRequestLocale } from "@/lib/server/open-ena-auth-response";
 
 export const OPEN_ENA_LOGOUT_MAX_REQUEST_BYTES = 8 * 1024;
 
@@ -79,17 +80,6 @@ async function readLogoutLocale(request: Request) {
   return formLocale(new URLSearchParams(new TextDecoder("utf-8", { fatal: true }).decode(bytes)).get("locale"));
 }
 
-function noStore(body: string, status: number, headers?: HeadersInit) {
-  return new NextResponse(body, {
-    status,
-    headers: { "Cache-Control": "no-store", ...headers },
-  });
-}
-
-function authFailure(reason: OpenEnaAuthFailureReason) {
-  return noStore(openEnaAuthFailureBody(reason), 503, openEnaAuthFailureHeaders(reason));
-}
-
 function clearSessionCookie(response: NextResponse, environment: OpenEnaAuthEnvironment) {
   response.cookies.set({
     name: OPEN_ENA_SESSION_COOKIE,
@@ -111,12 +101,26 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
   const revalidateOpenEnaWorkspace = dependencies.revalidateOpenEnaWorkspace;
 
   return async function handleOpenEnaLogoutPost(request: Request) {
+    let locale = openEnaAuthRequestLocale(request);
+    const noStore = (body: string, status: number) => openEnaAuthErrorResponse(request, {
+      body, status, locale, failure: "request",
+    });
+    const authFailure = (reason: OpenEnaAuthFailureReason) => openEnaAuthErrorResponse(request, {
+      body: openEnaAuthFailureBody(reason), status: 503, locale,
+      headers: openEnaAuthFailureHeaders(reason), failure: "logout-unavailable",
+    });
     const requestOrigin = resolveOpenEnaRequestOrigin(
       request.headers,
       new URL(request.url).origin,
       environment,
     );
     if (!requestOrigin) return noStore("Invalid request origin", 403);
+    try {
+      locale = await readLogoutLocale(request);
+    } catch (error) {
+      if (error instanceof LogoutBodyTooLargeError) return noStore("Logout request is too large", 413);
+      return noStore("Invalid logout request", 400);
+    }
     if (!openEnaAuthSecurityConfigurationReady(environment)) {
       return authFailure("not-configured");
     }
@@ -142,13 +146,6 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
       }
     }
 
-    let locale: Locale;
-    try {
-      locale = await readLogoutLocale(request);
-    } catch (error) {
-      if (error instanceof LogoutBodyTooLargeError) return noStore("Logout request is too large", 413);
-      return noStore("Invalid logout request", 400);
-    }
     const response = NextResponse.redirect(new URL(`/${locale}/open-ena`, requestOrigin), { status: 303 });
     clearSessionCookie(response, environment);
     revalidateOpenEnaWorkspace?.(locale);

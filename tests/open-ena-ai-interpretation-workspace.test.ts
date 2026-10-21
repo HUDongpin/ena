@@ -186,7 +186,7 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
   );
   assert.match(aiComponent, /copy\.cancel/);
   assert.match(aiComponent, /copy\.retry/);
-  assert.match(aiComponent, /openEnaAiFailureRecovery\(response\.status\)/);
+  assert.match(aiComponent, /const \{ recovery, failureClass \} = classifyOpenEnaAiPanelFailure\(/);
   assert.match(
     aiComponent,
     /data-ena-ai-recovery=["']sign-in["'][\s\S]*?target=["']_blank["'][\s\S]*?rel=["']noopener noreferrer["'][\s\S]*?copy\.signInAgain/,

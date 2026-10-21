@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 const RECEIPT_SCHEMA = "open-ena.production-auth-operator.v1";
 const MIGRATION_ID = "004_open_ena_disposable_accounts";
 const EXPIRY_MIGRATION_ID = "008_open_ena_disposable_expiry_after_lock";
+const LOGIN_MIGRATION_ID = "009_open_ena_login_source_reservations";
 const SESSION_COOKIE_NAME = "open-ena-session";
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_READY_ATTEMPTS = 8;
@@ -38,6 +39,7 @@ const POSTCONDITION_KEYS = Object.freeze([
   "migration_004_index",
   "migration_004_function_contract",
   "migration_008_function_contract",
+  "migration_009_function_contract",
 ]);
 const SAFE_FAILURE_CODES = new Set([
   "ACCOUNT_CONSUMPTION_NOT_OBSERVED",
@@ -192,7 +194,15 @@ SELECT
       = '97c3f483614a4649fcdfd099ad3d7176', false)
     FROM pg_catalog.pg_proc p
     WHERE p.oid = to_regprocedure('public.open_ena_consume_disposable_account(text,bytea)')
-  ) AS migration_008_function_contract
+  ) AS migration_008_function_contract,
+  (
+    COALESCE(pg_get_function_result(to_regprocedure(
+      'public.open_ena_reserve_login_attempt_v2(text,integer,integer)'
+    )) = 'TABLE(allowed boolean, window_started_at text, retry_after_seconds integer)', false)
+    AND COALESCE(pg_get_function_result(to_regprocedure(
+      'public.open_ena_refund_login_attempt_v2(text,timestamptz)'
+    )) = 'boolean', false)
+  ) AS migration_009_function_contract
 `;
 
 const INSERT_ACCOUNT_SQL = `
@@ -545,7 +555,7 @@ function checkMigrationPostconditions(result) {
   return Boolean(row && POSTCONDITION_KEYS.every((key) => row[key] === true));
 }
 
-async function applyMigrationAndVerify(database, migrationSql, expiryMigrationSql) {
+async function applyMigrationAndVerify(database, migrationSql, expiryMigrationSql, loginMigrationSql) {
   try {
     await database.query("BEGIN");
     await database.query(
@@ -566,6 +576,7 @@ async function applyMigrationAndVerify(database, migrationSql, expiryMigrationSq
     const legacyApplied = !present.disposable_function_present;
     if (legacyApplied) await database.query(migrationSql);
     await database.query(expiryMigrationSql);
+    await database.query(loginMigrationSql);
     const postconditions = await database.query(POSTCONDITIONS_SQL);
     if (!checkMigrationPostconditions(postconditions)) fail("MIGRATION_POSTCONDITION_FAILED");
     await database.query("COMMIT");
@@ -591,12 +602,12 @@ async function openDatabase(databaseFactory, databaseUrl) {
   return database;
 }
 
-function migrationFiles(migrationSql, expiryMigrationSql, legacyApplied) {
-  return [[MIGRATION_ID, migrationSql, legacyApplied], [EXPIRY_MIGRATION_ID, expiryMigrationSql, true]]
+function migrationFiles(migrationSql, expiryMigrationSql, loginMigrationSql, legacyApplied) {
+  return [[MIGRATION_ID, migrationSql, legacyApplied], [EXPIRY_MIGRATION_ID, expiryMigrationSql, true], [LOGIN_MIGRATION_ID, loginMigrationSql, true]]
     .map(([id, sql, applied]) => ({ id, sha256: sha256(Buffer.from(sql, "utf8")), bytes: Buffer.byteLength(sql, "utf8"), applied }));
 }
 
-function migrationReceipt(migrationSql, expiryMigrationSql, observedAtMilliseconds, legacyApplied) {
+function migrationReceipt(migrationSql, expiryMigrationSql, loginMigrationSql, observedAtMilliseconds, legacyApplied) {
   return {
     schemaVersion: RECEIPT_SCHEMA,
     status: "PASS",
@@ -610,7 +621,7 @@ function migrationReceipt(migrationSql, expiryMigrationSql, observedAtMillisecon
     },
     migration: {
       id: MIGRATION_ID,
-      files: migrationFiles(migrationSql, expiryMigrationSql, legacyApplied),
+      files: migrationFiles(migrationSql, expiryMigrationSql, loginMigrationSql, legacyApplied),
       sha256: sha256(Buffer.from(migrationSql, "utf8")),
       bytes: Buffer.byteLength(migrationSql, "utf8"),
       applied: legacyApplied,
@@ -624,6 +635,7 @@ export async function runOpenEnaProductionAuthOperator({
   environment = process.env,
   migrationSql,
   expiryMigrationSql,
+  loginMigrationSql,
   expectedFinalGitSha,
   deploymentId,
   dependencies = {},
@@ -638,17 +650,18 @@ export async function runOpenEnaProductionAuthOperator({
   if (mode === "all" && dependencies.allowCombinedMode !== true) fail("COMBINED_MODE_FORBIDDEN");
   if ((mode === "migration" || mode === "all")
       && (typeof migrationSql !== "string" || migrationSql.length === 0
-        || typeof expiryMigrationSql !== "string" || expiryMigrationSql.length === 0)) {
+        || typeof expiryMigrationSql !== "string" || expiryMigrationSql.length === 0
+        || typeof loginMigrationSql !== "string" || loginMigrationSql.length === 0)) {
     fail("MIGRATION_INPUT_INVALID");
   }
-  if (mode === "proof" && (migrationSql !== undefined || expiryMigrationSql !== undefined)) fail("PROOF_MODE_MIGRATION_INPUT_FORBIDDEN");
+  if (mode === "proof" && (migrationSql !== undefined || expiryMigrationSql !== undefined || loginMigrationSql !== undefined)) fail("PROOF_MODE_MIGRATION_INPUT_FORBIDDEN");
 
   if (mode === "migration") {
     const configured = databaseConfiguration(environment);
     const database = await openDatabase(databaseFactory, configured.authDatabaseUrl);
     try {
-      const legacyApplied = await applyMigrationAndVerify(database, migrationSql, expiryMigrationSql);
-      return migrationReceipt(migrationSql, expiryMigrationSql, observedAtMilliseconds, legacyApplied);
+      const legacyApplied = await applyMigrationAndVerify(database, migrationSql, expiryMigrationSql, loginMigrationSql);
+      return migrationReceipt(migrationSql, expiryMigrationSql, loginMigrationSql, observedAtMilliseconds, legacyApplied);
     } finally {
       await database.close().catch(() => undefined);
     }
@@ -722,7 +735,7 @@ export async function runOpenEnaProductionAuthOperator({
     }
 
     try {
-      if (mode === "all") legacyMigrationApplied = await applyMigrationAndVerify(database, migrationSql, expiryMigrationSql);
+      if (mode === "all") legacyMigrationApplied = await applyMigrationAndVerify(database, migrationSql, expiryMigrationSql, loginMigrationSql);
       else {
         const postconditions = await database.query(POSTCONDITIONS_SQL);
         if (!checkMigrationPostconditions(postconditions)) fail("MIGRATION_POSTCONDITION_FAILED");
@@ -890,7 +903,7 @@ export async function runOpenEnaProductionAuthOperator({
       },
       migration: mode === "all" ? {
         id: MIGRATION_ID,
-        files: migrationFiles(migrationSql, expiryMigrationSql, legacyMigrationApplied),
+        files: migrationFiles(migrationSql, expiryMigrationSql, loginMigrationSql, legacyMigrationApplied),
         sha256: sha256(Buffer.from(migrationSql, "utf8")),
         bytes: Buffer.byteLength(migrationSql, "utf8"),
         applied: legacyMigrationApplied,
@@ -1069,11 +1082,15 @@ async function executeCli(argv, environment) {
     const expiryMigrationSql = mode === "migration"
       ? await readFile(new URL("../migrations/008_open_ena_disposable_expiry_after_lock.sql", import.meta.url), "utf8")
       : undefined;
+    const loginMigrationSql = mode === "migration"
+      ? await readFile(new URL("../migrations/009_open_ena_login_source_reservations.sql", import.meta.url), "utf8")
+      : undefined;
     const receipt = await runOpenEnaProductionAuthOperator({
       mode,
       environment,
       migrationSql,
       expiryMigrationSql,
+      loginMigrationSql,
       expectedFinalGitSha: parsed.expectedFinalGitSha,
       deploymentId: parsed.deploymentId,
       dependencies: { databaseFactory: createDefaultPostgresDatabase },

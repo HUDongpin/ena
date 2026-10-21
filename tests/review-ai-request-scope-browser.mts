@@ -86,9 +86,26 @@ try {
       assert.equal(calls.length, count, `${scenario}: native API call count`);
       await page.getByRole('alert').waitFor();
     };
+    const assertTerminal = async (count: number) => {
+      await page.locator('[role="alert"][data-ena-ai-recovery="review-request"]').waitFor();
+      assert.equal(await page.getByRole('alert').getByRole('button').count(), 0, `${scenario}: terminal operation has no Retry`);
+      assert.equal(await page.locator('.ena-ai-actions button').first().isDisabled(), true, `${scenario}: terminal Generate is disabled`);
+      await page.locator('.ena-ai-actions button').first().evaluate(button => (button as HTMLButtonElement).click());
+      assert.equal(calls.length, count, `${scenario}: terminal UI cannot send another request`);
+    };
     await page.getByRole('checkbox').check(); await generate(); await waitCalls(1);
-    // An explicit retry of the exact same reviewed request preserves the unresolved ID.
-    await page.getByRole('alert').getByRole('button').click(); await waitCalls(2);
+    if (scenario === 'legacy-quota-renewal') {
+      // Only this response has a confirmed release and therefore a real Retry.
+      await page.getByRole('alert').getByRole('button').click();
+    } else {
+      await assertTerminal(1);
+      // Reopening the panel can submit a stored operation again, but must never
+      // turn its terminal failure into a new provider dispatch or operation ID.
+      await page.evaluate(() => window.remountAi());
+      await page.waitForFunction(() => !document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked);
+      await page.getByRole('checkbox').check(); await generate();
+    }
+    await waitCalls(2); await assertTerminal(2);
     if (scenario === 'reload') {
       await page.reload(); await page.addScriptTag({ content: bundle.outputFiles[0].text });
     } else if (scenario === 'remount' || scenario === 'legacy-migration') await page.evaluate(() => window.remountAi());
@@ -110,6 +127,13 @@ try {
     }, scenario);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const noAutomaticGeneration = calls.length === 2;
+    if (['legacy-quota-renewal', 'invalid-legacy', 'invalid-current'].includes(scenario)) {
+      // An equivalent render must keep terminal controls blocked. Remount only
+      // after checking that invariant to probe the retained storage identity.
+      await assertTerminal(2);
+      await page.evaluate(() => window.remountAi());
+      await page.waitForFunction(() => !document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked);
+    }
     await page.getByRole('checkbox').check(); await generate(); await waitCalls(3);
     let returnedRequest = null;
     if (['round-trip-evidence', 'storage-unavailable', 'storage-quota', 'legacy-quota-roundtrip'].includes(scenario)) {
