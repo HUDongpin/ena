@@ -984,7 +984,7 @@ test("typed remote failures preserve one immutable request and expose three expl
   );
   assert.match(
     recovery,
-    /remoteFailure\.canRetryRemote \? <button type="button" onClick=\{\(\) => pendingRun && void runPrepared\(pendingRun, \{ allowRemote: true \}\)\}>\{copy\.retryRemote\}<\/button> : null/,
+    /remoteFailure\.canRetryRemote \|\| remoteFailure\.code === "REMOTE_RATE_LIMITED" \? <button type="button" disabled=\{remoteWaitSeconds > 0\} onClick=\{\(\) => pendingRun && void runPrepared\(pendingRun, \{ allowRemote: true \}\)\}>\{copy\.retryRemote\}<\/button> : null/,
   );
   assert.match(component, /failure\.code === "REMOTE_AUTH_REQUIRED"/);
   assert.match(component, /failure\.code === "REMOTE_RATE_LIMITED"/);

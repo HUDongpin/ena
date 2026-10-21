@@ -532,6 +532,132 @@ test("remote POST 401 keeps AUTHENTICATION_REQUIRED and does not offer an immedi
   assert.equal(deleteCalls, 0, "no durable job exists before a capability is issued");
 });
 
+for (const [status, serverCode, code] of [
+  [400, "PRIVACY_BOUNDARY_VIOLATION", "REMOTE_REQUEST_REJECTED"],
+  [400, "INVALID_LONGITUDINAL_TASK", "REMOTE_REQUEST_REJECTED"],
+  [403, "INVALID_REQUEST_ORIGIN", "REMOTE_REQUEST_REJECTED"],
+  [503, "BILLING_UNAVAILABLE", "REMOTE_SERVICE_UNAVAILABLE"],
+  [503, "REMOTE_SERVICE_UNAVAILABLE", "REMOTE_SERVICE_UNAVAILABLE"],
+] as const) {
+  test(`remote ${status}/${serverCode} retains its reason without blind retry`, async () => {
+    const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+    await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: async () => Response.json({ error: { code: serverCode, message: "untrusted server text" } }, { status }),
+    }), (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+      && error.code === code && error.serverCode === serverCode
+      && !error.canRetryRemote && error.canContinueLocally && error.canDisableInference
+      && !error.message.includes("untrusted server text"));
+  });
+}
+
+test("Retry-After accepts zero and an HTTP date, retaining one absolute deadline", async () => {
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  const deadline = Math.ceil(Date.now() / 1000) * 1000 + 30_000;
+  for (const header of ["0", new Date(deadline).toUTCString()]) {
+    await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: async () => Response.json({ error: { code: "RATE_LIMITED" } }, { status: 429, headers: { "retry-after": header } }),
+    }), (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+      && error.code === "REMOTE_RATE_LIMITED"
+      && (header === "0" ? error.retryAfterSeconds === 0
+        : error.retryAtMilliseconds === deadline && error.retryAfterSeconds! > 0 && error.retryAfterSeconds! <= 31));
+  }
+});
+
+test("malformed Retry-After and server codes cannot change the HTTP recovery class", async () => {
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  for (const header of ["-1", "1.5", "NaN", "not-a-date"]) {
+    await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: async () => Response.json({ error: { code: "<script>untrusted</script>" } },
+        { status: 429, headers: { "retry-after": header } }),
+    }), (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+      && error.code === "REMOTE_RATE_LIMITED" && error.httpStatus === 429
+      && error.serverCode === null && error.retryAfterSeconds === null && error.retryAtMilliseconds === null);
+  }
+});
+
+for (const phase of ["status", "result", "artifact"] as const) {
+  test(`remote ${phase} keeps structured rate-limit metadata and still deletes its job`, async () => {
+    const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+    const jobId = `job-structured-${phase}`;
+    const transport = await successfulRemoteTransport(request, jobId);
+    const { jobUrl } = remoteCapability(jobId);
+    const failedUrl = phase === "status" ? jobUrl : `${jobUrl}/${phase}`;
+    await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+      allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal",
+      fetchImpl: async (input, init) => String(input) === failedUrl && (init?.method ?? "GET") === "GET"
+        ? Response.json({ error: { code: "RATE_LIMITED" } }, { status: 429, headers: { "retry-after": "12" } })
+        : transport.fetchMock(input, init),
+    }), (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+      && error.code === "REMOTE_RATE_LIMITED" && error.serverCode === "RATE_LIMITED"
+      && error.retryAfterSeconds === 12 && !error.canRetryRemote);
+    assert.equal(transport.deletionCount(), 1);
+  });
+}
+
+for (const [status, serverCode, code] of [
+  [401, "AUTHENTICATION_REQUIRED", "REMOTE_AUTH_REQUIRED"],
+  [429, "RATE_LIMITED", "REMOTE_RATE_LIMITED"],
+  [503, "BILLING_UNAVAILABLE", "REMOTE_SERVICE_UNAVAILABLE"],
+] as const) {
+  test(`owned cleanup crossing the deadline preserves known HTTP ${status}`, async () => {
+    const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+    const transport = await successfulRemoteTransport(request, `job-slow-cleanup-${status}`);
+    const { jobUrl } = remoteCapability(`job-slow-cleanup-${status}`);
+    for (const cancel of [false, true]) {
+      const controller = new AbortController();
+      await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+        allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal", remoteDeadlineMilliseconds: 25,
+        signal: controller.signal,
+        fetchImpl: async (input, init) => {
+          if (String(input) === jobUrl && init?.method === "GET") return Response.json(
+            { error: { code: serverCode } }, { status, headers: { "retry-after": "12" } });
+          if (String(input) === jobUrl && init?.method === "DELETE") {
+            if (cancel) controller.abort();
+            await new Promise((resolve) => setTimeout(resolve, 60));
+          }
+          return transport.fetchMock(input, init);
+        },
+      }), (error: unknown) => cancel ? error instanceof DOMException && error.name === "AbortError"
+        : error instanceof OpenEnaLongitudinalExecutionClientErrorV3 && error.code === code
+          && error.httpStatus === status && error.serverCode === serverCode
+          && error.retryAfterSeconds === 12 && error.retryAtMilliseconds !== null && !error.canRetryRemote);
+    }
+    assert.equal(transport.deletionCount(), 2);
+  });
+}
+
+for (const kind of ["non-json", "declared-oversize", "stream-overflow", "stalled-read"] as const) {
+  test(`bounded ${kind} failure does not await a stalled cancellation`, async () => {
+    const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { if (kind === "stream-overflow") controller.enqueue(new Uint8Array(65 * 1024)); },
+      cancel() { cancelled = true; return new Promise(() => {}); },
+    });
+    const controller = new AbortController();
+    const hardStop = setTimeout(() => controller.abort(), 2_500);
+    try {
+      const outcome = executeOpenEnaLongitudinalPreparedV3(request, {
+        allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal", signal: controller.signal,
+        fetchImpl: async () => new Response(body, { status: 429, headers: {
+          "content-type": kind === "non-json" ? "text/html" : "application/json",
+          ...(kind === "declared-oversize" ? { "content-length": "999999" } : {}),
+          "retry-after": "20",
+        } }),
+      });
+      await assert.rejects(Promise.race([
+        outcome,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("body cleanup stalled recovery")), 1_800)),
+      ]), (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
+        && error.code === "REMOTE_RATE_LIMITED" && error.retryAfterSeconds === 20);
+      assert.equal(cancelled, true);
+    } finally { clearTimeout(hardStop); }
+  });
+}
+
 test("remote POST 429 keeps RATE_LIMITED and the Retry-After delay", async () => {
   clearOpenEnaLongitudinalExecutionCacheV3();
   const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
@@ -597,8 +723,8 @@ test("remote POST 503 is a typed recoverable submission failure", async () => {
       resultVerifier: async () => {},
     }),
     (error: unknown) => error instanceof OpenEnaLongitudinalExecutionClientErrorV3
-      && isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED")
-      && error.canRetryRemote
+      && isRecoverableRemoteFailure(error, "REMOTE_SERVICE_UNAVAILABLE")
+      && !error.canRetryRemote
       && error.serverCode === null
       && error.retryAfterSeconds === null
       && /HTTP 503/u.test(error.message),
@@ -700,7 +826,7 @@ test("remote result-reference failure is typed and still closes durable deletion
       fetchImpl: fetchMock,
       resultVerifier: async () => {},
     }),
-    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_RESULT_FAILED")
+    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SERVICE_UNAVAILABLE")
       && /HTTP 503/u.test((error as Error).message),
   );
   assert.equal(deleteCalls, 1);
@@ -758,7 +884,7 @@ test("a rejected remote submission cancels its unread response body", async () =
   const body = new ReadableStream<Uint8Array>({ cancel() { cancelled = true; } });
   await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
     allowRemote: true, remoteEndpoint: "/api/open-ena/longitudinal", fetchImpl: async () => new Response(body, { status: 503 }),
-  }), (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED"));
+  }), (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SERVICE_UNAVAILABLE"));
   assert.equal(cancelled, true);
 });
 
@@ -775,7 +901,7 @@ test("a stalled JSON submission error cancels its body within the read deadline"
       status: 503,
       headers: { "content-type": "application/json" },
     }),
-  }), (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED"));
+  }), (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SERVICE_UNAVAILABLE"));
   assert.equal(cancelled, true);
   assert.ok(Date.now() - started < 5_000);
 });
@@ -880,7 +1006,7 @@ test("force-local recovery preserves the failed immutable request except executi
       fetchImpl: fetchMock,
       resultVerifier: async () => {},
     }),
-    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED"),
+    (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SERVICE_UNAVAILABLE"),
   );
 
   const localRequests: LongitudinalExecutionRequestV2[] = [];
