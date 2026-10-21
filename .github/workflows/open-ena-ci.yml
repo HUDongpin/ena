@@ -302,6 +302,7 @@ jobs:
           node --import tsx tests/review-server-plugin-transactions.mjs
       - name: Verify AI operation ownership, release proofs, and explicit retries
         run: |
+          node --import tsx tests/open-ena-ai-settled-postgres.mts
           node tests/open-ena-ai-operation-retry-browser.mjs
           node tests/review-ui-ai-operation-ownership-browser.mjs output/review-regressions/ai-operation-ownership.json
           node --import tsx tests/review-ai-request-scope-browser.mts output/review-regressions/ai-request-scope.json

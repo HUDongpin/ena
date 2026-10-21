@@ -16,9 +16,10 @@ const FAILURE_COPY = {
     sessionRecovery: "Your Open ENA session is missing or no longer valid. Sign in again, then return to generate an interpretation.",
     signInAgain: "Sign in again",
     signInNewTab: "Opens in a new tab",
-    failureUnavailable: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
-    failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out. Check your connection, then retry this request.",
-    failureInvalidOutput: "The model returned output that could not be used as an interpretation. Retry this request to ask for a new interpretation.",
+    failureUnavailable: "AI interpretation is temporarily unavailable or rate limited.",
+    failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out.",
+    failureInvalidOutput: "The model returned output that could not be used as an interpretation.",
+    operationAlreadyProcessed: "This AI generation operation was already processed.",
     evidenceBoundary: "The computed ENA model results are still valid. Only the AI interpretation is missing.",
     evidenceBoundaryRetained: "The ENA model results remain valid. This new AI interpretation attempt failed; the interpretation shown below is from an earlier request for the same evidence.",
     previousInterpretation: "Previous interpretation",
@@ -27,9 +28,10 @@ const FAILURE_COPY = {
     sessionRecovery: "您的開放 ENA 工作階段不存在或已失效。請重新登入，再回到此處生成解讀。",
     signInAgain: "重新登入",
     signInNewTab: "在新分頁開啟",
-    failureUnavailable: "AI 解讀暫時無法使用，或已達到請求次數限制。請稍候，再重試此請求。",
-    failureNetwork: "AI 解讀請求因網絡問題或逾時而未完成。請檢查連線，再重試此請求。",
-    failureInvalidOutput: "模型傳回的內容無法用作解讀。請重試此請求，以重新生成解讀。",
+    failureUnavailable: "AI 解讀暫時無法使用，或已達到請求次數限制。",
+    failureNetwork: "AI 解讀請求因網絡問題或逾時而未完成。",
+    failureInvalidOutput: "模型傳回的內容無法用作解讀。",
+    operationAlreadyProcessed: "此 AI 生成操作已經處理過。",
     evidenceBoundary: "已計算的 ENA 模型結果仍然有效。缺少的只是 AI 解讀。",
     evidenceBoundaryRetained: "ENA 模型結果仍然有效。這次新的 AI 解讀嘗試失敗；下方顯示的解讀來自較早對同一證據的請求。",
     previousInterpretation: "先前的解讀",
@@ -38,9 +40,10 @@ const FAILURE_COPY = {
     sessionRecovery: "您的开放 ENA 会话不存在或已失效。请重新登录，再回到此处生成解读。",
     signInAgain: "重新登录",
     signInNewTab: "在新标签页打开",
-    failureUnavailable: "AI 解读暂时无法使用，或已达到请求次数限制。请稍候，再重试此请求。",
-    failureNetwork: "AI 解读请求因网络问题或超时而未完成。请检查连接，再重试此请求。",
-    failureInvalidOutput: "模型返回的内容无法用作解读。请重试此请求，以重新生成解读。",
+    failureUnavailable: "AI 解读暂时无法使用，或已达到请求次数限制。",
+    failureNetwork: "AI 解读请求因网络问题或超时而未完成。",
+    failureInvalidOutput: "模型返回的内容无法用作解读。",
+    operationAlreadyProcessed: "此 AI 生成操作已经处理过。",
     evidenceBoundary: "已计算的 ENA 模型结果仍然有效。缺少的只是 AI 解读。",
     evidenceBoundaryRetained: "ENA 模型结果仍然有效。这次新的 AI 解读尝试失败；下方显示的解读来自较早对同一证据的请求。",
     previousInterpretation: "先前的解读",
@@ -123,12 +126,19 @@ test("panel failure classes choose retry or sign-in without collapsing 502 cause
     [{ status: 402 }, { failureClass: null, recovery: "retry" }],
     [{ status: 400 }, { failureClass: null, recovery: "retry" }],
     [{ status: 403 }, { failureClass: null, recovery: "retry" }],
-    [{ status: 409 }, { failureClass: null, recovery: "retry" }],
+    [{ status: 409 }, { failureClass: null, recovery: "local-only" }],
     [{ status: 499 }, { failureClass: null, recovery: "retry" }],
   ];
   for (const [input, expected] of cases) {
     assert.deepEqual(classify!(input), expected, JSON.stringify(input));
   }
+
+  const recovery = module.openEnaAiFailureRecovery as (status: number, disposition?: string) => string;
+  assert.equal(recovery(409), "local-only", "an unproven replay must not offer an endless retry");
+  assert.equal(recovery(409, "released"), "retry", "a verified pre-dispatch release remains retryable");
+  assert.equal(recovery(409, "settled"), "new-generation");
+  assert.equal(recovery(504, "settled"), "new-generation");
+  assert.equal(recovery(401, "settled"), "sign-in", "authentication failure cannot authorize a replacement");
 
   const copy = copyText("en");
   assert.equal(messageFor!(copy, "session", "fallback"), copy.sessionRecovery);
@@ -137,6 +147,20 @@ test("panel failure classes choose retry or sign-in without collapsing 502 cause
   assert.equal(messageFor!(copy, "invalid-output", "fallback"), copy.failureInvalidOutput);
   assert.equal(messageFor!(copy, null, "Server message"), "Server message");
   assert.equal(messageFor!(copy, "not-a-class", "Server message"), "Server message");
+
+  const visible = module.openEnaAiVisibleServerMessage as ((
+    status: number,
+    serverMessage: string,
+    localized: string,
+  ) => string) | undefined;
+  assert.equal(typeof visible, "function");
+  const alreadyProcessed = "This AI generation operation was already processed.";
+  assert.equal(visible!(409, alreadyProcessed, copyText("en").operationAlreadyProcessed), copyText("en").operationAlreadyProcessed);
+  assert.equal(visible!(409, alreadyProcessed, copyText("zh-hant").operationAlreadyProcessed), "此 AI 生成操作已經處理過。");
+  assert.equal(visible!(409, alreadyProcessed, copyText("zh-hans").operationAlreadyProcessed), "此 AI 生成操作已经处理过。");
+  assert.equal(visible!(409, "Your sign-in context changed or this page is outdated. Refresh the workspace and review the AI request again.", "localized"), "Your sign-in context changed or this page is outdated. Refresh the workspace and review the AI request again.");
+  assert.equal(visible!(502, alreadyProcessed, "localized"), alreadyProcessed);
+  assert.equal(visible!(409, "This AI generation operation was already processed. ", "localized"), "This AI generation operation was already processed. ");
 });
 
 test("provider failures keep their HTTP status and name the ambiguous 502 cause", async () => {
@@ -203,7 +227,7 @@ test("a missing session is sign-in recovery and does not use the unavailable cla
 
 test("the failure alert states the evidence boundary and retries only retryable classes", () => {
   assert.match(aiComponent, /recovery === ["']sign-in["'] \? copy\.sessionRecovery : openEnaAiFailureClassMessage\(/);
-  assert.match(aiComponent, /openEnaAiFailureRecovery\(response\.status\)/);
+  assert.match(aiComponent, /openEnaAiFailureRecovery\(response\.status,/);
   assert.match(
     aiComponent,
     /role=["']alert["'][\s\S]*?data-ena-ai-evidence-boundary=["']results-remain-valid["'][\s\S]*?\{copy\.evidenceBoundary\}/,
@@ -211,7 +235,8 @@ test("the failure alert states the evidence boundary and retries only retryable 
   assert.match(aiComponent, /data-ena-ai-failure-class=\{aiFailureClass \?\? ["']unclassified["']\}/);
   const alertStart = aiComponent.indexOf('role="alert"');
   const alert = aiComponent.slice(alertStart, aiComponent.indexOf("currentResponse", alertStart));
-  const signIn = alert.slice(alert.indexOf('data-ena-ai-recovery="sign-in"'), alert.indexOf('data-ena-ai-recovery="retry"'));
+  const signInStart = alert.indexOf('data-ena-ai-recovery="sign-in"');
+  const signIn = alert.slice(signInStart, alert.indexOf('</a>', signInStart));
   assert.match(signIn, /target="_blank"/);
   assert.match(signIn, /rel="noopener noreferrer"/);
   assert.match(signIn, /copy\.signInAgain/);
@@ -220,7 +245,12 @@ test("the failure alert states the evidence boundary and retries only retryable 
   assert.doesNotMatch(signIn, /location\.assign/);
   assert.doesNotMatch(aiComponent, /location\.assign\s*\(/);
   assert.match(aiComponent, /aria-busy=\{generationStatus === "loading"\}/);
-  assert.match(alert, /data-ena-ai-recovery=["']retry["'][\s\S]*?onClick=\{handleGenerateInterpretation\}/);
+  assert.match(alert, /data-ena-ai-recovery=["']retry["'][\s\S]*?handleGenerateInterpretation\(\)/);
+  assert.doesNotMatch(
+    aiComponent.slice(0, alertStart),
+    /handleGenerateInterpretation\(\s*["']replace-settled["']\s*\)/,
+    "Generate keeps the settled operation id; only Retry may replace it",
+  );
   assert.match(alert, /copy\.retry/);
   assert.match(aiComponent, /copy\.failureNetwork/);
   assert.match(aiComponent, /copy\.failureInvalidOutput/);
@@ -247,6 +277,16 @@ test("failure messages and malformed success cannot grant operation renewal", as
   assert.equal(renew(new Response("not-json", { status: 200, headers }), operationId), false);
   assert.equal(renew(new Response(null, { status: 503, headers }), operationId), true);
   assert.equal(renew(new Response(null, { status: 503, headers }), "another-operation"), false);
+  const replace = module.mayReplaceSettledOpenEnaAiOperation as ((response: Response, operationId: string) => boolean) | undefined;
+  assert.equal(typeof replace, "function");
+  const settledHeaders = { "x-open-ena-ai-settled-retry": "new-operation", "x-open-ena-ai-operation-id": operationId };
+  assert.equal(replace!(new Response(JSON.stringify({ failureClass: "network" }), { status: 502 }), operationId), false);
+  assert.equal(replace!(new Response(null, { status: 504, headers: settledHeaders }), operationId), true);
+  assert.equal(replace!(new Response(null, { status: 409, headers: settledHeaders }), operationId), true);
+  assert.equal(replace!(new Response(null, { status: 504, headers: settledHeaders }), "another-operation"), false);
+  assert.equal(replace!(new Response(null, { status: 504, headers }), operationId), false, "a pre-dispatch release proof is not a settled replacement");
+  assert.equal(replace!(new Response(null, { status: 200, headers: settledHeaders }), operationId), false);
+  assert.equal(renew(new Response(null, { status: 504, headers: settledHeaders }), operationId), false, "a settled proof must not take the unpaid release path");
   // The browser regressions additionally execute the real component and assert
   // retained IDs and one provider dispatch for failed or malformed responses.
 });

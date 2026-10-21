@@ -124,7 +124,7 @@ try {
         window.operationStorageKey,
       ));
       const waitUntilSettled = () => page.waitForFunction(() => (
-        document.querySelector(".ena-ai-actions button:not(:disabled)")
+        document.querySelector(".ena-ai-interpretation")?.getAttribute("aria-busy") === "false"
         && document.querySelector("[role=alert], .ena-ai-result")
       ));
       await generate.click();
@@ -155,13 +155,20 @@ try {
         assert.equal(operations.length, 2);
         assert.equal(operations[1], operations[0], "the first retry must retain the original operation key");
         assert.equal(await storedOperation(), scenario === "renewable" ? "closed" : operations[0]);
-        await page.getByRole("alert").getByRole("button").click();
-        await waitUntilSettled();
-        assert.equal(operations.length, 3);
-        if (scenario === "renewable") {
-          assert.notEqual(operations[2], operations[0], "only correctly bound safe renewal permits a new operation");
+        if (statuses[1] === 409) {
+          assert.equal(await page.getByRole("alert").getByRole("button").count(), 0);
+          assert.equal(await generate.isDisabled(), true, "an unproven replay cannot be bypassed with Generate");
+          assert.equal(operations.length, 2);
+          assert.equal(await storedOperation(), operations[0], "stopping retries retains the unresolved identity");
         } else {
-          assert.equal(operations[2], operations[0], "409 and mismatched renewal headers must preserve the original operation");
+          await page.getByRole("alert").getByRole("button").click();
+          await waitUntilSettled();
+          assert.equal(operations.length, 3);
+          if (scenario === "renewable") {
+            assert.notEqual(operations[2], operations[0], "only correctly bound safe renewal permits a new operation");
+          } else {
+            assert.equal(operations[2], operations[0], "mismatched renewal headers preserve the original operation");
+          }
         }
         if (scenario === "uncertain" || scenario === "pending") {
           assert.equal(dispatchedOperations.size, 1, "two Retry attempts cannot dispatch a second billable generation");

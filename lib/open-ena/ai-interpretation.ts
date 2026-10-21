@@ -71,6 +71,9 @@ export const OPEN_ENA_AI_CONSENT_HEADER = "x-open-ena-ai-consent";
 export const OPEN_ENA_AI_CONSENT_VALUE = "reviewed-aggregate-v3";
 export const OPEN_ENA_AI_OPERATION_HEADER = "x-open-ena-ai-operation-id";
 export const OPEN_ENA_AI_RETRY_HEADER = "x-open-ena-ai-retry";
+/** Set only after a dispatched attempt is settled. It does not release or replay that operation. */
+export const OPEN_ENA_AI_SETTLED_RETRY_HEADER = "x-open-ena-ai-settled-retry";
+export const OPEN_ENA_AI_OPERATION_ALREADY_PROCESSED_ERROR = "This AI generation operation was already processed.";
 export const OPEN_ENA_AI_OPERATION_ID = /^aiop-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 export type OpenEnaAiLocale = "en" | "zh-hant" | "zh-hans";
