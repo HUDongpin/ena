@@ -20,6 +20,7 @@ const HARD_DEADLINE_MS = 60_000;
 const REMOTE_POLL_INTERVAL_MS = 250;
 const REMOTE_CLEANUP_DEADLINE_MS = 10_000;
 const MAX_REMOTE_METADATA_BYTES = 64 * 1024;
+const SUBMISSION_ERROR_BODY_DEADLINE_MS = 1_000;
 const MAX_REMOTE_ARTIFACT_BYTES = 128 * 1024 * 1024;
 const COMPUTE_CONTRACT_VERSION = "3dena.contract.v1";
 const REMOTE_SUBMISSION_VERSION = "3dena.open-ena-longitudinal-remote-submit.v3";
@@ -423,9 +424,15 @@ function serverErrorCode(value: unknown): string | null {
   return typeof code === "string" && SUBMISSION_ERROR_CODE_PATTERN.test(code) ? code : null;
 }
 
+function isJsonSubmissionContentType(header: string | null): boolean {
+  const media = header?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  return media === "application/json" || media.endsWith("+json");
+}
+
 /**
  * Read a failed same-origin submission body only far enough to keep `error.code`.
- * Non-JSON and oversized bodies keep the HTTP status and still release the stream.
+ * Only a JSON content type is read, and only up to the metadata size within one second.
+ * Any other body, or a read that overflows, stalls, or fails, is cancelled; the HTTP status is kept.
  */
 async function readSubmissionFailure(response: Response): Promise<SubmissionHttpFailureV3> {
   const retryAfter = retryAfterSeconds(response.headers.get("retry-after"));
@@ -434,34 +441,44 @@ async function readSubmissionFailure(response: Response): Promise<SubmissionHttp
     serverCode,
     retryAfterSeconds: retryAfter,
   });
+  const release = () => response.body?.cancel().catch(() => undefined);
+  if (!isJsonSubmissionContentType(response.headers.get("content-type"))) {
+    await release();
+    return failure(null);
+  }
   const declared = response.headers.get("content-length");
   if (declared !== null && (!/^(?:0|[1-9][0-9]{0,15})$/u.test(declared) || Number(declared) > MAX_REMOTE_METADATA_BYTES)) {
-    await response.body?.cancel().catch(() => undefined);
+    await release();
     return failure(null);
   }
   const reader = response.body?.getReader();
   if (!reader) return failure(null);
   const chunks: Uint8Array[] = [];
   let total = 0;
-  let overflow = false;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    reader.cancel().catch(() => undefined);
+  }, SUBMISSION_ERROR_BODY_DEADLINE_MS);
   try {
     while (true) {
       const { done, value } = await reader.read();
+      if (timedOut) return failure(null);
       if (done) break;
       total += value.byteLength;
       if (total > MAX_REMOTE_METADATA_BYTES) {
-        overflow = true;
         await reader.cancel().catch(() => undefined);
-        break;
+        return failure(null);
       }
       chunks.push(value);
     }
   } catch {
+    await reader.cancel().catch(() => undefined);
     return failure(null);
   } finally {
+    clearTimeout(timer);
     reader.releaseLock();
   }
-  if (overflow) return failure(null);
   const bytes = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }

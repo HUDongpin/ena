@@ -762,6 +762,24 @@ test("a rejected remote submission cancels its unread response body", async () =
   assert.equal(cancelled, true);
 });
 
+test("a stalled JSON submission error cancels its body within the read deadline", async () => {
+  clearOpenEnaLongitudinalExecutionCacheV3();
+  const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({ cancel() { cancelled = true; } });
+  const started = Date.now();
+  await assert.rejects(executeOpenEnaLongitudinalPreparedV3(request, {
+    allowRemote: true,
+    remoteEndpoint: "/api/open-ena/longitudinal",
+    fetchImpl: async () => new Response(body, {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    }),
+  }), (error: unknown) => isRecoverableRemoteFailure(error, "REMOTE_SUBMISSION_FAILED"));
+  assert.equal(cancelled, true);
+  assert.ok(Date.now() - started < 5_000);
+});
+
 test("remote artifacts verify decoded bytes when compressed wire Content-Length differs", async () => {
   clearOpenEnaLongitudinalExecutionCacheV3();
   const request = await validOpenEnaLongitudinalRequestV3(500_000, 10_000);
