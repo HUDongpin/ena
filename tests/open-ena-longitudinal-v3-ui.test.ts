@@ -974,7 +974,7 @@ test("typed remote failures preserve one immutable request and expose three expl
   const withoutInference = component.match(
     /const runWithoutInference = async \(\) => \{[\s\S]*?(?=\n  const download = async)/,
   )?.[0] ?? "";
-  assert.match(component, /type WorkbenchStatus =[^;]*"remote-recovery"/);
+  assert.match(component, /WORKBENCH_STATUSES = \[[^\]]* "remote-recovery"/);
   assert.match(component, /retryRemote:\s*"Retry remote"/);
   assert.match(component, /remoteRecoveryTitle:\s*"Persistent compute did not complete"/);
   assert.match(recovery, /status === "remote-recovery"/);
