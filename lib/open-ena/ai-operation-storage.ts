@@ -36,12 +36,34 @@ export function openEnaAiOperationScope(request: OpenEnaAiInterpretationRequest,
 
 type OperationStorage = Pick<Storage, "getItem" | "setItem">;
 const CLOSED_OPERATION = "closed";
+const SETTLED_RETRY_SUFFIX = ":settled-retry";
+
+function settledRetryKey(scope: OpenEnaAiOperationScope) {
+  return `${scope.key}${SETTLED_RETRY_SUFFIX}`;
+}
 
 /** Page-lifetime authority survives remounts when browser storage is restricted.
  * Constructing this store performs no storage access, including during SSR. */
 export function createOpenEnaAiOperationStore(storage: () => OperationStorage) {
   const operations = new Map<string, string | null>();
+  const settledRetries = new Map<string, string | null>();
   const legacyClaims = new Map<string, string>();
+  const clearSettledRetry = (scope: OpenEnaAiOperationScope) => {
+    settledRetries.set(scope.key, null);
+    try { storage().setItem(settledRetryKey(scope), ""); } catch { /* Memory remains authoritative. */ }
+  };
+  const readSettledRetry = (scope: OpenEnaAiOperationScope): string | null => {
+    if (settledRetries.has(scope.key)) return settledRetries.get(scope.key) ?? null;
+    try {
+      const saved = storage().getItem(settledRetryKey(scope));
+      const operation = saved && OPEN_ENA_AI_OPERATION_ID.test(saved) ? saved : null;
+      settledRetries.set(scope.key, operation);
+      return operation;
+    } catch {
+      settledRetries.set(scope.key, null);
+      return null;
+    }
+  };
   const read = (scope: OpenEnaAiOperationScope): string | null => {
     if (operations.has(scope.key)) return operations.get(scope.key) ?? null;
     try {
@@ -77,14 +99,26 @@ export function createOpenEnaAiOperationStore(storage: () => OperationStorage) {
     set(scope: OpenEnaAiOperationScope, operationId: string) {
       operations.set(scope.key, operationId);
       try { storage().setItem(scope.key, operationId); } catch { /* Memory protects retries. */ }
+      if (readSettledRetry(scope) && readSettledRetry(scope) !== operationId) clearSettledRetry(scope);
     },
     close(scope: OpenEnaAiOperationScope, operationId: string) {
       if (operations.get(scope.key) !== operationId) return;
       operations.set(scope.key, null);
+      if (readSettledRetry(scope) === operationId) clearSettledRetry(scope);
       try {
         const saved = storage().getItem(scope.key);
         if (!saved || saved === operationId) storage().setItem(scope.key, CLOSED_OPERATION);
       } catch { /* The page-lifetime tombstone remains authoritative on remount. */ }
+    },
+    markSettledRetry(scope: OpenEnaAiOperationScope, operationId: string) {
+      if (!OPEN_ENA_AI_OPERATION_ID.test(operationId)) return;
+      settledRetries.set(scope.key, operationId);
+      try { storage().setItem(settledRetryKey(scope), operationId); } catch { /* Memory still lets this page's Retry replace it. */ }
+    },
+    consumeSettledRetry(scope: OpenEnaAiOperationScope, operationId: string) {
+      if (readSettledRetry(scope) !== operationId) return false;
+      clearSettledRetry(scope);
+      return true;
     },
   };
 }

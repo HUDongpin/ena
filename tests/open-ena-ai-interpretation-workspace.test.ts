@@ -181,7 +181,7 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
   assert.match(aiComponent, /catch\s*\([^)]*\)\s*\{[\s\S]*?set[A-Za-z]*Error\(/);
   assert.match(
     aiComponent,
-    /role=["']alert["'][\s\S]*?onClick=\{handleGenerateInterpretation\}/,
+    /role=["']alert["'][\s\S]*?handleGenerateInterpretation\(\s*["']replace-settled["']\s*\)/,
     "an error must stay visible beside an explicit Retry action",
   );
   assert.match(aiComponent, /copy\.cancel/);

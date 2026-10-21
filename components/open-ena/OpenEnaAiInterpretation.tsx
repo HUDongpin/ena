@@ -4,9 +4,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
+  OPEN_ENA_AI_OPERATION_ALREADY_PROCESSED_ERROR,
   OPEN_ENA_AI_OPERATION_HEADER,
   OPEN_ENA_AI_OPERATION_ID,
   OPEN_ENA_AI_RETRY_HEADER,
+  OPEN_ENA_AI_SETTLED_RETRY_HEADER,
   parseOpenEnaAiInterpretationResponse,
   type OpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationResponse,
@@ -120,6 +122,20 @@ export function mayRenewOpenEnaAiOperation(response: Response, operationId: stri
     && response.status >= 400
     && response.headers.get(OPEN_ENA_AI_RETRY_HEADER) === "new-operation"
     && response.headers.get(OPEN_ENA_AI_OPERATION_HEADER) === operationId;
+}
+
+/** A settled dispatch may be replaced only by an explicit Retry, and only for this operation id. */
+export function mayReplaceSettledOpenEnaAiOperation(response: Response, operationId: string) {
+  return !response.ok
+    && response.status >= 400
+    && response.headers.get(OPEN_ENA_AI_RETRY_HEADER) !== "new-operation"
+    && response.headers.get(OPEN_ENA_AI_SETTLED_RETRY_HEADER) === "new-operation"
+    && response.headers.get(OPEN_ENA_AI_OPERATION_HEADER) === operationId;
+}
+
+export function openEnaAiVisibleServerMessage(status: number, serverMessage: string, localizedAlreadyProcessed: string) {
+  if (status === 409 && serverMessage === OPEN_ENA_AI_OPERATION_ALREADY_PROCESSED_ERROR) return localizedAlreadyProcessed;
+  return serverMessage;
 }
 
 interface ExecuteOpenEnaAiGenerationInput<T> {
@@ -311,7 +327,7 @@ export default function OpenEnaAiInterpretation({
     };
   }, [generationStatus, aiError, aiRecovery]);
 
-  async function handleGenerateInterpretation() {
+  async function handleGenerateInterpretation(retryMode?: unknown) {
     if (!request || !owner || !operationScope || disabled || !consentGranted || generationStatus === "loading") return;
     const requestedIdentity = requestIdentity;
     const requestedOperationScope = operationScope;
@@ -330,6 +346,14 @@ export default function OpenEnaAiInterpretation({
       setGenerationStatus("idle");
     };
     let operationId = openEnaAiOperationStore.read(requestedOperationScope);
+    if (
+      retryMode === "replace-settled"
+      && operationId
+      && openEnaAiOperationStore.consumeSettledRetry(requestedOperationScope, operationId)
+    ) {
+      openEnaAiOperationStore.close(requestedOperationScope, operationId);
+      operationId = null;
+    }
     if (!operationId || !OPEN_ENA_AI_OPERATION_ID.test(operationId)) {
       operationId = `aiop-${crypto.randomUUID()}`;
       openEnaAiOperationStore.set(requestedOperationScope, operationId);
@@ -379,8 +403,11 @@ export default function OpenEnaAiInterpretation({
               : undefined;
             // Error classifications describe the message, not whether another
             // billable dispatch is safe. Only a current, operation-bound release
-            // proof can close this identity after a failed response.
+            // proof closes this identity. A settled-dispatch proof only arms Retry.
             if (!isStaleGeneration() && mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
+            else if (!isStaleGeneration() && mayReplaceSettledOpenEnaAiOperation(response, operationId)) {
+              openEnaAiOperationStore.markSettledRetry(requestedOperationScope, operationId);
+            }
             const recovery = openEnaAiFailureRecovery(response.status);
             const failureClass = classifyOpenEnaAiPanelFailure({
               status: response.status,
@@ -391,7 +418,8 @@ export default function OpenEnaAiInterpretation({
               && typeof (payload as { error?: unknown }).error === "string"
               ? (payload as { error: string }).error
               : copy.errorTitle;
-            const safeMessage = recovery === "sign-in" ? copy.sessionRecovery : openEnaAiFailureClassMessage(copy, failureClass, payloadMessage);
+            const visibleMessage = openEnaAiVisibleServerMessage(response.status, payloadMessage, copy.operationAlreadyProcessed);
+            const safeMessage = recovery === "sign-in" ? copy.sessionRecovery : openEnaAiFailureClassMessage(copy, failureClass, visibleMessage);
             if (!isStaleGeneration()) {
               setAiRecovery(recovery);
               setAiFailureClass(failureClass);
@@ -563,7 +591,7 @@ export default function OpenEnaAiInterpretation({
               className="ena-inline-link"
               data-ena-ai-recovery="retry"
               disabled={generationStatus === "loading"}
-              onClick={handleGenerateInterpretation}
+              onClick={() => { void handleGenerateInterpretation("replace-settled"); }}
             >
               {copy.retry}
             </button>

@@ -16,9 +16,11 @@ import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
+  OPEN_ENA_AI_OPERATION_ALREADY_PROCESSED_ERROR,
   OPEN_ENA_AI_OPERATION_HEADER,
   OPEN_ENA_AI_OPERATION_ID,
   OPEN_ENA_AI_RETRY_HEADER,
+  OPEN_ENA_AI_SETTLED_RETRY_HEADER,
   parseOpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationRequest,
   type OpenEnaAiInterpretationResponse,
@@ -479,17 +481,23 @@ export function createOpenEnaAiInterpretationPostHandler(
       }
       if (!result.ok || !result.reservation) {
         if (!result.ok && result.reason === "idempotency-replayed") {
-          const replay = jsonResponse({ error: "This AI generation operation was already processed." }, 409);
+          const replay = jsonResponse({ error: OPEN_ENA_AI_OPERATION_ALREADY_PROCESSED_ERROR }, 409);
           try {
             // A lost/cancelled release response must not trap retries forever.
             // Ask the current principal's ledger; an older browser response may
             // belong to another principal after a login in a different tab.
-            if (await store.isReleasedOperation?.({
+            // A settled dispatch is also terminal: the same id is never sent
+            // again, but Retry may start a separate operation.
+            const lookup = {
               principalRef: principal.principalRef,
               resource: "ai-interpretation",
               idempotencyKey: operationId,
-            }) === true) {
+            };
+            if (await store.isReleasedOperation?.(lookup) === true) {
               replay.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
+              replay.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
+            } else if (await store.isSettledDispatchedOperation?.(lookup) === true) {
+              replay.headers.set(OPEN_ENA_AI_SETTLED_RETRY_HEADER, "new-operation");
               replay.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
             }
           } catch { /* Unknown ledger state retains replay protection. */ }
@@ -558,6 +566,7 @@ export function createOpenEnaAiInterpretationPostHandler(
       result = await dependencies.generate(parsedRequest, request.signal);
     } catch (error) {
       let releasedBeforeDispatch = false;
+      let settledRetryableFailure = false;
       let receiptTerminalFailure = false;
       if (consentReceipt && store?.updateAiConsentReceiptStatus) {
         try {
@@ -584,9 +593,11 @@ export function createOpenEnaAiInterpretationPostHandler(
         // from the bounded provider parser remains accountable even if output
         // validation fails; an unknown outcome retains the reserved ceiling.
         const dispatched = errorProperty(error, "providerDispatched") !== false;
+        const failureClass = openEnaAiProviderFailurePresentation(error).failureClass;
         try {
           if (dispatched) {
             await store!.settle(reservation, error instanceof LunaClientError ? error.usage?.costMicroUsd ?? null : null, true);
+            settledRetryableFailure = failureClass === "network" || failureClass === "unavailable";
             try {
               await store!.alert({
                 code: "provider-dispatch-failed",
@@ -611,6 +622,10 @@ export function createOpenEnaAiInterpretationPostHandler(
         : safeProviderFailure(error);
       if (releasedBeforeDispatch) {
         failure.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
+        failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
+      } else if (settledRetryableFailure && !receiptTerminalFailure) {
+        // The settled id stays idempotent. Retry alone may create a new operation.
+        failure.headers.set(OPEN_ENA_AI_SETTLED_RETRY_HEADER, "new-operation");
         failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
       }
       return failure;

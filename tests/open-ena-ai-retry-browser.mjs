@@ -442,7 +442,8 @@ try {
           setRequest(resolved);
           setPanelDisabled(resolved === null);
         };
-        return <Ai operationOwnerKey={owner} request={request} copy={getOpenEnaCopy('en').aiInterpretation} disabled={panelDisabled} disabledReason="Current result required"/>;
+        const locale = window.__openEnaAiLocale || 'en';
+        return <Ai operationOwnerKey={owner} request={request} copy={getOpenEnaCopy(locale).aiInterpretation} disabled={panelDisabled} disabledReason="Current result required"/>;
       }
       createRoot(document.getElementById('root')).render(<Harness />);
     `, loader: "tsx", resolveDir: process.cwd() },
@@ -1082,5 +1083,114 @@ try {
   assert.deepEqual(retryEnter.errors, []);
   await retryEnter.page.close();
 
-  console.log("AI explicit retry: renewed bound release, retained uncertain and malformed operations, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus, retained interpretation boundary PASS");
+  const settledRetryCases = [
+    { name: "settled-unavailable", status: 503, body: { error: "AI interpretation is temporarily unavailable.", failureClass: "unavailable" } },
+    { name: "settled-rate-limit", status: 429, body: { error: "The AI interpretation provider is rate limited. Please try again later.", failureClass: "unavailable" } },
+    { name: "settled-network", status: 502, body: { error: "The AI interpretation provider request failed.", failureClass: "network" } },
+    { name: "settled-timeout", status: 504, body: { error: "The AI interpretation provider timed out.", failureClass: "network" } },
+  ];
+  for (const item of settledRetryCases) {
+    let providerAttempts = 0;
+    const session = await withIdempotentAi(async ({ route, consume }) => {
+      providerAttempts += 1;
+      const id = route.request().headers()["x-open-ena-ai-operation-id"];
+      if (providerAttempts === 1) {
+        consume();
+        return {
+          status: item.status,
+          headers: { "x-open-ena-ai-settled-retry": "new-operation", "x-open-ena-ai-operation-id": id },
+          body: item.body,
+        };
+      }
+      return successDecision(route);
+    });
+    const generate = session.page.getByRole("button", { name: "Generate AI interpretation", exact: true });
+    await generate.click();
+    await session.page.getByRole("alert").waitFor();
+    await generate.click();
+    await session.page.getByText(replayError).waitFor();
+    assert.equal(session.operations[1], session.operations[0], `${item.name}: Generate keeps the settled operation id`);
+    assert.equal(session.statuses[1], 409, item.name);
+    await session.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
+    await session.page.locator(".ena-ai-result").waitFor();
+    assert.notEqual(session.operations.at(-1), session.operations[0], `${item.name}: Retry uses a new operation id`);
+    assert.equal(session.statuses.at(-1), 200, item.name);
+    assert.equal(providerAttempts, 2, `${item.name}: the settled id is not dispatched again`);
+    assert.equal(session.statuses.filter((status) => status === 409).length, 1, item.name);
+    assert.deepEqual(session.errors, [], item.name);
+    await session.page.close();
+  }
+
+  const mismatchedSettlement = await withIdempotentAi(async ({ route, attempt, consume }) => {
+    if (attempt === 1) {
+      consume();
+      return {
+        status: 504,
+        headers: {
+          "x-open-ena-ai-settled-retry": "new-operation",
+          "x-open-ena-ai-operation-id": "aiop-fedcba98-7654-4321-8fed-cba987654321",
+        },
+        body: { error: "The AI interpretation provider timed out.", failureClass: "network" },
+      };
+    }
+    return successDecision(route);
+  });
+  await mismatchedSettlement.page.getByRole("button", { name: "Generate AI interpretation", exact: true }).click();
+  await mismatchedSettlement.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
+  await mismatchedSettlement.page.getByText(replayError).waitFor();
+  assert.equal(mismatchedSettlement.operations[0], mismatchedSettlement.operations[1], "a settled proof for a different operation does not replace this id");
+  await mismatchedSettlement.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
+  await mismatchedSettlement.page.getByText(replayError).waitFor();
+  assert.equal(mismatchedSettlement.operations[2], mismatchedSettlement.operations[0]);
+  assert.deepEqual(mismatchedSettlement.errors, []);
+  await mismatchedSettlement.page.close();
+
+  for (const [locale, message, retryName, generateName] of [
+    ["zh-hant", "此 AI 生成操作已經處理過。", "重試", "生成 AI 解讀"],
+    ["zh-hans", "此 AI 生成操作已经处理过。", "重试", "生成 AI 解读"],
+  ]) {
+    const page = await browser.newPage();
+    const errors = [];
+    const operations = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname !== "/api/open-ena/ai-interpretation") {
+        return route.fulfill({ contentType: "text/html", body: focusDocument });
+      }
+      const id = route.request().headers()["x-open-ena-ai-operation-id"];
+      operations.push(id);
+      if (operations.length === 1) {
+        return route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          headers: { "x-open-ena-ai-settled-retry": "new-operation", "x-open-ena-ai-operation-id": id },
+          body: JSON.stringify({ error: replayError }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(syntheticInterpretation(route.request().postDataJSON())),
+      });
+    });
+    await page.goto("http://localhost:32119");
+    await page.evaluate((value) => { window.__openEnaAiLocale = value; }, locale);
+    await page.addScriptTag({ content: focusHarness.outputFiles[0].text });
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: generateName, exact: true }).click();
+    const alert = page.getByRole("alert");
+    await alert.waitFor();
+    const alertText = await alert.innerText();
+    assert.match(alertText, new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), locale);
+    assert.equal(alertText.includes(replayError), false, `${locale} must not show the English 409 text`);
+    await alert.getByRole("button", { name: retryName }).click();
+    await page.locator(".ena-ai-result").waitFor();
+    assert.equal(operations.length, 2, locale);
+    assert.notEqual(operations[0], operations[1], `${locale} Retry after a settled 409 uses a new operation id`);
+    assert.deepEqual(errors, [], locale);
+    await page.close();
+  }
+
+  console.log("AI explicit retry: renewed bound release, retained uncertain and malformed operations, settled timeout/network/unavailable Retry uses a new id, localized 409, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus, retained interpretation boundary PASS");
 } finally { await browser.close(); }
