@@ -455,15 +455,27 @@ Hindi, Russian, Indonesian, and Bengali.
 The billable AI and longitudinal routes require a verified durable v2 or v3 session principal and a configured billing policy. They fail closed when the account ID, database/policy values, or provider hard-cap check is absent or malformed. Apply `migrations/001_open_ena_billable.sql` with a PostgreSQL operator before enabling a durable deployment; the migration uses server UTC time and idempotent reservation keys. Configure the OpenRouter `/key` monthly hard limit at or below both the provider and global ceilings. Security alerts are redacted and written to the outbox; an HTTPS webhook delivery worker may consume that outbox.
 
 Open ENA authentication also requires the shared PostgreSQL security migration
-(`migrations/002_open_ena_auth_security.sql`) and `OPEN_ENA_AUTH_DATABASE_URL`.
-Every login attempt is bounded to 16 KiB before URL-encoded parsing and consumes
-durable source/account attempt windows; a database outage fails closed. Login
-uses a five-attempt per attributed source ceiling and a ten-attempt fallback
-account ceiling within a 15-minute window.
-Set `OPEN_ENA_TRUSTED_CLIENT_IP_HEADER` only to a header that an operator-owned
-edge proxy forcibly rewrites or strips; an arbitrary client-supplied IP header is
-not a trust boundary. If that guarantee is unavailable, leave it blank so every
-request uses the shared account ceiling.
+(`migrations/002_open_ena_auth_security.sql`), the login-failure migration
+(`migrations/009_open_ena_login_failure_windows.sql`), and `OPEN_ENA_AUTH_DATABASE_URL`.
+Every login attempt is bounded to 16 KiB before URL-encoded parsing. Failed
+credentials are counted per trimmed, case-sensitive username and trusted source
+(10 in 15 minutes) and per source across usernames (50 in 15 minutes). Successful
+sign-ins do not consume that allowance and clear only their own pair. A database
+outage or a missing trusted client address fails closed. There is no
+deployment-wide account lock.
+Set `OPEN_ENA_TRUSTED_CLIENT_IP_HEADER=x-ena-client-ip`. The edge proxy must
+overwrite `X-ENA-Client-IP` with the real client address (`proxy_set_header
+X-ENA-Client-IP $remote_addr;`). Forwarded chains and any other client header
+are ignored. A missing or unusable value is rejected; it is not added to a
+shared unattributed bucket. After migration 009, grant the non-superuser app
+role `SELECT, INSERT, UPDATE, DELETE` on `open_ena_login_failure_windows` and
+`EXECUTE` on `open_ena_login_failure_guard(text,text,integer,integer,integer)`,
+`open_ena_record_login_failure(text,text,integer,integer,integer)`,
+`open_ena_clear_login_pair(text,text)`, and
+`open_ena_prune_login_failure_windows(integer)`. Do not drop migration 002's
+attempt or session objects: the previous runtime still calls
+`open_ena_consume_login_attempt`. Apply 009 before starting this build, and
+leave the new objects in place if you roll the application back.
 Plugin Lab submission and status-access throttles use the same explicitly
 trusted, single-IP header. They ignore other forwarding headers and User-Agent.
 Without a valid trusted address, all unattributed visitors share the respective

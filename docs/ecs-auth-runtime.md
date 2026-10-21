@@ -52,9 +52,12 @@ atomically replaces the environment file with mode `0600`, restarts only
 2. The cookie grants access to the authenticated workbench.
 3. Logout succeeds and replaying the old cookie returns the login form.
 
-Verification uses the loopback listener with the public `Host` and `Origin`.
-Inherited HTTP proxies are disabled for these requests. Cookies remain in memory;
-the JSON receipt records only status, check results, and non-secret metadata.
+Verification uses the loopback listener with the public `Host` and `Origin`
+and an explicit `X-ENA-Client-IP: 127.0.0.1` header, because loopback traffic
+does not pass through the proxy that overwrites that header. The preflight also
+requires migration 009's login-failure functions. Inherited HTTP proxies are
+disabled for these requests. Cookies remain in memory; the JSON receipt records
+only status, check results, and non-secret metadata.
 
 A failure after the environment write restores the previous file and restarts
 the same service. This includes a rejected or rate-limited verification login.
