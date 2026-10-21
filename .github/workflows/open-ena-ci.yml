@@ -96,6 +96,7 @@ jobs:
       OPEN_ENA_ACCOUNT_ID: open-ena-ci-account
       OPEN_ENA_PUBLIC_ORIGIN: http://127.0.0.1
       OPEN_ENA_ALLOWED_ORIGINS: http://127.0.0.1
+      OPEN_ENA_TRUSTED_CLIENT_IP_HEADER: x-ena-client-ip
       OPEN_ENA_AUTH_DATABASE_URL: postgresql://open_ena_ci:open_ena_ci_password_2026@127.0.0.1:5432/open_ena_ci
       OPEN_ENA_BILLING_POLICY_VERSION: v1
       OPEN_ENA_BILLABLE_REQUESTS_PER_MINUTE: "6"
@@ -130,7 +131,7 @@ jobs:
       - name: Initialize isolated Open ENA PostgreSQL schema in migration order
         run: |
           set -euo pipefail
-          for migration in migrations/001_open_ena_billable.sql migrations/002_open_ena_auth_security.sql migrations/003_open_ena_ai_consent.sql migrations/004_open_ena_disposable_accounts.sql migrations/005_ena_plugin_lab.sql migrations/006_open_ena_billable_leases.sql migrations/007_open_ena_ai_consent_idempotency.sql migrations/008_open_ena_disposable_expiry_after_lock.sql; do
+          for migration in migrations/001_open_ena_billable.sql migrations/002_open_ena_auth_security.sql migrations/003_open_ena_ai_consent.sql migrations/004_open_ena_disposable_accounts.sql migrations/005_ena_plugin_lab.sql migrations/006_open_ena_billable_leases.sql migrations/007_open_ena_ai_consent_idempotency.sql migrations/008_open_ena_disposable_expiry_after_lock.sql migrations/009_open_ena_login_failure_windows.sql; do
             echo "Applying ${migration}"
             psql "${OPEN_ENA_CI_DATABASE_URL}" --set ON_ERROR_STOP=1 --file "${migration}"
           done
@@ -297,9 +298,11 @@ jobs:
           node tests/review-server-migration-006-upgrade.mjs --evidence-dir output/review-regressions/migration-006
           node tests/review-server-migration-007-upgrade.mjs --evidence-dir output/review-regressions/migration-007
           node --import tsx tests/review-server-migration-008-upgrade.mts --evidence-dir output/review-regressions/migration-008
+          node --import tsx tests/open-ena-login-throttle-postgres.mts
           node --import tsx tests/review-server-plugin-transactions.mjs
       - name: Verify AI operation ownership, release proofs, and explicit retries
         run: |
+          node --import tsx tests/open-ena-ai-settled-postgres.mts
           node tests/open-ena-ai-operation-retry-browser.mjs
           node tests/review-ui-ai-operation-ownership-browser.mjs output/review-regressions/ai-operation-ownership.json
           node --import tsx tests/review-ai-request-scope-browser.mts output/review-regressions/ai-request-scope.json
@@ -309,6 +312,8 @@ jobs:
               node --import tsx tests/review-ai-late-renewal-browser.mts "$PWD" "output/review-regressions/ai-late-$store-$scenario.json" "$scenario" "$store"
             done
           done
+      - name: Verify localized native login and logout recovery
+        run: node --import tsx tests/open-ena-login-recovery-browser.mts
       - name: Verify data admission, cancellation, consent, and import ownership
         run: |
           node --import tsx tests/ena-plugin-consent-binding-browser.mjs
@@ -316,6 +321,7 @@ jobs:
           node tests/open-ena-model-v3-order-clear-browser.mjs
           node tests/open-ena-pairwise-empty-group-browser.mjs
           node tests/open-ena-longitudinal-preparation-cancel-browser.mjs
+          node tests/open-ena-longitudinal-recovery-browser.mjs
           node tests/review-data-xlsx-browser.mjs
           node tests/review-artifact-utf8-browser.mjs output/review-regressions/artifact-utf8
           node tests/review-csv-utf8-browser.mjs output/review-regressions/csv-utf8

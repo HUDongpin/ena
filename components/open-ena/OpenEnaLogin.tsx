@@ -4,7 +4,9 @@ import type { ReactNode } from "react";
 import type { Locale } from "@/lib/i18n";
 import {
   getOpenEnaAuthCopy,
+  openEnaLoginNoticeText,
   OPEN_ENA_CONTACT_EMAIL,
+  type OpenEnaLoginNotice,
 } from "@/lib/open-ena-auth-copy";
 import { isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
@@ -12,7 +14,7 @@ import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 
 interface OpenEnaLoginProps {
   locale: Locale;
-  error: boolean;
+  notice: OpenEnaLoginNotice;
   configurationReady: boolean;
 }
 
@@ -29,8 +31,26 @@ export function OpenEnaLoginFrame({ locale, children }: { locale: Locale; childr
   );
 }
 
-export default function OpenEnaLogin({ locale, error, configurationReady }: OpenEnaLoginProps) {
+export function OpenEnaAuthRecoveryNotice({
+  locale,
+  notice,
+}: {
+  locale: Locale;
+  notice: OpenEnaLoginNotice;
+}) {
+  if (notice.kind !== "logout-unavailable") return null;
   const copy = getOpenEnaAuthCopy(locale);
+  return (
+    <p className="open-ena-login-error" role="alert">
+      {copy.logoutUnavailable}
+    </p>
+  );
+}
+
+export default function OpenEnaLogin({ locale, notice, configurationReady }: OpenEnaLoginProps) {
+  const copy = getOpenEnaAuthCopy(locale);
+  const invalidCredentials = notice.kind === "invalid";
+  const alertText = openEnaLoginNoticeText(copy, notice);
   const pluginCopy = getPluginLabCopy(locale);
   const [noticeBeforeEmail, noticeAfterEmail = ""] = copy.collaborationNotice.split(
     OPEN_ENA_CONTACT_EMAIL,
@@ -92,8 +112,8 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
               type="text"
               autoComplete="username"
               placeholder={copy.usernamePlaceholder}
-              aria-invalid={error}
-              aria-describedby={error ? "open-ena-login-error" : undefined}
+              aria-invalid={invalidCredentials}
+              aria-describedby={alertText ? "open-ena-login-error" : undefined}
               required
               autoFocus
             />
@@ -105,14 +125,14 @@ export default function OpenEnaLogin({ locale, error, configurationReady }: Open
               type="password"
               autoComplete="current-password"
               placeholder={copy.passwordPlaceholder}
-              aria-invalid={error}
-              aria-describedby={error ? "open-ena-login-error" : undefined}
+              aria-invalid={invalidCredentials}
+              aria-describedby={alertText ? "open-ena-login-error" : undefined}
               required
             />
 
-            {error ? (
+            {alertText ? (
               <p id="open-ena-login-error" className="open-ena-login-error" role="alert">
-                {copy.invalidCredentials}
+                {alertText}
               </p>
             ) : null}
 

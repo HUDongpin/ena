@@ -1138,6 +1138,10 @@ export interface OpenEnaAiInterpretationCopy {
   failureUnavailable: string;
   failureNetwork: string;
   failureInvalidOutput: string;
+  operationAlreadyProcessed: string;
+  generateNew: string;
+  newGenerationWarning: string;
+  operationUnconfirmed: string;
   evidenceBoundary: string;
   evidenceBoundaryRetained: string;
   previousInterpretation: string;
@@ -3348,9 +3352,13 @@ const en: OpenEnaCopy = {
     sessionRecovery: "Your Open ENA session is missing or no longer valid. Sign in again, then return to generate an interpretation.",
     signInAgain: "Sign in again",
     signInNewTab: "Opens in a new tab",
-    failureUnavailable: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
-    failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out. Check your connection, then retry this request.",
-    failureInvalidOutput: "The model returned output that could not be used as an interpretation. Retry this request to ask for a new interpretation.",
+    failureUnavailable: "AI interpretation is temporarily unavailable or rate limited.",
+    failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out.",
+    failureInvalidOutput: "The model returned output that could not be used as an interpretation.",
+    operationAlreadyProcessed: "This AI generation operation was already processed.",
+    generateNew: "Generate a new interpretation",
+    newGenerationWarning: "This starts a separate AI generation and may incur additional charges. The final charge for the previous attempt is not confirmed here.",
+    operationUnconfirmed: "This request cannot be safely repeated. Continue with the local ENA results, or reload the workspace to recheck the request. Reloading may discard unsaved work; export it first.",
     evidenceBoundary: "The computed ENA model results are still valid. Only the AI interpretation is missing.",
     evidenceBoundaryRetained: "The ENA model results remain valid. This new AI interpretation attempt failed; the interpretation shown below is from an earlier request for the same evidence.",
     previousInterpretation: "Previous interpretation",
@@ -3797,9 +3805,13 @@ const zhHant: OpenEnaCopy = {
     sessionRecovery: "您的開放 ENA 工作階段不存在或已失效。請重新登入，再回到此處生成解讀。",
     signInAgain: "重新登入",
     signInNewTab: "在新分頁開啟",
-    failureUnavailable: "AI 解讀暫時無法使用，或已達到請求次數限制。請稍候，再重試此請求。",
-    failureNetwork: "AI 解讀請求因網絡問題或逾時而未完成。請檢查連線，再重試此請求。",
-    failureInvalidOutput: "模型傳回的內容無法用作解讀。請重試此請求，以重新生成解讀。",
+    failureUnavailable: "AI 解讀暫時無法使用，或已達到請求次數限制。",
+    failureNetwork: "AI 解讀請求因網絡問題或逾時而未完成。",
+    failureInvalidOutput: "模型傳回的內容無法用作解讀。",
+    operationAlreadyProcessed: "此 AI 生成操作已經處理過。",
+    generateNew: "重新生成一份解讀",
+    newGenerationWarning: "這會啟動另一次 AI 生成，可能產生額外費用。此處無法確認前一次嘗試的最終收費。",
+    operationUnconfirmed: "目前無法安全地重複此請求。您可繼續使用本機 ENA 結果，或重新載入工作區以再次檢查請求。重新載入可能遺失未儲存的工作，請先匯出。",
     evidenceBoundary: "已計算的 ENA 模型結果仍然有效。缺少的只是 AI 解讀。",
     evidenceBoundaryRetained: "ENA 模型結果仍然有效。這次新的 AI 解讀嘗試失敗；下方顯示的解讀來自較早對同一證據的請求。",
     previousInterpretation: "先前的解讀",
@@ -4210,9 +4222,13 @@ const zhHans: OpenEnaCopy = {
     sessionRecovery: "您的开放 ENA 会话不存在或已失效。请重新登录，再回到此处生成解读。",
     signInAgain: "重新登录",
     signInNewTab: "在新标签页打开",
-    failureUnavailable: "AI 解读暂时无法使用，或已达到请求次数限制。请稍候，再重试此请求。",
-    failureNetwork: "AI 解读请求因网络问题或超时而未完成。请检查连接，再重试此请求。",
-    failureInvalidOutput: "模型返回的内容无法用作解读。请重试此请求，以重新生成解读。",
+    failureUnavailable: "AI 解读暂时无法使用，或已达到请求次数限制。",
+    failureNetwork: "AI 解读请求因网络问题或超时而未完成。",
+    failureInvalidOutput: "模型返回的内容无法用作解读。",
+    operationAlreadyProcessed: "此 AI 生成操作已经处理过。",
+    generateNew: "重新生成一份解读",
+    newGenerationWarning: "这会启动另一次 AI 生成，可能产生额外费用。此处无法确认前一次尝试的最终收费。",
+    operationUnconfirmed: "当前无法安全地重复此请求。您可继续使用本地 ENA 结果，或重新加载工作区以再次检查请求。重新加载可能丢失未保存的工作，请先导出。",
     evidenceBoundary: "已计算的 ENA 模型结果仍然有效。缺少的只是 AI 解读。",
     evidenceBoundaryRetained: "ENA 模型结果仍然有效。这次新的 AI 解读尝试失败；下方显示的解读来自较早对同一证据的请求。",
     previousInterpretation: "先前的解读",
