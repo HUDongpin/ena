@@ -974,7 +974,7 @@ test("typed remote failures preserve one immutable request and expose three expl
   const withoutInference = component.match(
     /const runWithoutInference = async \(\) => \{[\s\S]*?(?=\n  const download = async)/,
   )?.[0] ?? "";
-  assert.match(component, /type WorkbenchStatus =[^;]*"remote-recovery"/);
+  assert.match(component, /WORKBENCH_STATUSES = \[[^\]]* "remote-recovery"/);
   assert.match(component, /retryRemote:\s*"Retry remote"/);
   assert.match(component, /remoteRecoveryTitle:\s*"Persistent compute did not complete"/);
   assert.match(recovery, /status === "remote-recovery"/);
@@ -984,8 +984,16 @@ test("typed remote failures preserve one immutable request and expose three expl
   );
   assert.match(
     recovery,
-    /pendingRun[\s\S]*?runPrepared\(pendingRun, \{ allowRemote: true \}\)[\s\S]*?copy\.retryRemote/,
+    /remoteFailure\.canRetryRemote \|\| remoteFailure\.code === "REMOTE_RATE_LIMITED" \? <button type="button" disabled=\{remoteWaitSeconds > 0\} onClick=\{\(\) => pendingRun && void runPrepared\(pendingRun, \{ allowRemote: true \}\)\}>\{copy\.retryRemote\}<\/button> : null/,
   );
+  assert.match(component, /failure\.code === "REMOTE_AUTH_REQUIRED"/);
+  assert.match(component, /failure\.code === "REMOTE_RATE_LIMITED"/);
+  assert.match(component, /remoteAuthRequired:\s*"Your Open ENA session has expired\. Sign in again, then return to this trajectory task\."/);
+  assert.match(component, /remoteAuthRequired:\s*"您的开放 ENA 会话已失效。请重新登录，再回到此轨迹任务。"/);
+  assert.match(component, /remoteAuthRequired:\s*"您的開放 ENA 工作階段已失效。請重新登入，再回到此軌跡任務。"/);
+  assert.match(component, /remoteRateLimitedWait: \(seconds: number\) => `Persistent compute is rate limited\. Wait \$\{seconds\} seconds before trying the remote task again\.`/);
+  assert.match(component, /remoteRateLimitedWait: \(seconds: number\) => `持久计算已达到请求次数限制。请等待 \$\{seconds\} 秒，再尝试远端任务。`/);
+  assert.match(component, /remoteRateLimitedWait: \(seconds: number\) => `持久計算已達到請求次數限制。請等待 \$\{seconds\} 秒，再嘗試遠端任務。`/);
   assert.match(
     recovery,
     /pendingRun[\s\S]*?runPrepared\(pendingRun, \{ forceLocal: true \}\)[\s\S]*?copy\.continueLocal/,

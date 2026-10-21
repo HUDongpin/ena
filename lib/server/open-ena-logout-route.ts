@@ -7,6 +7,11 @@ import {
 } from "@/lib/open-ena-auth";
 import { resolveOpenEnaRequestOrigin } from "@/lib/open-ena-auth-request";
 import {
+  openEnaAuthNavigationResponse,
+  openEnaDocumentNavigation,
+  openEnaNativeRejectionResponse,
+} from "@/lib/server/open-ena-auth-navigation";
+import {
   createProductionOpenEnaAuthSecurityStore,
   openEnaAuthFailureBody,
   openEnaAuthFailureHeaders,
@@ -90,6 +95,21 @@ function authFailure(reason: OpenEnaAuthFailureReason) {
   return noStore(openEnaAuthFailureBody(reason), 503, openEnaAuthFailureHeaders(reason));
 }
 
+async function failClosed(
+  request: Request,
+  origin: string,
+  reason: OpenEnaAuthFailureReason,
+) {
+  if (!openEnaDocumentNavigation(request.headers)) return authFailure(reason);
+  let locale: Locale = "en";
+  try {
+    locale = await readLogoutLocale(request);
+  } catch {
+    locale = "en";
+  }
+  return openEnaAuthNavigationResponse(origin, locale, "logout-unavailable");
+}
+
 function clearSessionCookie(response: NextResponse, environment: OpenEnaAuthEnvironment) {
   response.cookies.set({
     name: OPEN_ENA_SESSION_COOKIE,
@@ -116,17 +136,22 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
       new URL(request.url).origin,
       environment,
     );
-    if (!requestOrigin) return noStore("Invalid request origin", 403);
+    const documentNavigation = openEnaDocumentNavigation(request.headers);
+    if (!requestOrigin) {
+      return documentNavigation
+        ? openEnaNativeRejectionResponse(403, "origin", request.headers)
+        : noStore("Invalid request origin", 403);
+    }
     if (!openEnaAuthSecurityConfigurationReady(environment)) {
-      return authFailure("not-configured");
+      return failClosed(request, requestOrigin, "not-configured");
     }
     let securityStore: OpenEnaAuthSecurityStore | null;
     try {
       securityStore = await securityStoreFactory();
     } catch {
-      return authFailure("store-error");
+      return failClosed(request, requestOrigin, "store-error");
     }
-    if (!securityStore) return authFailure("store-unavailable");
+    if (!securityStore) return failClosed(request, requestOrigin, "store-unavailable");
 
     const principal = verifyOpenEnaSessionTokenAny(
       cookieValue(request.headers, OPEN_ENA_SESSION_COOKIE),
@@ -138,7 +163,7 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
         await securityStore.revokeSession(principal.jti, principal.expiresAtSeconds);
       } catch {
         // Clearing a cookie without persisting revocation leaves a replayable token.
-        return authFailure("store-error");
+        return failClosed(request, requestOrigin, "store-error");
       }
     }
 
@@ -146,8 +171,14 @@ export function createOpenEnaLogoutPostHandler(dependencies: LogoutRouteDependen
     try {
       locale = await readLogoutLocale(request);
     } catch (error) {
-      if (error instanceof LogoutBodyTooLargeError) return noStore("Logout request is too large", 413);
-      return noStore("Invalid logout request", 400);
+      if (error instanceof LogoutBodyTooLargeError) {
+        return documentNavigation
+          ? openEnaNativeRejectionResponse(413, "too-large", request.headers)
+          : noStore("Logout request is too large", 413);
+      }
+      return documentNavigation
+        ? openEnaNativeRejectionResponse(400, "invalid", request.headers)
+        : noStore("Invalid logout request", 400);
     }
     const response = NextResponse.redirect(new URL(`/${locale}/open-ena`, requestOrigin), { status: 303 });
     clearSessionCookie(response, environment);

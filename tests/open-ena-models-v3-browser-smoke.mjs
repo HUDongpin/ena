@@ -29,7 +29,7 @@ function sourceManifest() {
 const credentials = { username: `task37_${randomBytes(12).toString("hex")}`, password: randomBytes(32).toString("hex"), secret: randomBytes(32).toString("hex"), account: `task37_${randomBytes(12).toString("hex")}` };
 const redact = value => Object.values(credentials).reduce((text, secret) => text.replaceAll(secret, "[redacted]"), String(value)).replace(/ws:\/\/[^\s]+\/devtools\/browser\/[^\s]+/g, "[redacted browser endpoint]").replace(/(postgresql:\/\/)[^\s]+/gu, "$1[redacted]");
 const receipt = { status: "running", directory, sourceGitSha: null, parentGitSha: null, node: process.version, npm: null, npmPath: null, harnessPid: process.pid, harnessParentPid: process.ppid, journeys: [], screenshots: [], errors: [], zoomMechanism: "CSS zoom: 2; reflow evidence, not native browser zoom", visualInspection: { status: "pending", actor: "agent" } };
-const env = { ...process.env, NEXT_DIST_DIR: ".next", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account, OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", NEXT_TELEMETRY_DISABLED: "1", npm_config_cache: join(directory, "npm-cache") };
+const env = { ...process.env, NEXT_DIST_DIR: ".next", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account, OPEN_ENA_TRUSTED_CLIENT_IP_HEADER: "x-ena-client-ip", OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", NEXT_TELEMETRY_DISABLED: "1", npm_config_cache: join(directory, "npm-cache") };
 async function port() { return new Promise((yes, no) => { const server = createServer(); server.once("error", no); server.listen(0, "127.0.0.1", () => { const value = server.address().port; server.close(error => error ? no(error) : yes(value)); }); }); }
 let database, databaseEntry, browserEntry, serverEntry, browser, page;
 const browserProfile = join(directory, "browser-profile");
@@ -63,6 +63,9 @@ async function startDatabase() {
         }
     }, 60000);
     await child("psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(value), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/002_open_ena_auth_security.sql")], env, "auth-migration.log", 60000);
+    await child("psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(value), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/004_open_ena_disposable_accounts.sql")], env, "disposable-migration.log", 60000);
+    await child("psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(value), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/008_open_ena_disposable_expiry_after_lock.sql")], env, "disposable-expiry-migration.log", 60000);
+    await child("psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(value), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/009_open_ena_login_failure_windows.sql")], env, "login-throttle-migration.log", 60000);
     return `postgresql://postgres@127.0.0.1:${value}/postgres`;
 }
 async function waitForHttp(url, label) {
@@ -754,7 +757,7 @@ async function main() {
     browser = await lifecycle.stage("browser connection", () => chromium.connectOverCDP(`http://127.0.0.1:${browserPort}`, { timeout: 30000 }), 30000);
     receipt.browser = { version: browser.version(), revision: metadata.revision, packageVersion: "1.62.1", executablePath: chromium.executablePath() };
     assert.equal(browser.version(), metadata.browserVersion);
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true, extraHTTPHeaders: { "x-ena-client-ip": "127.0.0.1" } });
     await context.addInitScript(() => {
         window.__task37WorkerAudit = [];
         const NativeWorker = window.Worker;

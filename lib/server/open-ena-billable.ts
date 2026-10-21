@@ -223,6 +223,12 @@ export type BillableStore = {
     resource: string;
     idempotencyKey: string;
   }): Promise<boolean>;
+  /** Read-only proof that this operation was settled after dispatch. Unknown is false. */
+  isSettledDispatchedOperation?(input: {
+    principalRef: string;
+    resource: string;
+    idempotencyKey: string;
+  }): Promise<boolean>;
   settle(reservation: Reservation, actualMicroUsd: number | null, dispatched: boolean): Promise<void>;
   release(reservation: Reservation): Promise<void>;
   consumeQuota(
@@ -518,6 +524,11 @@ export class MemoryBillableStore implements BillableStore {
     return record?.status === "released" && record.reservation.dispatched === false;
   }
 
+  async isSettledDispatchedOperation(input: { principalRef: string; resource: string; idempotencyKey: string }) {
+    const record = this.reservationsByKey.get(usageKey(input.principalRef, input.resource, input.idempotencyKey));
+    return record?.status === "settled" && record.reservation.dispatched === true;
+  }
+
   async release(reservation: Reservation) {
     const record = this.reservationsById.get(reservation.id);
     if (!record || record.status !== "reserved") return;
@@ -763,6 +774,13 @@ export function createPostgresBillableStore(query: Query): BillableStore {
         [input.principalRef, input.resource, input.idempotencyKey],
       );
       return result.rows.length === 1 && result.rows[0]?.released === true;
+    },
+    async isSettledDispatchedOperation(input) {
+      const result = await query(
+        "SELECT status = 'settled' AND dispatched = true AS settled FROM open_ena_billable_reservations WHERE principal_ref = $1 AND resource = $2 AND idempotency_key = $3",
+        [input.principalRef, input.resource, input.idempotencyKey],
+      );
+      return result.rows.length === 1 && result.rows[0]?.settled === true;
     },
     async release(reservation) {
       await query("SELECT open_ena_release_billable($1)", [reservation.id]);

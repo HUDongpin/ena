@@ -1400,8 +1400,9 @@ try {
   let baselineScientificIdentity = null;
   // Four exact isolated runs: each phase gets its own browser context and page.
   for (let run = 0; run < 4; run += 1) {
-    const a11yContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-    const perfContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const trustedHeaders = { extraHTTPHeaders: { "x-ena-client-ip": "127.0.0.1" } };
+    const a11yContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...trustedHeaders });
+    const perfContext = await browser.newContext({ viewport: { width: 1440, height: 900 }, ...trustedHeaders });
     try {
       const a11yPage = await a11yContext.newPage(), perfPage = await perfContext.newPage();
       runtime.observePage(a11yPage); runtime.observePage(perfPage);

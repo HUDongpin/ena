@@ -1,7 +1,9 @@
 import { OPEN_ENA_AI_OWNER_HEADER, openEnaAiOperationOwnerKey } from "../lib/open-ena/ai-operation-owner";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mayRenewOpenEnaAiOperation } from "../components/open-ena/OpenEnaAiInterpretation";
+import { mayRenewOpenEnaAiOperation, mayReplaceSettledOpenEnaAiOperation } from "../components/open-ena/OpenEnaAiInterpretation";
+import { createOpenEnaAiOperationStore, openEnaAiOperationScope } from "../lib/open-ena/ai-operation-storage";
+import { createPostgresBillableStore } from "../lib/server/open-ena-billable";
 import {
   OPEN_ENA_AI_CONSENT_VALUE,
   parseOpenEnaAiInterpretationRequest,
@@ -96,7 +98,7 @@ async function assertOnlyOneReservationCharged(store: MemoryBillableStore) {
 }
 
 for (const dispatchVerdict of ["dispatched", "unknown"] as const) {
-  test(`repeated retries retain operation identity and accounting after ${dispatchVerdict} provider failure`, async () => {
+  test(`repeated same-id retries stay idempotent after ${dispatchVerdict} network failure`, async () => {
     const store = new SyntheticDurableBillableStore();
     let providerCalls = 0;
     const post = handler(store, async () => {
@@ -110,7 +112,11 @@ for (const dispatchVerdict of ["dispatched", "unknown"] as const) {
       const response = await post(request(FIRST_OPERATION));
       assert.equal(response.status, expectedStatus);
       assert.equal(response.headers.get("x-open-ena-ai-retry"), null);
+      assert.equal(response.headers.get("x-open-ena-ai-settled-retry"), "new-operation");
+      assert.equal(response.headers.get("x-open-ena-ai-operation-id"), FIRST_OPERATION);
       assert.equal(mayRenewOpenEnaAiOperation(response, FIRST_OPERATION), false);
+      assert.equal(mayReplaceSettledOpenEnaAiOperation(response, FIRST_OPERATION), true);
+      assert.equal(mayReplaceSettledOpenEnaAiOperation(response, NEW_OPERATION), false);
     }
     assert.equal(providerCalls, 1);
     await assertOnlyOneReservationCharged(store);
@@ -133,7 +139,10 @@ test("409 retries do not start overlapping generation even when concurrency two 
     for (let retry = 0; retry < 2; retry += 1) {
       const response = await post(request(FIRST_OPERATION));
       assert.equal(response.status, 409);
+      assert.equal(response.headers.get("x-open-ena-ai-retry"), null);
+      assert.equal(response.headers.get("x-open-ena-ai-settled-retry"), null);
       assert.equal(mayRenewOpenEnaAiOperation(response, FIRST_OPERATION), false);
+      assert.equal(mayReplaceSettledOpenEnaAiOperation(response, FIRST_OPERATION), false);
     }
     assert.equal(providerCalls, 1);
   } finally {
@@ -159,7 +168,114 @@ test("explicit pre-dispatch release permits a fresh operation without charging t
   assert.equal(failed.status, 503);
   assert.equal(mayRenewOpenEnaAiOperation(failed, FIRST_OPERATION), true);
   assert.equal(mayRenewOpenEnaAiOperation(failed, NEW_OPERATION), false);
+  assert.equal(failed.headers.get("x-open-ena-ai-settled-retry"), null);
+  assert.equal(mayReplaceSettledOpenEnaAiOperation(failed, FIRST_OPERATION), false);
   assert.equal((await post(request(NEW_OPERATION))).status, 200);
   assert.equal(generatorCalls, 2);
   await assertOnlyOneReservationCharged(store);
+});
+
+for (const [code, status] of [
+  ["upstream-timeout", 504],
+  ["upstream-network", 502],
+  ["upstream-unavailable", 503],
+  ["upstream-rate-limited", 429],
+] as const) {
+  test(`settled ${code} keeps the old operation idempotent and dispatches a new one`, async () => {
+    const store = new SyntheticDurableBillableStore();
+    let providerCalls = 0;
+    const post = handler(store, async () => {
+      providerCalls += 1;
+      if (providerCalls === 1) {
+        throw Object.assign(new Error("Synthetic settled provider failure"), {
+          code, providerDispatched: true,
+        });
+      }
+      return RESULT;
+    });
+    const failed = await post(request(FIRST_OPERATION));
+    assert.equal(failed.status, status);
+    assert.equal(failed.headers.get("x-open-ena-ai-retry"), null);
+    assert.equal(failed.headers.get("x-open-ena-ai-settled-retry"), "new-operation");
+    assert.equal(mayRenewOpenEnaAiOperation(failed, FIRST_OPERATION), false);
+    assert.equal(mayReplaceSettledOpenEnaAiOperation(failed, FIRST_OPERATION), true);
+    const replay = await post(request(FIRST_OPERATION));
+    assert.equal(replay.status, 409);
+    assert.equal(replay.headers.get("x-open-ena-ai-retry"), null);
+    assert.equal(replay.headers.get("x-open-ena-ai-settled-retry"), "new-operation");
+    assert.equal(providerCalls, 1);
+    assert.equal((await post(request(NEW_OPERATION))).status, 200);
+    assert.equal(providerCalls, 2);
+    assert.equal((await post(request(FIRST_OPERATION))).status, 409);
+    assert.equal(providerCalls, 2);
+  });
+}
+
+test("an unclassified or invalid settled failure does not arm replacement until the terminal replay", async () => {
+  for (const code of [undefined, "upstream-malformed"] as const) {
+    const store = new SyntheticDurableBillableStore();
+    const post = handler(store, async () => {
+      throw Object.assign(new Error("Synthetic settled failure"), {
+        ...(code ? { code } : {}),
+        providerDispatched: true,
+      });
+    });
+    const failed = await post(request(FIRST_OPERATION));
+    assert.equal(failed.headers.get("x-open-ena-ai-retry"), null);
+    assert.equal(failed.headers.get("x-open-ena-ai-settled-retry"), null);
+    assert.equal(mayReplaceSettledOpenEnaAiOperation(failed, FIRST_OPERATION), false);
+    const replay = await post(request(FIRST_OPERATION));
+    assert.equal(replay.status, 409);
+    assert.equal(replay.headers.get("x-open-ena-ai-retry"), null);
+    assert.equal(replay.headers.get("x-open-ena-ai-settled-retry"), "new-operation");
+    assert.equal(mayRenewOpenEnaAiOperation(replay, FIRST_OPERATION), false);
+    assert.equal(mayReplaceSettledOpenEnaAiOperation(replay, FIRST_OPERATION), true);
+  }
+});
+
+test("settled dispatch proof reads one boolean row for this principal, resource, and operation", async () => {
+  const input = {
+    principalRef: PRINCIPAL,
+    resource: "ai-interpretation",
+    idempotencyKey: FIRST_OPERATION,
+  };
+  const queries: Array<{ sql: string; params: readonly unknown[] | undefined }> = [];
+  const settled = createPostgresBillableStore(async (sql, params) => {
+    queries.push({ sql, params });
+    return { rows: [{ settled: true }] };
+  });
+  assert.equal(await settled.isSettledDispatchedOperation!(input), true);
+  assert.equal(await createPostgresBillableStore(async () => ({ rows: [{ settled: false }] })).isSettledDispatchedOperation!(input), false);
+  assert.equal(await createPostgresBillableStore(async () => ({ rows: [] })).isSettledDispatchedOperation!(input), false);
+  assert.equal(await createPostgresBillableStore(async () => ({ rows: [{ settled: "true" }] })).isSettledDispatchedOperation!(input), false);
+  assert.match(queries[0]?.sql ?? "", /status\s*=\s*'settled'/u);
+  assert.match(queries[0]?.sql ?? "", /dispatched\s*=\s*true/u);
+  assert.match(queries[0]?.sql ?? "", /principal_ref\s*=\s*\$1/u);
+  assert.match(queries[0]?.sql ?? "", /resource\s*=\s*\$2/u);
+  assert.match(queries[0]?.sql ?? "", /idempotency_key\s*=\s*\$3/u);
+  assert.deepEqual(queries[0]?.params, [input.principalRef, input.resource, input.idempotencyKey]);
+});
+
+test("a settled retry mark survives reload and is consumed only for that operation", () => {
+  const values = new Map<string, string>();
+  const memory = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+  };
+  const scope = openEnaAiOperationScope(
+    parseOpenEnaAiInterpretationRequest(OPEN_ENA_AI_OFFLINE_EVALUATION_CASES_V1[0].request),
+    openEnaAiOperationOwnerKey(PRINCIPAL),
+  );
+  const store = createOpenEnaAiOperationStore(() => memory);
+  store.set(scope, FIRST_OPERATION);
+  store.markSettledRetry(scope, FIRST_OPERATION);
+  const reloaded = createOpenEnaAiOperationStore(() => memory);
+  assert.equal(reloaded.read(scope), FIRST_OPERATION);
+  assert.equal(reloaded.consumeSettledRetry(scope, NEW_OPERATION), false);
+  assert.equal(reloaded.read(scope), FIRST_OPERATION);
+  assert.equal(reloaded.consumeSettledRetry(scope, FIRST_OPERATION), true);
+  assert.equal(reloaded.consumeSettledRetry(scope, FIRST_OPERATION), false);
+  reloaded.markSettledRetry(scope, FIRST_OPERATION);
+  reloaded.close(scope, FIRST_OPERATION);
+  assert.equal(createOpenEnaAiOperationStore(() => memory).consumeSettledRetry(scope, FIRST_OPERATION), false);
 });
