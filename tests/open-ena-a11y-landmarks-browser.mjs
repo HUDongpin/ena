@@ -90,7 +90,7 @@ import { createRoot } from "react-dom/client";
 import LocaleLayout from "./app/[locale]/layout";
 import OpenEnaLogin from "./components/open-ena/OpenEnaLogin";
 const locale = "en";
-const page = React.createElement(OpenEnaLogin, { locale, error: false, configurationReady: true });
+const page = React.createElement(OpenEnaLogin, { locale, notice: { kind: "none" }, configurationReady: true });
 LocaleLayout({ children: page, params: Promise.resolve({ locale }) }).then((shell) => {
   const root = document.getElementById("root");
   createRoot(root).render(React.createElement(React.StrictMode, null, shell));

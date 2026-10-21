@@ -16,16 +16,17 @@ const bundle = await build({
     import Ai from './components/open-ena/OpenEnaAiInterpretation';
     import {openEnaAiOperationOwnerKey} from './lib/open-ena/ai-operation-owner';
     const owner=openEnaAiOperationOwnerKey('synthetic-request-scope');
-    import {openEnaAiOperationScope} from './lib/open-ena/ai-operation-storage';
+    import {openEnaAiOperationScope,openEnaAiOperationStore} from './lib/open-ena/ai-operation-storage';
     import {getOpenEnaCopy} from './lib/open-ena-i18n';
     import {interpretationRequest} from './tests/helpers/ai-interpretation-request-v2';
     window.fixtureRequest=interpretationRequest();
     window.reverseFixtureKeys=function reverse(value){return Array.isArray(value) ? value.map(reverse)
       : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).reverse().map(([k,v])=>[k,reverse(v)])) : value;};
     let root=createRoot(document.getElementById('root'));
-    window.mountAi=(request=window.fixtureRequest,identity=JSON.stringify(request.binding))=>root.render(
-      <Ai operationOwnerKey={owner} request={request} localScientificIdentity={identity} copy={getOpenEnaCopy('en').aiInterpretation} disabled={false} disabledReason=''/>
-    );
+    window.mountAi=(request=window.fixtureRequest,identity=JSON.stringify(request.binding))=>{
+      window.currentOperation=()=>openEnaAiOperationStore.read(openEnaAiOperationScope(request,owner));
+      root.render(<Ai operationOwnerKey={owner} request={request} localScientificIdentity={identity} copy={getOpenEnaCopy('en').aiInterpretation} disabled={false} disabledReason=''/>);
+    };
     window.remountAi=()=>{root.unmount();root=createRoot(document.getElementById('root'));window.mountAi();};
     window.prepareStorage?.(window.fixtureRequest, openEnaAiOperationScope(window.fixtureRequest,owner).key);
     window.mountAi();
@@ -79,7 +80,17 @@ try {
       };
     }, { scenario, legacyId: LEGACY_ID });
     await page.addScriptTag({ content: bundle.outputFiles[0].text });
-    const generate = () => page.locator('.ena-ai-actions button').first().click();
+    const actions: {explicitNew:boolean;priorOperation:string|null}[]=[];
+    const generate = async () => {
+      const main=page.locator('.ena-ai-actions button').first();
+      const explicitNew=await main.isDisabled();
+      const priorOperation=await page.evaluate(()=>window.currentOperation());
+      if(explicitNew){
+        assert.match(await page.locator('[data-ena-ai-new-generation-warning]').innerText(),/may incur additional charges/);
+        await page.getByRole('button',{name:'Generate a new interpretation',exact:true}).click();
+      }else await main.click();
+      actions.push({explicitNew,priorOperation});
+    };
     const waitCalls = async (count: number) => {
       const deadline = Date.now() + 5000;
       while (calls.length < count && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
@@ -87,8 +98,8 @@ try {
       await page.getByRole('alert').waitFor();
     };
     await page.getByRole('checkbox').check(); await generate(); await waitCalls(1);
-    // An explicit retry of the exact same reviewed request preserves the unresolved ID.
-    await page.getByRole('alert').getByRole('button').click(); await waitCalls(2);
+    // The separate action carries the cost warning and is the only way to replace a settled ID.
+    await generate(); await waitCalls(2);
     if (scenario === 'reload') {
       await page.reload(); await page.addScriptTag({ content: bundle.outputFiles[0].text });
     } else if (scenario === 'remount' || scenario === 'legacy-migration') await page.evaluate(() => window.remountAi());
@@ -116,17 +127,23 @@ try {
       await page.evaluate(() => window.mountAi(window.fixtureRequest));
       await page.waitForFunction(() => !document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked);
       await page.getByRole('checkbox').check(); await generate(); await waitCalls(4);
-      returnedRequest = { reusesOriginal: calls[3].operationId === calls[0].operationId, status: calls[3].status };
+      returnedRequest = {
+        retainedBeforeExplicitAction: actions[3].priorOperation === calls[1].operationId && actions[3].explicitNew,
+        replacedAfterExplicitAction: calls[3].operationId !== calls[1].operationId && calls[3].operationId !== calls[2].operationId,
+        status: calls[3].status,
+      };
     }
     const changed = ['locale', 'dataset-binding', 'round-trip-evidence', 'storage-unavailable', 'storage-quota', 'legacy-quota-roundtrip'].includes(scenario);
     const legacyRenewal = scenario === 'legacy-quota-renewal';
     const currentRetryProtected = legacyRenewal
       ? calls[0].operationId === LEGACY_ID && calls[0].status === 503 && calls[1].operationId !== LEGACY_ID && calls[1].status === 502
-      : calls[0].operationId === calls[1].operationId && calls[0].status === 502 && calls[1].status === 409;
+      : calls[0].operationId !== calls[1].operationId && calls[0].status === 502 && calls[1].status === 502 && actions[1].explicitNew;
     const requestScopeCorrect = changed
-      ? calls[2].operationId !== calls[1].operationId && calls[2].status === 502 && generations.length === 2
-        && (!returnedRequest || returnedRequest.reusesOriginal && returnedRequest.status === 409)
-      : calls[2].operationId === calls[1].operationId && calls[2].status === 409 && generations.length === (legacyRenewal ? 2 : 1);
+      ? calls[2].operationId !== calls[1].operationId && calls[2].status === 502 && !actions[2].explicitNew
+        && generations.length === (returnedRequest ? 4 : 3)
+        && (!returnedRequest || returnedRequest.retainedBeforeExplicitAction && returnedRequest.replacedAfterExplicitAction && returnedRequest.status === 502)
+      : actions[2].priorOperation === calls[1].operationId && actions[2].explicitNew
+        && calls[2].operationId !== calls[1].operationId && calls[2].status === 502 && generations.length === 3;
     const storage = await page.evaluate(() => {
       try { return Object.entries(sessionStorage); } catch { return null; }
     });
@@ -134,13 +151,14 @@ try {
     const opaqueStorage = storage === null || storage.every(([key, value]) => {
       if (scenario === 'invalid-legacy' && /^open-ena-ai-operation-v2:fnv1a32-[a-f0-9]{8}$/.test(key)) return value === 'synthetic malformed ID';
       if (/^open-ena-ai-operation-v4:[a-f0-9]{64}:[a-f0-9]{64}$/.test(key)) return value === 'closed' || /^aiop-[a-f0-9-]{36}$/.test(value);
+      if (/^open-ena-ai-operation-v4:[a-f0-9]{64}:[a-f0-9]{64}:settled-retry$/.test(key)) return value === '' || /^aiop-[a-f0-9-]{36}$/.test(value);
       if (/^open-ena-ai-legacy-claim-v4:[a-f0-9]{64}:[a-f0-9]{64}$/.test(key)) return /^open-ena-ai-operation-v4:[a-f0-9]{64}:[a-f0-9]{64}$/.test(value);
       return scenario.startsWith('legacy-') && /^open-ena-ai-operation-v2:fnv1a32-[a-f0-9]{8}$/.test(key) && value === LEGACY_ID;
     });
     const legacyPreserved = !scenario.startsWith('legacy-') || calls[0].operationId === LEGACY_ID;
     const passed = currentRetryProtected && requestScopeCorrect && noAutomaticGeneration && opaqueStorage && malformedLegacyUnchanged && legacyPreserved && errors.length === 0 && external.length === 0;
     results.push({ scenario, passed, currentRetryProtected, requestScopeCorrect, noAutomaticGeneration, opaqueStorage, malformedLegacyUnchanged, legacyPreserved,
-      operations: calls.map(c => c.operationId), statuses: calls.map(c => c.status), generationCalls: generations.length, returnedRequest,
+      operations: calls.map(c => c.operationId), statuses: calls.map(c => c.status), actions, generationCalls: generations.length, returnedRequest,
       storageKeys: storage?.map(([key]) => key), errors, external });
     console.log(JSON.stringify(results.at(-1))); await page.close();
   }

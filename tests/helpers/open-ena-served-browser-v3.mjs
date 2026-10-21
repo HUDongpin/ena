@@ -67,7 +67,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
   const lifecycle = new OwnedSmokeLifecycle({ directory, redact: safe, overallMs: 1800000, onUpdate: state => { receipt.lifecycle = state; if (state.reason) { receipt.status = "fail"; receipt.failure = state.reason.message; } json("receipt.json", receipt); } });
   let browser, page, databaseEntry, browserEntry, serverEntry, closing, buildManifest;
   const database = join(directory, "postgres"), profile = join(directory, "browser-profile");
-  const env = { ...process.env, NEXT_DIST_DIR: ".next", NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account ?? "task38-local-account", OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", npm_config_cache: join(directory, "npm-cache") };
+  const env = { ...process.env, NEXT_DIST_DIR: ".next", NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account ?? "task38-local-account", OPEN_ENA_TRUSTED_CLIENT_IP_HEADER: "x-ena-client-ip", OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", npm_config_cache: join(directory, "npm-cache") };
   const child = (label, command, args, timeout = 60000) => lifecycle.command(label, command, args, { cwd: root, env, logName: `${label}.log` }, timeout);
   const assetReads = [];
   receipt.assetReadState = { scheduled: 0, settled: 0, inFlight: 0, drains: [] };
@@ -135,6 +135,9 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
       }
     }, 60000);
     await child("auth-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/002_open_ena_auth_security.sql")]);
+    await child("disposable-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/004_open_ena_disposable_accounts.sql")]);
+    await child("disposable-expiry-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/008_open_ena_disposable_expiry_after_lock.sql")]);
+    await child("login-throttle-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/009_open_ena_login_failure_windows.sql")]);
     const serverPort = await port(), baseUrl = `http://127.0.0.1:${serverPort}`;
     serverEntry = lifecycle.spawnOwned("server", process.execPath, [join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: `postgresql://postgres@127.0.0.1:${databasePort}/postgres`, OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl } });
     receipt.server = { port: serverPort, baseUrl, pid: serverEntry.child.pid };
@@ -163,7 +166,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
         if (graphics.mode === "swiftshader") assert.match(graphics.renderer ?? "", /SwiftShader/iu, "Owned CI browser must actually use the requested software renderer");
       } finally { await cdp.detach(); }
     }, 30000);
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, extraHTTPHeaders: { "x-ena-client-ip": "127.0.0.1" } });
     await context.addInitScript(() => {
       const NativeWorker = window.Worker;
       window.__openEnaNativeAudit = { requests: [], responses: [] };
