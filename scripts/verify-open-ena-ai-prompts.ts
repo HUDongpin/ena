@@ -33,7 +33,7 @@ const CONTRACT_TEST_SOURCE_SHA256 = deepFreeze({
   client: "57820d5da23cbdfcbbdfc8143c721789eb6d3099a2939acb6e0a9cbb2eba59db",
   payload: "4e46712d5a086885b4bef1650368c3b74978899821c08efe3b06ed2e3c3426ad",
   route: "691f29580251e9e8571584460254721e4adc3f9875e80cf99224d2b080e501d9",
-  workspace: "0c43b1e9df89a6c69d5c38d1850c3ff81974fd88f043d9babc1f10d94db5a6a4",
+  workspace: "71f8da1662f8ce61414e8da7dd814b75ca78c5be08e607fddc8f476c9872604d",
 } as const satisfies Readonly<Record<ContractTestSourceKey, string>>);
 
 const MOCK_CLIENT_COVERAGE_BINDINGS = [

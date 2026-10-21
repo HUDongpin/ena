@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
@@ -45,14 +45,20 @@ type AiAuditReceiptView = {
 
 type GenerationStatus = "idle" | "loading";
 
-export type OpenEnaAiFailureRecovery = "retry" | "sign-in";
+export type OpenEnaAiFailureRecovery = "retry" | "sign-in" | "new-generation" | "local-only";
 
 export const OPEN_ENA_AI_FAILURE_CLASSES = ["session", "unavailable", "network", "invalid-output"] as const;
 
 export type OpenEnaAiFailureClass = (typeof OPEN_ENA_AI_FAILURE_CLASSES)[number];
 
-export function openEnaAiFailureRecovery(status: number): OpenEnaAiFailureRecovery {
-  return status === 401 ? "sign-in" : "retry";
+export function openEnaAiFailureRecovery(
+  status: number,
+  disposition?: "released" | "settled",
+): OpenEnaAiFailureRecovery {
+  if (status === 401) return "sign-in";
+  if (disposition === "settled") return "new-generation";
+  if (status === 409 && disposition !== "released") return "local-only";
+  return "retry";
 }
 
 export function classifyOpenEnaAiPanelFailure(input: {
@@ -61,6 +67,7 @@ export function classifyOpenEnaAiPanelFailure(input: {
   cause?: "network" | "invalid-output" | "http";
 }): { failureClass: OpenEnaAiFailureClass | null; recovery: OpenEnaAiFailureRecovery } {
   if (input.status === 401) return { failureClass: "session", recovery: "sign-in" };
+  if (input.status === 409) return { failureClass: null, recovery: "local-only" };
   if (input.cause === "invalid-output") return { failureClass: "invalid-output", recovery: "retry" };
   if (input.cause === "network") return { failureClass: "network", recovery: "retry" };
   const declared = typeof input.failureClass === "string"
@@ -124,10 +131,10 @@ export function mayRenewOpenEnaAiOperation(response: Response, operationId: stri
     && response.headers.get(OPEN_ENA_AI_OPERATION_HEADER) === operationId;
 }
 
-/** A settled dispatch may be replaced only by an explicit Retry, and only for this operation id. */
+/** This proof permits offering a separate, explicit new-generation action for this operation. */
 export function mayReplaceSettledOpenEnaAiOperation(response: Response, operationId: string) {
   return !response.ok
-    && response.status >= 400
+    && [409, 429, 502, 503, 504].includes(response.status)
     && response.headers.get(OPEN_ENA_AI_RETRY_HEADER) !== "new-operation"
     && response.headers.get(OPEN_ENA_AI_SETTLED_RETRY_HEADER) === "new-operation"
     && response.headers.get(OPEN_ENA_AI_OPERATION_HEADER) === operationId;
@@ -186,6 +193,7 @@ export default function OpenEnaAiInterpretation({
   const [aiRecovery, setAiRecovery] = useState<OpenEnaAiFailureRecovery>("retry");
   const [aiFailureClass, setAiFailureClass] = useState<OpenEnaAiFailureClass | null>(null);
   const [auditReceipt, setAuditReceipt] = useState<AiAuditReceiptView | null>(null);
+  const newGenerationNoticeId = useId();
   const abortControllerRef = useRef<AbortController | null>(null);
   const generationGateRef = useRef({ inFlight: false });
   const generationTokenRef = useRef(0);
@@ -270,16 +278,18 @@ export default function OpenEnaAiInterpretation({
     abortControllerRef.current = null;
     generationTokenRef.current += 1;
     releaseOpenEnaAiGeneration(generationGateRef.current);
-    if (operationScope) openEnaAiOperationStore.read(operationScope);
+    const restoredOperation = operationScope ? openEnaAiOperationStore.read(operationScope) : null;
+    const restoredSettlement = Boolean(operationScope && restoredOperation
+      && openEnaAiOperationStore.hasSettledRetry(operationScope, restoredOperation));
     setAiResponse(null);
     setAiResponseRequestIdentity(null);
-    setAiError("");
-    setAiRecovery("retry");
+    setAiError(restoredSettlement ? copy.operationAlreadyProcessed : "");
+    setAiRecovery(restoredSettlement ? "new-generation" : "retry");
     setAiFailureClass(null);
     setAuditReceipt(null);
     setGenerationStatus("idle");
     setConsentedRequestIdentity(null);
-  }, [operationStorageKey, requestIdentity]);
+  }, [operationStorageKey, requestIdentity, copy.operationAlreadyProcessed]);
 
   useEffect(() => () => abortControllerRef.current?.abort(), []);
 
@@ -298,7 +308,7 @@ export default function OpenEnaAiInterpretation({
       }
       const recovery = signInControlRef.current ?? retryControlRef.current;
       if (aiError) {
-        recovery?.focus();
+        firstEnabledFocusTarget([recovery, generateButtonRef.current, consentControlRef.current, panelRef.current])?.focus();
         restoreFocusRef.current = false;
         return;
       }
@@ -327,8 +337,9 @@ export default function OpenEnaAiInterpretation({
     };
   }, [generationStatus, aiError, aiRecovery]);
 
-  async function handleGenerateInterpretation(retryMode?: unknown) {
+  async function handleGenerateInterpretation(mode: "current" | "new-generation" = "current") {
     if (!request || !owner || !operationScope || disabled || !consentGranted || generationStatus === "loading") return;
+    if (mode === "current" && aiError && (aiRecovery === "new-generation" || aiRecovery === "local-only")) return;
     const requestedIdentity = requestIdentity;
     const requestedOperationScope = operationScope;
     if (!requestedIdentity || consentedRequestIdentity !== requestedIdentity) return;
@@ -346,11 +357,11 @@ export default function OpenEnaAiInterpretation({
       setGenerationStatus("idle");
     };
     let operationId = openEnaAiOperationStore.read(requestedOperationScope);
-    if (
-      retryMode === "replace-settled"
-      && operationId
-      && openEnaAiOperationStore.consumeSettledRetry(requestedOperationScope, operationId)
-    ) {
+    if (mode === "new-generation") {
+      if (!operationId || !openEnaAiOperationStore.consumeSettledRetry(requestedOperationScope, operationId)) {
+        releaseThisGeneration();
+        return;
+      }
       openEnaAiOperationStore.close(requestedOperationScope, operationId);
       operationId = null;
     }
@@ -369,6 +380,7 @@ export default function OpenEnaAiInterpretation({
     );
     setGenerationStatus("loading");
     setAiError("");
+    setAiRecovery("retry");
     setAiFailureClass(null);
     try {
       await executeOpenEnaAiGeneration({
@@ -403,12 +415,14 @@ export default function OpenEnaAiInterpretation({
               : undefined;
             // Error classifications describe the message, not whether another
             // billable dispatch is safe. Only a current, operation-bound release
-            // proof closes this identity. A settled-dispatch proof only arms Retry.
-            if (!isStaleGeneration() && mayRenewOpenEnaAiOperation(response, operationId)) clearOperation();
-            else if (!isStaleGeneration() && mayReplaceSettledOpenEnaAiOperation(response, operationId)) {
+            // proof closes this identity. A settled proof only offers a new generation.
+            const released = mayRenewOpenEnaAiOperation(response, operationId);
+            const settled = mayReplaceSettledOpenEnaAiOperation(response, operationId);
+            if (!isStaleGeneration() && released) clearOperation();
+            else if (!isStaleGeneration() && settled) {
               openEnaAiOperationStore.markSettledRetry(requestedOperationScope, operationId);
             }
-            const recovery = openEnaAiFailureRecovery(response.status);
+            const recovery = openEnaAiFailureRecovery(response.status, released ? "released" : settled ? "settled" : undefined);
             const failureClass = classifyOpenEnaAiPanelFailure({
               status: response.status,
               failureClass: declaredFailureClass,
@@ -539,8 +553,9 @@ export default function OpenEnaAiInterpretation({
           ref={generateButtonRef}
           type="button"
           className="ena-action-button ena-action-primary"
-          disabled={disabled || !request || !consentGranted || generationStatus === "loading"}
-          onClick={handleGenerateInterpretation}
+          disabled={disabled || !request || !consentGranted || generationStatus === "loading"
+            || Boolean(aiError && (aiRecovery === "new-generation" || aiRecovery === "local-only"))}
+          onClick={() => { void handleGenerateInterpretation(); }}
         >
           {generationStatus === "loading" ? copy.generating : copy.generate}
         </button>
@@ -584,6 +599,23 @@ export default function OpenEnaAiInterpretation({
               {copy.signInAgain}
               <span className="sr-only"> {copy.signInNewTab}</span>
             </a>
+          ) : aiRecovery === "new-generation" ? (
+            <>
+              <p id={newGenerationNoticeId} data-ena-ai-new-generation-warning>{copy.newGenerationWarning}</p>
+              <button
+                ref={retryControlRef}
+                type="button"
+                className="ena-inline-link"
+                data-ena-ai-recovery="new-generation"
+                aria-describedby={newGenerationNoticeId}
+                disabled={disabled || !request || !consentGranted || generationStatus === "loading"}
+                onClick={() => { void handleGenerateInterpretation("new-generation"); }}
+              >
+                {copy.generateNew}
+              </button>
+            </>
+          ) : aiRecovery === "local-only" ? (
+            <p data-ena-ai-local-recovery>{copy.operationUnconfirmed}</p>
           ) : (
             <button
               ref={retryControlRef}
@@ -591,7 +623,7 @@ export default function OpenEnaAiInterpretation({
               className="ena-inline-link"
               data-ena-ai-recovery="retry"
               disabled={generationStatus === "loading"}
-              onClick={() => { void handleGenerateInterpretation("replace-settled"); }}
+              onClick={() => { void handleGenerateInterpretation(); }}
             >
               {copy.retry}
             </button>

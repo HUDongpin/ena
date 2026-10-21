@@ -116,7 +116,7 @@ test("the only AI network request is a POST inside the explicit Generate handler
   assert.match(handler, /signal:\s*[^,}\n]*\.signal/);
   assert.match(
     aiComponent,
-    /onClick=\{handleGenerateInterpretation\}/,
+    /onClick=\{\(\) => \{ void handleGenerateInterpretation\(\); \}\}/,
     "only the researcher's explicit button activation may invoke the POST handler",
   );
   assert.equal(
@@ -181,12 +181,12 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
   assert.match(aiComponent, /catch\s*\([^)]*\)\s*\{[\s\S]*?set[A-Za-z]*Error\(/);
   assert.match(
     aiComponent,
-    /role=["']alert["'][\s\S]*?handleGenerateInterpretation\(\s*["']replace-settled["']\s*\)/,
+    /role=["']alert["'][\s\S]*?handleGenerateInterpretation\(\s*["']new-generation["']\s*\)/,
     "an error must stay visible beside an explicit Retry action",
   );
   assert.match(aiComponent, /copy\.cancel/);
   assert.match(aiComponent, /copy\.retry/);
-  assert.match(aiComponent, /openEnaAiFailureRecovery\(response\.status\)/);
+  assert.match(aiComponent, /openEnaAiFailureRecovery\(response\.status,/);
   assert.match(
     aiComponent,
     /data-ena-ai-recovery=["']sign-in["'][\s\S]*?target=["']_blank["'][\s\S]*?rel=["']noopener noreferrer["'][\s\S]*?copy\.signInAgain/,
@@ -204,7 +204,7 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
   );
   const signInAction = aiComponent.slice(
     aiComponent.indexOf('data-ena-ai-recovery="sign-in"'),
-    aiComponent.indexOf('data-ena-ai-recovery="retry"'),
+    aiComponent.indexOf('</a>', aiComponent.indexOf('data-ena-ai-recovery="sign-in"')),
   );
   assert.doesNotMatch(
     signInAction,

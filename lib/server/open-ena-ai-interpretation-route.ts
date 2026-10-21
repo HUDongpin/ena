@@ -487,7 +487,7 @@ export function createOpenEnaAiInterpretationPostHandler(
             // Ask the current principal's ledger; an older browser response may
             // belong to another principal after a login in a different tab.
             // A settled dispatch is also terminal: the same id is never sent
-            // again, but Retry may start a separate operation.
+            // again; the UI may offer an explicit new-generation action.
             const lookup = {
               principalRef: principal.principalRef,
               resource: "ai-interpretation",
@@ -624,7 +624,7 @@ export function createOpenEnaAiInterpretationPostHandler(
         failure.headers.set(OPEN_ENA_AI_RETRY_HEADER, "new-operation");
         failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
       } else if (settledRetryableFailure && !receiptTerminalFailure) {
-        // The settled id stays idempotent. Retry alone may create a new operation.
+        // The settled id stays idempotent. Only explicit new-generation consent may replace it.
         failure.headers.set(OPEN_ENA_AI_SETTLED_RETRY_HEADER, "new-operation");
         failure.headers.set(OPEN_ENA_AI_OPERATION_HEADER, operationId);
       }

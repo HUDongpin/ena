@@ -101,7 +101,7 @@ try {
       status: 503,
       body: { error: "Synthetic settled unavailable response", failureClass: "unavailable" },
       failureClass: "unavailable",
-      message: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
+      message: "AI interpretation is temporarily unavailable or rate limited.",
       hidden: "Synthetic settled unavailable response",
       retry: true,
     },
@@ -110,7 +110,7 @@ try {
       status: 503,
       body: { error: "Synthetic unavailable response" },
       failureClass: "unavailable",
-      message: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
+      message: "AI interpretation is temporarily unavailable or rate limited.",
       hidden: "Synthetic unavailable response",
       retry: true,
     },
@@ -119,7 +119,7 @@ try {
       status: 429,
       body: { error: "The AI interpretation provider is rate limited. Please try again later." },
       failureClass: "unavailable",
-      message: "AI interpretation is temporarily unavailable or rate limited. Wait a moment, then retry this request.",
+      message: "AI interpretation is temporarily unavailable or rate limited.",
       hidden: "Please try again later.",
       retry: true,
     },
@@ -128,7 +128,7 @@ try {
       status: 504,
       body: { error: "The AI interpretation provider timed out." },
       failureClass: "network",
-      message: "The AI interpretation request did not finish because the network failed or the request timed out. Check your connection, then retry this request.",
+      message: "The AI interpretation request did not finish because the network failed or the request timed out.",
       hidden: "The AI interpretation provider timed out.",
       retry: true,
     },
@@ -137,7 +137,7 @@ try {
       status: 502,
       body: { error: "The AI interpretation provider request failed.", failureClass: "network" },
       failureClass: "network",
-      message: "The AI interpretation request did not finish because the network failed or the request timed out. Check your connection, then retry this request.",
+      message: "The AI interpretation request did not finish because the network failed or the request timed out.",
       hidden: "The AI interpretation provider request failed.",
       retry: true,
     },
@@ -146,7 +146,7 @@ try {
       status: 502,
       body: { error: "The AI interpretation provider request failed.", failureClass: "invalid-output" },
       failureClass: "invalid-output",
-      message: "The model returned output that could not be used as an interpretation. Retry this request to ask for a new interpretation.",
+      message: "The model returned output that could not be used as an interpretation.",
       hidden: "The AI interpretation provider request failed.",
       retry: true,
     },
@@ -851,11 +851,11 @@ try {
     await session.page.getByText(replayError).waitFor();
     assert.equal(session.operations.length, 2, `${item.name} retry sends one request`);
     assert.equal(session.operations[0], session.operations[1], `${item.name} retains its unresolved operation id`);
-    await session.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
-    await session.page.getByText(replayError).waitFor();
-    assert.equal(session.operations.length, 3, `${item.name} sends only explicit retries`);
-    assert.equal(session.operations[2], session.operations[0], `${item.name} cannot escape replay protection`);
-    assert.deepEqual(session.statuses, [item.status, 409, 409], item.name);
+    assert.equal(await alert.getByRole("button", { name: "Retry" }).count(), 0, `${item.name} stops the impossible retry loop`);
+    assert.equal(await session.page.locator(".ena-ai-actions button").isDisabled(), true, `${item.name} Generate cannot bypass recovery`);
+    await alert.locator("[data-ena-ai-local-recovery]").waitFor();
+    assert.equal(session.operations.length, 2, `${item.name} does not send another request automatically`);
+    assert.deepEqual(session.statuses, [item.status, 409], item.name);
     assert.equal(dispatches, 1, `${item.name} cannot dispatch or bill twice`);
     assert.equal(await session.page.locator(".ena-ai-result").count(), 0, item.name);
     assert.deepEqual(session.errors, [], item.name);
@@ -918,11 +918,9 @@ try {
   await thrownAfterReserve.page.getByText(replayError).waitFor();
   assert.equal(thrownAfterReserve.operations[0], thrownAfterReserve.operations[1], "an unknown network failure must not mint a second billable id");
   assert.equal(thrownAfterReserve.statuses[1], 409);
-  await thrownAfterReserve.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
-  await thrownAfterReserve.page.getByText(replayError).waitFor();
-  assert.equal(thrownAfterReserve.operations.length, 3);
-  assert.equal(thrownAfterReserve.operations[2], thrownAfterReserve.operations[0], "an unproven 409 must keep the unresolved operation on every explicit retry");
-  assert.equal(thrownAfterReserve.statuses[2], 409);
+  assert.equal(await thrownAfterReserve.page.getByRole("alert").getByRole("button").count(), 0);
+  assert.equal(await thrownAfterReserve.page.locator(".ena-ai-actions button").isDisabled(), true);
+  assert.equal(thrownAfterReserve.operations.length, 2, "an unproven 409 must stop the retry loop without minting a new id");
   assert.equal(unknownDispatches, 1, "an uncertain provider dispatch must not be repeated under a fresh operation id");
   assert.equal(await thrownAfterReserve.page.locator(".ena-ai-result").count(), 0);
   assert.deepEqual(thrownAfterReserve.errors, []);
@@ -1107,16 +1105,29 @@ try {
     const generate = session.page.getByRole("button", { name: "Generate AI interpretation", exact: true });
     await generate.click();
     await session.page.getByRole("alert").waitFor();
-    await generate.click();
-    await session.page.getByText(replayError).waitFor();
-    assert.equal(session.operations[1], session.operations[0], `${item.name}: Generate keeps the settled operation id`);
-    assert.equal(session.statuses[1], 409, item.name);
-    await session.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
+    assert.equal(await generate.isDisabled(), true, `${item.name}: ordinary Generate cannot silently replace the operation`);
+    assert.equal(await session.page.getByRole("alert").getByRole("button", { name: "Retry", exact: true }).count(), 0);
+    assert.equal(session.operations.length, 1, "settlement does not automatically dispatch a new generation");
+    const warning = session.page.locator("[data-ena-ai-new-generation-warning]");
+    assert.match(await warning.innerText(), /may incur additional charges/u);
+    assert.match(await warning.innerText(), /final charge.*not confirmed/u);
+    if (item.name === "settled-timeout") {
+      await session.page.reload();
+      await session.page.addScriptTag({ content: focusHarness.outputFiles[0].text });
+      await warning.waitFor();
+      assert.equal(session.operations.length, 1, "reload restores the warning without dispatching");
+      assert.equal(await session.page.getByRole("button", { name: "Generate a new interpretation", exact: true }).isDisabled(), true);
+      await session.page.getByRole("checkbox").check();
+    }
+    const newGeneration = session.page.getByRole("alert").getByRole("button", { name: "Generate a new interpretation", exact: true });
+    assert.equal(await newGeneration.getAttribute("aria-describedby"), await warning.getAttribute("id"));
+    await newGeneration.focus();
+    await session.page.keyboard.press("Enter");
     await session.page.locator(".ena-ai-result").waitFor();
-    assert.notEqual(session.operations.at(-1), session.operations[0], `${item.name}: Retry uses a new operation id`);
+    assert.notEqual(session.operations.at(-1), session.operations[0], `${item.name}: explicit new generation uses a new operation id`);
     assert.equal(session.statuses.at(-1), 200, item.name);
     assert.equal(providerAttempts, 2, `${item.name}: the settled id is not dispatched again`);
-    assert.equal(session.statuses.filter((status) => status === 409).length, 1, item.name);
+    assert.equal(session.operations.length, 2, "one keyboard activation dispatches exactly one new request");
     assert.deepEqual(session.errors, [], item.name);
     await session.page.close();
   }
@@ -1139,15 +1150,15 @@ try {
   await mismatchedSettlement.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
   await mismatchedSettlement.page.getByText(replayError).waitFor();
   assert.equal(mismatchedSettlement.operations[0], mismatchedSettlement.operations[1], "a settled proof for a different operation does not replace this id");
-  await mismatchedSettlement.page.getByRole("alert").getByRole("button", { name: "Retry" }).click();
-  await mismatchedSettlement.page.getByText(replayError).waitFor();
-  assert.equal(mismatchedSettlement.operations[2], mismatchedSettlement.operations[0]);
+  assert.equal(await mismatchedSettlement.page.getByRole("alert").getByRole("button").count(), 0);
+  assert.equal(await mismatchedSettlement.page.locator(".ena-ai-actions button").isDisabled(), true);
+  assert.equal(mismatchedSettlement.operations.length, 2);
   assert.deepEqual(mismatchedSettlement.errors, []);
   await mismatchedSettlement.page.close();
 
   for (const [locale, message, retryName, generateName] of [
-    ["zh-hant", "此 AI 生成操作已經處理過。", "重試", "生成 AI 解讀"],
-    ["zh-hans", "此 AI 生成操作已经处理过。", "重试", "生成 AI 解读"],
+    ["zh-hant", "此 AI 生成操作已經處理過。", "重新生成一份解讀", "生成 AI 解讀"],
+    ["zh-hans", "此 AI 生成操作已经处理过。", "重新生成一份解读", "生成 AI 解读"],
   ]) {
     const page = await browser.newPage();
     const errors = [];
@@ -1184,6 +1195,7 @@ try {
     const alertText = await alert.innerText();
     assert.match(alertText, new RegExp(message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), locale);
     assert.equal(alertText.includes(replayError), false, `${locale} must not show the English 409 text`);
+    assert.match(alertText, /可能產生額外費用|可能产生额外费用/u);
     await alert.getByRole("button", { name: retryName }).click();
     await page.locator(".ena-ai-result").waitFor();
     assert.equal(operations.length, 2, locale);
@@ -1192,5 +1204,5 @@ try {
     await page.close();
   }
 
-  console.log("AI explicit retry: renewed bound release, retained uncertain and malformed operations, settled timeout/network/unavailable Retry uses a new id, localized 409, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus, retained interpretation boundary PASS");
+  console.log("AI explicit retry: renewed bound release, retained uncertain and malformed operations, settled timeout/network/unavailable needs an explicit new generation with cost warning; unproven409 stops retries, localized 409, auth-required uses sign-in, classed recovery copy, single in-flight retry, stale result dropped, sign-in keeps this document, Enter retries once, focus and busy state restored, success and cancel restore focus, retained interpretation boundary PASS");
 } finally { await browser.close(); }

@@ -111,12 +111,15 @@ export function createOpenEnaAiOperationStore(storage: () => OperationStorage) {
       } catch { /* The page-lifetime tombstone remains authoritative on remount. */ }
     },
     markSettledRetry(scope: OpenEnaAiOperationScope, operationId: string) {
-      if (!OPEN_ENA_AI_OPERATION_ID.test(operationId)) return;
+      if (!OPEN_ENA_AI_OPERATION_ID.test(operationId) || read(scope) !== operationId) return;
       settledRetries.set(scope.key, operationId);
-      try { storage().setItem(settledRetryKey(scope), operationId); } catch { /* Memory still lets this page's Retry replace it. */ }
+      try { storage().setItem(settledRetryKey(scope), operationId); } catch { /* Memory retains the explicit new-generation option. */ }
+    },
+    hasSettledRetry(scope: OpenEnaAiOperationScope, operationId: string) {
+      return read(scope) === operationId && readSettledRetry(scope) === operationId;
     },
     consumeSettledRetry(scope: OpenEnaAiOperationScope, operationId: string) {
-      if (readSettledRetry(scope) !== operationId) return false;
+      if (read(scope) !== operationId || readSettledRetry(scope) !== operationId) return false;
       clearSettledRetry(scope);
       return true;
     },

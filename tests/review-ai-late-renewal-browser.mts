@@ -105,11 +105,16 @@ try{
  await page.evaluate(()=>window.releaseOldRenewal());
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  const afterRelease=await page.getByRole('alert').textContent();
- await page.getByRole('alert').getByRole('button').click();
- const deadline=Date.now()+5000;while(calls.length<3&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
+ if(scenario==='principal-change'){
+  assert.equal(await page.getByRole('alert').getByRole('button').count(),0);
+  assert.equal(await page.locator('.ena-ai-actions button').first().isDisabled(),true);
+ }else{
+  await page.getByRole('alert').getByRole('button').click();
+  const deadline=Date.now()+5000;while(calls.length<3&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
+ }
  await page.getByRole('alert').waitFor();
  const operationChecks = scenario==='principal-change'
-  ? calls.length===3&&calls[0].status===503&&calls[1].status===409&&calls[2].status===409&&calls.every(call=>call.id===calls[0].id)&&generations.length===1&&quotaCalls===1&&calls.slice(1).every(call=>call.retry===null)
+  ? calls.length===2&&calls[0].status===503&&calls[1].status===409&&calls.every(call=>call.id===calls[0].id)&&generations.length===1&&quotaCalls===1&&calls.slice(1).every(call=>call.retry===null)
   : calls.length===3&&calls[0].status===503&&calls[1].status===409&&calls[0].id===calls[1].id&&calls[2].status===502&&calls[2].id!==calls[1].id&&generations.length===2;
  result={passed:operationChecks&&beforeRelease===afterRelease&&errors.length===0&&external.length===0,
   project,serverProject,storeKind,postgresProofAssertions,scenario,calls,quotaCalls,generationCalls:generations.length,staleErrorNotAdopted:beforeRelease===afterRelease,errors,external};
