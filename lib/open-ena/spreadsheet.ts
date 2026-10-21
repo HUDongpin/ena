@@ -169,15 +169,20 @@ function normalizeSpreadsheetRows(
     throw new Error("CSV and XLSX files must be 5 MB or smaller.");
   }
 
+  // Keep the original 1-based worksheet row. Blank-row filtering must not
+  // renumber the overflow error, which is raised after this filter.
   const records = worksheetRows
-    .map((values, rowIndex) => values.map((value, columnIndex) => normalizeCell(value, rowIndex + 1, columnIndex + 1, requireUnicode)))
-    .filter((values) => values.some(hasValue));
+    .map((values, rowIndex) => ({
+      worksheetRow: rowIndex + 1,
+      values: values.map((value, columnIndex) => normalizeCell(value, rowIndex + 1, columnIndex + 1, requireUnicode)),
+    }))
+    .filter((record) => record.values.some(hasValue));
 
   if (records.length < 2) {
     throw new Error("The first XLSX worksheet needs a header and at least one data row.");
   }
 
-  const headerValues = records[0];
+  const headerValues = records[0].values;
   if (headerValues.length > MAX_COLUMNS) {
     throw new Error(`This browser release supports up to ${MAX_COLUMNS} columns per worksheet.`);
   }
@@ -197,11 +202,11 @@ function normalizeSpreadsheetRows(
     throw new Error(`This browser release supports up to ${MAX_ROWS.toLocaleString()} rows per run.`);
   }
 
-  const rows: Row[] = dataRecords.map((values, rowIndex) => {
-    if (values.slice(headers.length).some(hasValue)) {
-      throw new Error(`Worksheet row ${rowIndex + 2} has more cells than the ${headers.length}-column header.`);
+  const rows: Row[] = dataRecords.map((record) => {
+    if (record.values.slice(headers.length).some(hasValue)) {
+      throw new Error(`Worksheet row ${record.worksheetRow} has more cells than the ${headers.length}-column header.`);
     }
-    return Object.fromEntries(headers.map((header, columnIndex) => [header, values[columnIndex] ?? null]));
+    return Object.fromEntries(headers.map((header, columnIndex) => [header, record.values[columnIndex] ?? null]));
   });
 
   // Shared XLSX strings may occur in many cells. Charge every occurrence

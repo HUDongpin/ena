@@ -129,7 +129,46 @@ test("spreadsheet import enforces the shared browser data limits", async () => {
   );
   assert.throws(
     () => datasetFromSpreadsheetRows([["unit"], ["u1", "unexpected"]], options),
-    /more cells/i,
+    /Worksheet row 2 has more cells/i,
+  );
+  // Blank rows are dropped before overflow is checked. The message must cite
+  // the original worksheet row, counted before that filter. Finite-number and
+  // invalid-date errors are numbered before the filter, so a leading blank
+  // row does not shift them either.
+  assert.throws(
+    () => datasetFromSpreadsheetRows([
+      ["ID", "Code"],
+      [],
+      [],
+      ["s1", "A", "stray"],
+    ], options),
+    /Worksheet row 4 has more cells than the 2-column header/,
+  );
+  assert.throws(
+    () => datasetFromSpreadsheetRows([
+      [],
+      ["ID", "Code"],
+      ["s1", "A"],
+      [],
+      ["s2", "B", "stray"],
+    ], options),
+    /Worksheet row 5 has more cells than the 2-column header/,
+  );
+  assert.throws(
+    () => datasetFromSpreadsheetRows([
+      [],
+      ["unit"],
+      ["u1", Number.POSITIVE_INFINITY],
+    ], options),
+    /Worksheet row 3, column 2 must contain a finite number/,
+  );
+  assert.throws(
+    () => datasetFromSpreadsheetRows([
+      [],
+      ["unit", "recorded_at"],
+      ["u1", new Date(Number.NaN)],
+    ], options),
+    /Worksheet row 3, column 2 contains an invalid date/,
   );
   assert.throws(
     () => datasetFromSpreadsheetRows([
