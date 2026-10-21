@@ -76,7 +76,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def request(opener, path, data=None, cookie=None):
-    headers = {"Host": "www.ena.hk", "Origin": ORIGIN}
+    headers = {"Host": "www.ena.hk", "Origin": ORIGIN, "X-ENA-Client-IP": "127.0.0.1"}
     if data is not None:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
         data = urllib.parse.urlencode(data).encode()
@@ -144,6 +144,11 @@ const p=new Pool({connectionString:process.env.OPEN_ENA_AUTH_DATABASE_URL,
 (async()=>{try {
  const r=await p.query(`SELECT
  to_regprocedure('public.open_ena_consume_login_attempt(text,text,integer,integer,integer)') IS NOT NULL AS login,
+ to_regprocedure('public.open_ena_login_failure_guard(text,text,integer,integer,integer)') IS NOT NULL AS guard,
+ to_regprocedure('public.open_ena_record_login_failure(text,text,integer,integer,integer)') IS NOT NULL AS record,
+ to_regprocedure('public.open_ena_clear_login_pair(text,text)') IS NOT NULL AS clear,
+ to_regprocedure('public.open_ena_prune_login_failure_windows(integer)') IS NOT NULL AS prune,
+ to_regclass('public.open_ena_login_failure_windows') IS NOT NULL AS windows,
  to_regprocedure('public.open_ena_revoke_session(text,bigint)') IS NOT NULL AS revoke,
  to_regprocedure('public.open_ena_session_is_revoked(text)') IS NOT NULL AS check`);
  if(!Object.values(r.rows[0]).every(Boolean)) process.exitCode=2;

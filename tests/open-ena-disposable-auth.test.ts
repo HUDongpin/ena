@@ -24,6 +24,7 @@ const AUTH_ENVIRONMENT = {
   OPEN_ENA_ACCOUNT_ID: "stable-deployment-account-id",
   OPEN_ENA_AUTH_DATABASE_URL: "postgresql://security.invalid/open_ena",
   OPEN_ENA_ALLOWED_ORIGINS: "https://www.ena.hk,https://ena.hk",
+  OPEN_ENA_TRUSTED_CLIENT_IP_HEADER: "x-ena-client-ip",
 } as const;
 
 type DynamicModule = Record<string, unknown>;
@@ -42,6 +43,7 @@ function formRequest(username: string, password: string) {
     headers: {
       "content-type": "application/x-www-form-urlencoded",
       origin: "https://www.ena.hk",
+      "x-ena-client-ip": "203.0.113.20",
     },
     body: new URLSearchParams({ locale: "en", username, password }),
   });
@@ -199,15 +201,28 @@ test("login falls through from the static account to a one-time disposable accou
 
   const principalRef = `d_${"q".repeat(43)}`;
   const seen: { usernameRef?: string; password?: string; sessionPrincipal?: string } = {};
+  const salt = Buffer.from("c85de58856b62d8af476678c9ca84a17", "hex");
+  const passwordHash = await scrypt("single-use-password", salt);
   const handler = (createHandler as Function)({
     environment: AUTH_ENVIRONMENT,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => true,
-      consumeDisposableCredential: async (input: { usernameRef: string; password: string }) => {
-        seen.usernameRef = input.usernameRef;
-        seen.password = input.password;
-        return principalRef;
-      },
+      authenticateLogin: async (input: {
+        authenticate: (context: {
+          query: (sql: string, params?: readonly unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
+        }) => Promise<{ outcome: string; sessionToken?: string }>;
+      }) => input.authenticate({
+        query: async (sql, params) => {
+          if (/password_salt/u.test(sql)) {
+            seen.usernameRef = String(params?.[0] ?? "");
+            seen.password = "single-use-password";
+            return { rows: [{ password_salt: salt, password_hash: passwordHash }] };
+          }
+          if (/open_ena_consume_disposable_account/u.test(sql)) {
+            return { rows: [{ principal_ref: principalRef }] };
+          }
+          return { rows: [] };
+        },
+      }),
       isSessionRevoked: async () => false,
       revokeSession: async () => undefined,
     }),
@@ -240,11 +255,14 @@ test("a static-account success keeps v2 duration and never touches a disposable 
   const handler = (createHandler as Function)({
     environment: AUTH_ENVIRONMENT,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => true,
-      consumeDisposableCredential: async () => {
-        disposableCalls += 1;
-        return null;
-      },
+      authenticateLogin: async (input: {
+        authenticate: (context: { query: () => Promise<{ rows: [] }> }) => Promise<unknown>;
+      }) => input.authenticate({
+        query: async () => {
+          disposableCalls += 1;
+          return { rows: [] };
+        },
+      }),
       isSessionRevoked: async () => false,
       revokeSession: async () => undefined,
     }),
@@ -269,8 +287,13 @@ test("disposable credential store failures fail closed instead of becoming an in
   const handler = (createHandler as Function)({
     environment: AUTH_ENVIRONMENT,
     securityStoreFactory: async () => ({
-      consumeLoginAttempt: async () => true,
-      consumeDisposableCredential: async () => { throw new Error("database unavailable"); },
+      authenticateLogin: async (input: {
+        authenticate: (context: { query: () => Promise<never> }) => Promise<unknown>;
+      }) => input.authenticate({
+        query: async () => {
+          throw new Error("database unavailable");
+        },
+      }),
       isSessionRevoked: async () => false,
       revokeSession: async () => undefined,
     }),

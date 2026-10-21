@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import JsonLd from "@/components/JsonLd";
-import OpenEnaLogin from "@/components/open-ena/OpenEnaLogin";
+import OpenEnaLogin, { OpenEnaAuthRecoveryNotice } from "@/components/open-ena/OpenEnaLogin";
 import OpenEnaWorkspace from "@/components/open-ena/OpenEnaWorkspace";
 import { getLocaleMeta, isLocale, type Locale } from "@/lib/i18n";
 import {
@@ -19,13 +19,14 @@ import {
   isOpenEnaLocalizedLocale,
   openEnaLocalizedLocales,
 } from "@/lib/open-ena-i18n";
+import { openEnaLoginNotice } from "@/lib/open-ena-auth-copy";
 import { pageMetadata } from "@/lib/metadata";
 import { siteConfig } from "@/lib/site";
 import { parseOpenEnaDisabledPluginIds } from "@/lib/open-ena/plugins/runtime-registry";
 
 interface OpenEnaPageProps {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ auth?: string | string[] }>;
+  searchParams: Promise<{ auth?: string | string[]; retry_after?: string | string[] }>;
 }
 
 export const dynamic = "force-dynamic";
@@ -73,12 +74,13 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   const principal = authConfigurationReady
     ? await verifyProductionOpenEnaSessionTokenAny(sessionCookie) : null;
   const query = await searchParams;
+  const notice = openEnaLoginNotice(query.auth, query.retry_after);
 
   if (!principal) {
     return (
       <OpenEnaLogin
         locale={typedLocale}
-        error={query.auth === "invalid"}
+        notice={notice}
         configurationReady={authConfigurationReady}
       />
     );
@@ -122,6 +124,7 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
 
   return (
     <>
+      <OpenEnaAuthRecoveryNotice locale={typedLocale} notice={notice} />
       <JsonLd data={structuredData} />
       <OpenEnaWorkspace locale={typedLocale}
         operationOwnerKey={openEnaAiOperationOwnerKey(principal.principalRef)}
