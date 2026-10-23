@@ -1,6 +1,6 @@
 export default function NetworkHero() {
   return (
-    <figure className="network-hero" aria-labelledby="network-hero-caption">
+    <figure className="network-hero">
       <svg viewBox="0 0 620 520" role="img" aria-labelledby="network-title network-desc">
         <title id="network-title">An epistemic network moving through an open boundary</title>
         <desc id="network-desc">Connected nodes and weighted edges extend through an open circular frame.</desc>
@@ -44,10 +44,6 @@ export default function NetworkHero() {
           <text x="470" y="75" fill="#175F88">OPEN</text>
         </g>
       </svg>
-      <figcaption id="network-hero-caption">
-        <span aria-hidden="true" />
-        Knowledge structures remain inspectable—from coded evidence to connected ideas.
-      </figcaption>
     </figure>
   );
 }

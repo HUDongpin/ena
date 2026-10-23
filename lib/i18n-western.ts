@@ -193,7 +193,7 @@ const es: Dictionary = {
     navigation: "Navegación",
     primaryResources: "Recursos primarios",
     tutorialTitle: "Tutorial revisado por pares",
-    copyright: "© 2026 ENA.HK. Todos los derechos reservados.",
+    copyright: "© 2026 Open-ENA.COM. Todos los derechos reservados.",
   },
 };
 
@@ -390,7 +390,7 @@ const fr: Dictionary = {
     navigation: "Navigation",
     primaryResources: "Ressources primaires",
     tutorialTitle: "Tutoriel évalué par les pairs",
-    copyright: "© 2026 ENA.HK. Tous droits réservés.",
+    copyright: "© 2026 Open-ENA.COM. Tous droits réservés.",
   },
 };
 
@@ -587,7 +587,7 @@ const pt: Dictionary = {
     navigation: "Navegação",
     primaryResources: "Recursos primários",
     tutorialTitle: "Tutorial revisto por pares",
-    copyright: "© 2026 ENA.HK. Todos os direitos reservados.",
+    copyright: "© 2026 Open-ENA.COM. Todos os direitos reservados.",
   },
 };
 
@@ -784,7 +784,7 @@ const de: Dictionary = {
     navigation: "Navigation",
     primaryResources: "Primärressourcen",
     tutorialTitle: "Begutachtetes Tutorial",
-    copyright: "© 2026 ENA.HK. Alle Rechte vorbehalten.",
+    copyright: "© 2026 Open-ENA.COM. Alle Rechte vorbehalten.",
   },
 };
 

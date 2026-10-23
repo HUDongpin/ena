@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Geist } from "next/font/google";
+import Logo from "../Logo";
 import styles from "./HubFooter.module.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
@@ -41,10 +42,7 @@ export default function HubFooter({ copy, homeHref, aboutHref, featureBase, comf
     <footer className={`${styles.footer} ${geist.variable}`} data-comfortable-links={comfortableLinks || undefined}>
       <div className="container footer-grid">
         <div className="footer-brand">
-          <Link href={homeHref} className="brand-lockup" aria-label={`${copy.brandName} home`} dir="ltr">
-            <span className="brand-mark"><img src="/unified-home/ena-mark.svg" width="48" height="48" alt="" /></span>
-            <span className="brand-type"><span className="brand-name">ENA</span><span className="brand-description">{copy.tagline}</span></span>
-          </Link>
+          <Logo href={homeHref} />
           <p>{copy.description}</p>
         </div>
         <div>

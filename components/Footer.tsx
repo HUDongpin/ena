@@ -31,7 +31,7 @@ export default function Footer({ locale, dictionary }: FooterProps) {
     <footer className="site-footer">
       <div className="container footer-grid">
         <div className="footer-brand">
-          <Logo locale={locale} />
+          <Logo href={`/${locale}`} />
           <p>{dictionary.footer.description}</p>
         </div>
         <div>

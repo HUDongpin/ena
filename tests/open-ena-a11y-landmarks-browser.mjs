@@ -883,8 +883,8 @@ try {
   await page.locator("#main-content").waitFor();
   const homeSkipCount = await page.locator("a.skip-link").count();
   check(homeSkipCount === 1, `home: expected exactly one .skip-link, found ${homeSkipCount}`);
-  const homeSkip = page.getByRole("link", { name: "Skip to main content", exact: true });
-  check(await homeSkip.count() === 1, `home: expected the Home header Skip to main content link, found ${await homeSkip.count()}`);
+  const homeSkip = page.getByRole("link", { name: "Skip to content", exact: true });
+  check(await homeSkip.count() === 1, `home: expected the shared shell Skip to content link, found ${await homeSkip.count()}`);
   if (homeSkipCount === 1 && await homeSkip.count() === 1) {
     const homeHref = await homeSkip.getAttribute("href");
     check(homeHref === "#main-content", `home: skip link href was ${homeHref}`);
@@ -896,7 +896,7 @@ try {
       return active instanceof HTMLAnchorElement
         && active.classList.contains("skip-link")
         && active.getAttribute("href") === "#main-content"
-        && active.textContent?.trim() === "Skip to main content"
+        && active.textContent?.trim() === "Skip to content"
         && target instanceof HTMLElement;
     });
     check(homeFirstTab, "home: the Home skip link is not the first Tab stop or #main-content is missing");

@@ -343,7 +343,7 @@ const en: Dictionary = {
     navigation: "Navigation",
     primaryResources: "Primary resources",
     tutorialTitle: "Peer-reviewed tutorial",
-    copyright: "© 2026 ENA.HK. All rights reserved.",
+    copyright: "© 2026 Open-ENA.COM. All rights reserved.",
   },
 };
 
@@ -470,7 +470,7 @@ const zhHant: Dictionary = {
     navigation: "導覽",
     primaryResources: "第一手資源",
     tutorialTitle: "同儕評審教程",
-    copyright: "© 2026 ENA.HK。版權所有。",
+    copyright: "© 2026 Open-ENA.COM。版權所有。",
   },
 };
 
@@ -597,7 +597,7 @@ const zhHans: Dictionary = {
     navigation: "导航",
     primaryResources: "第一手资源",
     tutorialTitle: "同行评审教程",
-    copyright: "© 2026 ENA.HK。版权所有。",
+    copyright: "© 2026 Open-ENA.COM。版权所有。",
   },
 };
 

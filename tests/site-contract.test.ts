@@ -162,13 +162,13 @@ test("Open ENA uses the same neutral navigation treatment as the other destinati
   assert.match(headerSource, /mission[\s\S]*?open-ena[\s\S]*?news/);
 });
 
-test("the shared Home uses the Open ENA preview and localized ENA footer", () => {
+test("the shared Home keeps its hero and localized footer without the static workbench preview", () => {
   const homeSource = readFileSync(join(projectRoot, "app", "[locale]", "page.tsx"), "utf8");
   const sharedHome = readFileSync(join(projectRoot, "components", "home-source", "UnifiedHome.tsx"), "utf8");
   assert.match(homeSource, /<UnifiedHome/);
   assert.match(homeSource, /<HubFooter copy=\{getHomeFooterCopy\(locale, getDictionary\(locale\)\)\}/);
   assert.match(sharedHome, /<NetworkHero/);
-  assert.match(sharedHome, /<OpenEnaPreview/);
+  assert.doesNotMatch(sharedHome, /OpenEnaPreview/);
   assert.match(sharedHome, /lang="en" dir="ltr"/);
 });
 
@@ -208,18 +208,20 @@ test("Mission omits the removed definition region and localized research credits
   }
 });
 
-test("visible brand copy consistently uses ENA.HK capitalization", () => {
+test("public branding uses the Open ENA logo and copyright while retaining site metadata", () => {
   for (const locale of locales) {
     const copy = JSON.stringify(getDictionary(locale));
     assert.doesNotMatch(copy, /ENA\.hk/);
     assert.match(copy, /ENA\.HK/);
+    assert.match(getDictionary(locale).footer.copyright, /^© 2026 Open-ENA\.COM/);
   }
+  assert.equal(getDictionary("en").footer.copyright, "© 2026 Open-ENA.COM. All rights reserved.");
 
   const logoSource = readFileSync(join(projectRoot, "components", "Logo.tsx"), "utf8");
-  const lockupSource = readFileSync(join(projectRoot, "public", "ena-logo.svg"), "utf8");
+  const lockupSource = readFileSync(join(projectRoot, "public", "unified-home", "logo-open-ena.svg"), "utf8");
   const metadataSource = readFileSync(join(projectRoot, "lib", "metadata.ts"), "utf8");
-  assert.match(logoSource, /siteConfig\.tagline/);
-  assert.match(lockupSource, /Epistemic Network Analysis Hub of Knowledge/);
+  assert.match(logoSource, /src="\/unified-home\/logo-open-ena\.svg"/);
+  assert.match(lockupSource, /<title id="title">Open ENA<\/title>/);
   assert.match(metadataSource, /siteConfig\.brandName/);
   assert.doesNotMatch(metadataSource, /\| ENA`/);
 });

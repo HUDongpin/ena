@@ -191,7 +191,7 @@ const ar: Dictionary = {
     navigation: "التنقل",
     primaryResources: "الموارد الأصلية",
     tutorialTitle: "درس خضع لمراجعة الأقران",
-    copyright: "© 2026 ENA.HK. جميع الحقوق محفوظة.",
+    copyright: "© 2026 Open-ENA.COM. جميع الحقوق محفوظة.",
   },
 };
 
@@ -388,7 +388,7 @@ const ru: Dictionary = {
     navigation: "Навигация",
     primaryResources: "Первичные материалы",
     tutorialTitle: "Рецензируемое учебное руководство",
-    copyright: "© 2026 ENA.HK. Все права защищены.",
+    copyright: "© 2026 Open-ENA.COM. Все права защищены.",
   },
 };
 
@@ -585,7 +585,7 @@ const id: Dictionary = {
     navigation: "Navigasi",
     primaryResources: "Sumber primer",
     tutorialTitle: "Tutorial yang ditinjau sejawat",
-    copyright: "© 2026 ENA.HK. Hak cipta dilindungi.",
+    copyright: "© 2026 Open-ENA.COM. Hak cipta dilindungi.",
   },
 };
 
@@ -782,7 +782,7 @@ const bn: Dictionary = {
     navigation: "নেভিগেশন",
     primaryResources: "প্রাথমিক সম্পদ",
     tutorialTitle: "সহকর্মী পর্যালোচিত টিউটোরিয়াল",
-    copyright: "© 2026 ENA.HK. সর্বস্বত্ব সংরক্ষিত।",
+    copyright: "© 2026 Open-ENA.COM. সর্বস্বত্ব সংরক্ষিত।",
   },
 };
 

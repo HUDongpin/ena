@@ -193,7 +193,7 @@ const ko: Dictionary = {
     navigation: "탐색",
     primaryResources: "주요 원자료",
     tutorialTitle: "동료 심사를 거친 튜토리얼",
-    copyright: "© 2026 ENA.HK. 모든 권리 보유.",
+    copyright: "© 2026 Open-ENA.COM. 모든 권리 보유.",
   },
 };
 
@@ -390,7 +390,7 @@ const ja: Dictionary = {
     navigation: "ナビゲーション",
     primaryResources: "一次リソース",
     tutorialTitle: "査読済みチュートリアル",
-    copyright: "© 2026 ENA.HK. すべての権利を留保します。",
+    copyright: "© 2026 Open-ENA.COM. すべての権利を留保します。",
   },
 };
 
@@ -587,7 +587,7 @@ const hi: Dictionary = {
     navigation: "नेविगेशन",
     primaryResources: "प्राथमिक संसाधन",
     tutorialTitle: "सहकर्मी-समीक्षित शिक्षण सामग्री",
-    copyright: "© 2026 ENA.HK. सर्वाधिकार सुरक्षित।",
+    copyright: "© 2026 Open-ENA.COM. सर्वाधिकार सुरक्षित।",
   },
 };
 
