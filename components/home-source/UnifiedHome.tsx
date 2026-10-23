@@ -1,13 +1,11 @@
 import Link from "next/link";
 import NetworkHero from "./NetworkHero";
 import OpenEnaPreview from "./OpenEnaPreview";
-import HomeHeader from "./HomeHeader";
 import styles from "./unified-home/Home.module.css";
 
-export default function UnifiedHome({ homeHref = "/", aboutHref = "/about", footer }: { homeHref?: string; aboutHref?: string; footer: React.ReactNode }) {
+export default function UnifiedHome({ aboutHref = "/about", footer }: { aboutHref?: string; footer: React.ReactNode }) {
   return (<>
     <div className={styles.home} lang="en" dir="ltr">
-      <HomeHeader homeHref={homeHref} aboutHref={aboutHref} />
       <main id="main-content">
         <section className="open-hero" aria-labelledby="open-hero-title">
           <div className="open-hero-copy">

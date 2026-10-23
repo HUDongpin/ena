@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 
-// The Home page owns its complete shared shell. Other routes keep the ENA shell.
+// Home owns its main landmark and footer; every public page shares the header.
 export default function HomeAwareChrome({ locale, children, header, footer, backToTop, skipLink }: {
   locale: string;
   children: React.ReactNode;
@@ -12,7 +12,7 @@ export default function HomeAwareChrome({ locale, children, header, footer, back
   skipLink: React.ReactNode;
 }) {
   const path = usePathname().replace(/\/$/, "");
-  if (path === `/${locale}`) return <>{children}</>;
+  if (path === `/${locale}`) return <>{skipLink}{header}{children}</>;
   return <>
     {skipLink}
     {header}

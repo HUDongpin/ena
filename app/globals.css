@@ -55,7 +55,7 @@ html {
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: min(320px, 100%);
   color: var(--ink);
   background:
     radial-gradient(circle at 50% 10%, rgba(137, 207, 240, 0.18), transparent 38%),
@@ -160,6 +160,17 @@ button:focus-visible {
   align-items: center;
   gap: 12px;
   border-radius: 16px;
+}
+
+.brand-wordmark {
+  display: block;
+  width: 200px;
+  max-width: 100%;
+  height: auto;
+}
+
+.header-inner .brand-lockup {
+  min-width: 0;
 }
 
 .brand-mark {
@@ -1656,6 +1667,8 @@ button:focus-visible {
 
 .footer-brand .brand-lockup {
   margin-bottom: 20px;
+  padding: 8px 12px;
+  background: #f7fbfe;
 }
 
 .site-footer .brand-name {
@@ -5795,6 +5808,10 @@ body:has(.open-ena-login-page) .back-to-top {
 @media (max-width: 520px) {
   .container {
     width: min(100% - 28px, 1180px);
+  }
+
+  .brand-wordmark {
+    width: 176px;
   }
 
   .header-inner {

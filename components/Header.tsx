@@ -43,7 +43,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
   return (
     <header className="site-header">
       <div className="container header-inner">
-        <Logo locale={locale} priority={!isOpenEnaPath} />
+        <Logo href={`/${locale}`} priority={!isOpenEnaPath} />
         <nav className="desktop-nav" aria-label="Primary navigation">
           {navItems.map((item) => (
             <Link
