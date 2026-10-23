@@ -15,11 +15,6 @@ export default function UnifiedHome({ aboutHref = "/about", openEnaHref, footer 
               <Link className="button-primary" href={openEnaHref} prefetch={false}>Open ENA</Link>
               <Link className="button-secondary" href={aboutHref} prefetch={false}>Meet the team</Link>
             </div>
-            <dl className="open-hero-facts">
-              <div><dt>Framework</dt><dd>Next.js</dd></div>
-              <div><dt>Planned runtime</dt><dd>jENA 0.6.2</dd></div>
-              <div><dt>Current release</dt><dd>UI preview</dd></div>
-            </dl>
           </div>
           <NetworkHero />
         </section>
