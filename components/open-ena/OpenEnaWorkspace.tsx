@@ -2,7 +2,7 @@
 
 import { restoredWorkbenchCopy } from "./workbench-restoration-copy";
 import { buildUnitDisplayLabelIndexV3, hiddenUnitLabelsV3 } from "../../lib/open-ena/hidden-unit-display-v3";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode, type MutableRefObject } from "react";
 import { submitOpenEnaLogoutAsDocumentRequest } from "@/lib/open-ena-logout-navigation";
 import type { Row } from "jena-js";
 import type { Locale } from "@/lib/i18n";
@@ -95,6 +95,10 @@ import { OpenEnaImportPreviewV3 } from "./model-v3/OpenEnaImportPreviewV3";
 import { useOpenEnaWorkspaceV3, sameScientificContextV3, workspaceDraftExportableV3, workspaceRawBlockersV3, type WorkspaceWorkerV3 } from "./model-v3/workspace-controller";
 import { buildWorkspacePreviewsV3 } from "./model-v3/workspace-previews";
 import { modelScientificContextV3 } from "./model-v3/model-state";
+import { captureOpenEnaCloudWorkspace, type RestoredOpenEnaCloudWorkspace, type OpenEnaCloudPresentation } from "@/lib/open-ena/cloud-workspace";
+import type { OpenEnaCloudWorkbenchBridge } from "@/lib/open-ena/cloud-workbench-bridge";
+import { buildReferenceV2 } from "@/lib/open-ena/model-v3/reference-v2";
+import { getOpenEnaCloudCopy } from "@/lib/open-ena/cloud-copy";
 
 import { createOpenEnaPluginContextV1 } from "@/lib/open-ena/plugins/runtime-context";
 import { openEnaRuntimePluginAvailability, openEnaHistorical3dDisplayAvailability } from "@/lib/open-ena/plugins/runtime-registry";
@@ -106,6 +110,11 @@ interface OpenEnaWorkspaceProps {
   runtimeDisabledPluginIds?: readonly string[];
   initialSource?: { dataset: ParsedDataset; datasetSha256: string; drafts: ModelWorkspaceDraftsV3 };
   worker?: WorkspaceWorkerV3;
+  initialCloudWorkspace?: RestoredOpenEnaCloudWorkspace;
+  cloudBridge?: MutableRefObject<OpenEnaCloudWorkbenchBridge | null>;
+  cloudControls?: ReactNode;
+  onCloudChange?: () => void;
+  onLocalOnlyWorkChange?: (hasWork: boolean) => void;
 }
 
 class OpenEnaKnownWorkspaceFailureV3 extends Error {
@@ -419,7 +428,8 @@ function ResearchTableV3({ rows, label, unavailable, boundedRows, columnLabels }
     })}</tr>)}</tbody></table>{rows.length > 100 && <p>{boundedRows(100, rows.length)}</p>}</div>;
 }
 
-export default function OpenEnaWorkspace({ locale, providerDescriptor, operationOwnerKey = null, initialSource, worker, runtimeDisabledPluginIds = NO_RUNTIME_DISABLED_PLUGIN_IDS }: OpenEnaWorkspaceProps) {
+export default function OpenEnaWorkspace({ locale, providerDescriptor, operationOwnerKey = null, initialSource, worker, runtimeDisabledPluginIds = NO_RUNTIME_DISABLED_PLUGIN_IDS,
+  initialCloudWorkspace, cloudBridge, cloudControls, onCloudChange, onLocalOnlyWorkChange }: OpenEnaWorkspaceProps) {
   const workspaceId = useId();
   const rebuildBlockingChecklistId = `${workspaceId}-rebuild-blocking-checklist`;
   const copy = getOpenEnaCopy(locale);
@@ -427,7 +437,9 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
   const workspaceCopy = modelV3Copy.workspace;
   const researchTableCopy = { unavailable: workspaceCopy.data.unavailableCell, boundedRows: workspaceCopy.data.boundedRows };
   const authCopy = getOpenEnaAuthCopy(locale);
-  const controller = useOpenEnaWorkspaceV3({ initial: initialSource, worker });
+  const cloudCopy = getOpenEnaCloudCopy(locale);
+  const restoredView = initialCloudWorkspace?.presentation;
+  const controller = useOpenEnaWorkspaceV3({ initial: initialSource, restored: initialCloudWorkspace, worker });
   const { state, dispatch, dispatchModel, context, currentCompilation, currentPlan } = controller;
   const modelState = state.model, family = modelState.drafts.activeFamily, draft = modelState.drafts[family];
   const dataset = state.dataset, result = modelState.result;
@@ -438,23 +450,23 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
     return { ...baseDisplay, groups: { ...baseDisplay.groups, ...Object.fromEntries(state.presetHiddenGroups.tokens.map((token) => [token, { ...resolveOpenEnaGroupDisplayOptions(baseDisplay.groups, token), showUnitPoints: false, showMean: false, showConfidenceIntervals: false, showOutlierIntervals: false }])) } };
   }, [baseDisplay, state.presetHiddenGroups, result]);
   const current = modelState.resultStatus === "current" && currentPlan !== null;
-  const [mode, setMode] = useState<OpenEnaMode>("data");
-  const [railTabStop, setRailTabStop] = useState<OpenEnaMode>("data");
+  const [mode, setMode] = useState<OpenEnaMode>(restoredView?.mode ?? "data");
+  const [railTabStop, setRailTabStop] = useState<OpenEnaMode>(restoredView?.mode ?? "data");
   const [railOrientation, setRailOrientation] = useState<"horizontal" | "vertical">("vertical");
   const [teachingSampleKind, setTeachingSampleKind] = useState<TeachingSampleKind | null>(null);
   const [dataViewContext, setDataViewContext] = useState<OpenEnaDataViewContext>("comparison");
   const [centerSurface, setCenterSurface] = useState<"plot" | "data">("plot");
-  const [textScale, setTextScale] = useState(1);
-  const [showGroupLabels, setShowGroupLabels] = useState(true);
-  const [unitCircle, setUnitCircle] = useState(false);
+  const [textScale, setTextScale] = useState(restoredView?.textScale ?? 1);
+  const [showGroupLabels, setShowGroupLabels] = useState(restoredView?.showGroupLabels ?? true);
+  const [unitCircle, setUnitCircle] = useState(restoredView?.unitCircle ?? false);
   const [plotSettingsOpen, setPlotSettingsOpen] = useState(false);
-  const [view, setView] = useState<"2d" | "3d">("2d");
+  const [view, setView] = useState<"2d" | "3d">(restoredView?.view ?? "2d");
   const [modelNavigation, setModelNavigation] = useState<{ tab: "units" | "horizons" | "windows" | "codes"; serial: number }>({ tab: "units", serial: 0 });
   const [error, setError] = useState<OpenEnaWorkspaceFailureV3 | null>(null);
   const [sourceBusy, setSourceBusy] = useState(false);
   const [sourcePreview, setSourcePreview] = useState<{ text: string; dataset: ParsedDataset; types: SourceTypeDeclarationsV3 } | null>(null);
   const [derivative, setDerivative] = useState<Awaited<ReturnType<typeof prepareTypedCsvSourceV3>> | null>(null);
-  const [originalSource, setOriginalSource] = useState<{ text: string; name: string } | null>(null);
+  const [originalSource, setOriginalSource] = useState<{ text: string; name: string } | null>(initialCloudWorkspace?.originalSource ?? null);
   const sourceGeneration = useRef(0);
   const sourceFileTriggerRef = useRef<HTMLInputElement>(null);
   const railTriggerRefs = useRef<Partial<Record<OpenEnaMode, HTMLButtonElement | null>>>({});
@@ -485,31 +497,31 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
   const [previews, setPreviews] = useState<Awaited<ReturnType<typeof buildWorkspacePreviewsV3>>>({ units: { availability: "unavailable" }, horizons: { availability: "unavailable" } });
   const [activeCodeColor, setActiveCodeColor] = useState<{ code: string; context: typeof context } | null>(null);
   const activeColorIntent = activeCodeColor && sameScientificContextV3(activeCodeColor.context, context) && draft.codes.includes(activeCodeColor.code) ? activeCodeColor : null;
-  const [primaryGroupName, setPrimaryGroupName] = useState("");
-  const [secondaryGroupName, setSecondaryGroupName] = useState("");
-  const [axes, setAxes] = useState<string[]>([]);
-  const [showPoints, setShowPoints] = useState(true), [showNetworks, setShowNetworks] = useState(true), [showLabels, setShowLabels] = useState(true);
-  const [showUnitLabels, setShowUnitLabels] = useState(false), [showVariance, setShowVariance] = useState(true), [showTrajectories, setShowTrajectories] = useState(false);
-  const [showGroupCentroidPaths, setShowGroupCentroidPaths] = useState(true);
-  const [endpointsOnly, setEndpointsOnly] = useState(false);
-  const [visibleHorizons, setVisibleHorizons] = useState<string[] | null>(null);
-  const [threeDAxes, setThreeDAxes] = useState<string[]>([]);
-  const [edgeThreshold, setEdgeThreshold] = useState(0), [edgeScale, setEdgeScale] = useState(1), [pointScale, setPointScale] = useState(1), [plotZoom, setPlotZoom] = useState(1);
-  const [flipX, setFlipX] = useState(false), [flipY, setFlipY] = useState(false);
-  const [camera, setCamera] = useState<OpenEna3dCamera | null>(null);
-  const [cameraPreset, setCameraPreset] = useState<CameraPreset>("isometric");
+  const [primaryGroupName, setPrimaryGroupName] = useState(restoredView?.primaryGroupName ?? "");
+  const [secondaryGroupName, setSecondaryGroupName] = useState(restoredView?.secondaryGroupName ?? "");
+  const [axes, setAxes] = useState<string[]>(restoredView?.axes ?? []);
+  const [showPoints, setShowPoints] = useState(restoredView?.showPoints ?? true), [showNetworks, setShowNetworks] = useState(restoredView?.showNetworks ?? true), [showLabels, setShowLabels] = useState(restoredView?.showLabels ?? true);
+  const [showUnitLabels, setShowUnitLabels] = useState(restoredView?.showUnitLabels ?? false), [showVariance, setShowVariance] = useState(restoredView?.showVariance ?? true), [showTrajectories, setShowTrajectories] = useState(restoredView?.showTrajectories ?? false);
+  const [showGroupCentroidPaths, setShowGroupCentroidPaths] = useState(restoredView?.showGroupCentroidPaths ?? true);
+  const [endpointsOnly, setEndpointsOnly] = useState(restoredView?.endpointsOnly ?? false);
+  const [visibleHorizons, setVisibleHorizons] = useState<string[] | null>(restoredView?.visibleHorizons ?? null);
+  const [threeDAxes, setThreeDAxes] = useState<string[]>(restoredView?.threeDAxes ?? []);
+  const [edgeThreshold, setEdgeThreshold] = useState(restoredView?.edgeThreshold ?? 0), [edgeScale, setEdgeScale] = useState(restoredView?.edgeScale ?? 1), [pointScale, setPointScale] = useState(restoredView?.pointScale ?? 1), [plotZoom, setPlotZoom] = useState(restoredView?.plotZoom ?? 1);
+  const [flipX, setFlipX] = useState(restoredView?.flipX ?? false), [flipY, setFlipY] = useState(restoredView?.flipY ?? false);
+  const [camera, setCamera] = useState<OpenEna3dCamera | null>(restoredView?.camera ?? null);
+  const [cameraPreset, setCameraPreset] = useState<CameraPreset>(restoredView?.cameraPreset ?? "isometric");
   const cameraPositionOptions: Array<[CameraPreset, string]> = [["isometric", copy.plot.default3dCamera], ["xy", copy.plot.xy], ["xz", copy.plot.xz], ["yz", copy.plot.yz], ["yx", copy.plot.yx], ["zx", copy.plot.zx], ["zy", copy.plot.zy]];
-  const [aspectRatio, setAspectRatio] = useState<OpenEna3dAspectRatio | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<OpenEna3dAspectRatio | null>(restoredView?.aspectRatio ?? null);
   const [presetPreview, setPresetPreview] = useState<PresentationArtifactV3 | null>(null);
   const [presetAxisNotice, setPresetAxisNotice] = useState<{ resultHash: string; dimensions: readonly [string, string] } | null>(null);
   const presetSerial = useRef(0);
-  const [nodeOverrides, setNodeOverrides] = useState<{ hash: string; positions: OpenEnaNodeLayoutPositions }>({ hash: "", positions: new Map() });
-  const [hiddenUnitKeys, setHiddenUnitKeys] = useState<string[]>([]);
+  const [nodeOverrides, setNodeOverrides] = useState<{ hash: string; positions: OpenEnaNodeLayoutPositions }>({ hash: initialCloudWorkspace?.result?.binding.scientificResultSha256 ?? "", positions: new Map(restoredView?.nodePositions.map(([code, coordinates]) => [code, new Map(coordinates)]) ?? []) });
+  const [hiddenUnitKeys, setHiddenUnitKeys] = useState<string[]>(restoredView?.hiddenUnitKeys ?? []);
   const [nativeContrast, setNativeContrast] = useState<{ key: string; value: Awaited<ReturnType<typeof buildContrastV3>> } | null>(null);
   const [consumerError, setConsumerError] = useState("");
   const [checkedDataView, setCheckedDataView] = useState<Awaited<ReturnType<typeof buildDataViewV3>> | null>(null);
-  const [inferenceDesign, setInferenceDesign] = useState<"independent" | "paired" | "repeated">("independent");
-  const [selectedPeriods, setSelectedPeriods] = useState<string[]>([]);
+  const [inferenceDesign, setInferenceDesign] = useState<"independent" | "paired" | "repeated">(restoredView?.inferenceDesign ?? "independent");
+  const [selectedPeriods, setSelectedPeriods] = useState<string[]>(restoredView?.selectedPeriods ?? []);
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [resultTable, setResultTable] = useState<OpenEnaResultTableKey>("coordinates");
   const [inference, setInference] = useState<{ key: string; value: NativeInferenceV3 } | null>(null);
@@ -518,6 +530,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
   const [aiReview, setAiReview] = useState<{ key: string; value: Awaited<ReturnType<typeof buildAiInterpretationReviewV3>> } | null>(null);
   const [aiLimitation, setAiLimitation] = useState("");
   const [sets, setSets] = useState<OpenEnaAnalysisSetV3[]>([]);
+  const [aiLocalWork, setAiLocalWork] = useState({ hasWork: false, revision: 0 });
+  const aiLocalWorkChanged = useCallback((hasWork: boolean) => setAiLocalWork((previous) => ({ hasWork, revision: previous.revision + 1 })), []);
   const [setComparison, setSetComparison] = useState<ReturnType<typeof compareAnalysisSetsV3> | null>(null);
   const pendingSetFocusIdRef = useRef<string | null>(null);
   const pendingSetFocusCancelRef = useRef<() => void>(() => {});
@@ -697,7 +711,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
     void buildWorkspacePreviewsV3(dataset, modelState, currentCompilation).then((value) => { if (active) setPreviews(value); });
     return () => { active = false; };
   }, [contextKey, currentCompilation, dataset]);
+  const initializedResultView = useRef<string | null>(initialCloudWorkspace ? resultHash : null);
   useEffect(() => {
+    if (initializedResultView.current === resultHash) return;
+    initializedResultView.current = resultHash;
     setPrimaryGroupName((previous) => groups.some((group) => group.token === previous) ? previous : groups[0]?.token ?? ""); setSecondaryGroupName((previous) => groups.some((group) => group.token === previous) ? previous : groups[1]?.token ?? ""); setSelectedPeriods([]); setIdentityConfirmed(false); setAxes([]); setThreeDAxes([]); setVisibleHorizons(null); setEndpointsOnly(false); setHiddenUnitKeys([]); setPresetAxisNotice(null);
   }, [resultHash]);
   useEffect(() => {
@@ -1103,6 +1120,48 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
   // declared 590px height and leaves a shorter responsive canvas unmatched.
   const codeColors = useMemo(() => Object.fromEntries(Object.entries(renderedSource).map(([rendered, source]) => [rendered, codeColorFor(display.codeColors, source)])), [renderedSource, display.codeColors]);
   const sourcePositions = nodeOverrides.hash === resultHash ? nodeOverrides.positions : emptyNodePositions;
+  const cloudPresentation: OpenEnaCloudPresentation = { mode, view, primaryGroupName, secondaryGroupName, axes, threeDAxes,
+    camera, cameraPreset, aspectRatio, nodePositions: [...sourcePositions].map(([code, coordinates]) => [code, [...coordinates]]),
+    visibleHorizons, hiddenUnitKeys, showPoints, showNetworks, showLabels, showGroupLabels, showUnitLabels, showVariance,
+    showTrajectories, showGroupCentroidPaths, endpointsOnly, unitCircle, flipX, flipY, edgeThreshold, edgeScale, pointScale, plotZoom,
+    textScale, inferenceDesign, selectedPeriods };
+  const cloudPresentationKey = canonicalJsonV3({ ...cloudPresentation, mode: "data" });
+  const cloudChangeInputs = [dataset, modelState.drafts, modelState.display, result, originalSource, cloudPresentationKey, activeInference, state.references, state.raw, state.presetHiddenGroups];
+  const cloudBaseline = useRef(cloudChangeInputs);
+  useEffect(() => {
+    const changed = cloudChangeInputs.some((value, index) => value !== cloudBaseline.current[index]);
+    cloudBaseline.current = cloudChangeInputs;
+    if (changed) onCloudChange?.();
+  }, [dataset, modelState.drafts, modelState.display, result, originalSource, cloudPresentationKey, activeInference, state.references, state.raw, state.presetHiddenGroups, onCloudChange]);
+  useLayoutEffect(() => {
+    onLocalOnlyWorkChange?.(sets.length > 0 || state.historical.length > 0 || sourcePreview !== null || state.preview !== null
+      || aiLocalWork.hasWork || sourceBusy || modelState.runStatus === "running");
+  }, [sets, state.historical, sourcePreview, state.preview, aiLocalWork, sourceBusy, modelState.runStatus, onLocalOnlyWorkChange]);
+  useLayoutEffect(() => {
+    if (!cloudBridge) return;
+    const bridge: OpenEnaCloudWorkbenchBridge = { running: modelState.runStatus === "running" || sourceBusy,
+      defaultTitle: dataset?.name ?? null,
+      capture: async () => {
+        if (modelState.runStatus === "running" || sourceBusy) throw new Error(cloudCopy.waitForAnalysis);
+        let sourceReference = initialCloudWorkspace?.sourceReference
+          && initialCloudWorkspace.sourceReference.source.executionPlanSha256 === result?.binding.executionPlanSha256
+          ? initialCloudWorkspace.sourceReference : null;
+        if (state.sourceWitness && current && currentPlan && result?.configuration.analysisFamily === "standard"
+          && result.configuration.analysis.model.type === "EndPoint" && result.configuration.analysis.rotation.type !== "reference") {
+          sourceReference = await buildReferenceV2(state.sourceWitness, { displayName: dataset?.name ?? "Saved Reference", currentPlan });
+        }
+        let statisticsReport = initialCloudWorkspace?.statisticsReport && canonicalJsonV3(initialCloudWorkspace.statisticsReport.binding) === canonicalJsonV3(result?.binding ?? null)
+          ? initialCloudWorkspace.statisticsReport : null;
+        if (activeInference && result && currentPlan && controls) {
+          statisticsReport = JSON.parse((await exportNativeStatisticsV3(activeInference, result, currentPlan, controls)).contents) as Record<string, unknown>;
+        }
+        return captureOpenEnaCloudWorkspace({ state: { ...state, model: { ...modelState,
+          display: { ...modelState.display, [result?.configuration.analysisFamily ?? family]: display } } }, currentPlan,
+          presentation: cloudPresentation, sourceReference, originalSource, statisticsReport });
+      } };
+    cloudBridge.current = bridge;
+    return () => { if (cloudBridge.current === bridge) cloudBridge.current = null; };
+  });
   const nodeLayout = useMemo<OpenEnaNodeLayoutPositions>(() => new Map(Object.entries(renderedSource).flatMap(([rendered, source]) => sourcePositions.has(source) ? [[rendered, sourcePositions.get(source)!] as const] : [])), [renderedSource, sourcePositions]);
   const moveNode = (rendered: string, position: OpenEnaNodeDimensionPosition) => {
     const source = renderedSource[rendered]; if (!Object.hasOwn(renderedSource, rendered) || !source) throw new Error(workspaceCopy.plot.unknownRenderedCode);
@@ -1442,6 +1501,16 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
         {view === "3d" && <fieldset className="ena-camera-fieldset"><legend>{copy.plot.cameraPosition}</legend>{cameraPositionOptions.map(([preset, label]) => <label key={preset}><input type="radio" name="ena-camera" value={preset} checked={cameraPreset === preset} onChange={() => { setCameraPreset(preset); setCamera(cameraForPreset(preset)); setAspectRatio(null); }} />{label}</label>)}</fieldset>}
         <button type="button" onClick={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}>{workspaceCopy.plot.resetNodes}</button>
       </section>}
+      {mode === "stats" && !activeInference && initialCloudWorkspace?.statisticsReport
+        && canonicalJsonV3(initialCloudWorkspace.statisticsReport.binding) === canonicalJsonV3(result?.binding ?? null)
+        ? <details className="ena-panel-details" data-testid="open-ena-cloud-saved-statistics" open>
+          <summary>{cloudCopy.savedStatistics}</summary><p>{cloudCopy.savedStatisticsNote}</p>
+          {Object.entries((initialCloudWorkspace.statisticsReport.presentationTables ?? {}) as Record<string, unknown>).filter(([, rows]) => Array.isArray(rows))
+            .map(([key, rows], index) => <ResearchTableV3 key={key} {...researchTableCopy}
+              rows={(rows as unknown[]).filter((row): row is Record<string, unknown> => row !== null && typeof row === "object" && !Array.isArray(row))}
+              label={`${cloudCopy.savedStatistics} ${index + 1}`} />)}
+          <button type="button" onClick={() => downloadJson("saved-statistical-report.json", initialCloudWorkspace.statisticsReport)}>{cloudCopy.downloadStatistics}</button>
+        </details> : null}
       {mode === "stats" && <section className="ena-workspace-section-v3 ena-workspace-stats-v3"><OpenEnaNativeStatsPanelV3 result={result} current={current} axes={twoDAxes} inference={activeInference} copy={copy.stats} nativeCopy={modelV3Copy.nativeStats} comparisonCardCopy={restoredCopy.comparisonCards} renderTable={(rows, label) => <ResearchTableV3 {...researchTableCopy} rows={rows} label={label} />}>{groupSelectors}
         <p>{workspaceCopy.stats.separation}</p>
         {isTrajectory && <><label>{workspaceCopy.stats.inferenceDesign}<select value={inferenceDesign} onChange={(e) => setInferenceDesign(e.target.value as typeof inferenceDesign)}><option value="independent">{workspaceCopy.stats.designs.independent}</option><option value="paired">{workspaceCopy.stats.designs.paired}</option><option value="repeated">{workspaceCopy.stats.designs.repeated}</option></select></label>
@@ -1495,6 +1564,9 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
         <button type="button" disabled={!current || completedResultKind !== "standard" || (isTrajectory && result?.binding.referenceId === null) || Boolean(referenceDisclosure?.disabled)} aria-label={disclosedName(result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference, referenceDisclosure, referenceNote)} aria-describedby={referenceNote ? referenceNoteId : undefined} title={referenceNote || undefined} onClick={() => void attempt(async () => {
           if (referenceDisclosure?.disabled) return;
           if (!result || !currentPlan) return;
+          if (!state.sourceWitness && initialCloudWorkspace?.sourceReference?.source.executionPlanSha256 === result.binding.executionPlanSha256) {
+            downloadJson("saved-reference.v2.json", initialCloudWorkspace.sourceReference); return;
+          }
           const descriptor = await exportReferenceV2(result, { currentPlan, ...(state.sourceWitness ? { sourceWitness: state.sourceWitness } : {}), displayName: dataset?.name ?? workspaceCopy.artifacts.referenceDisplayName });
           if (mounted.current && latest.current.current && latest.current.state.model.result === result && latest.current.currentPlan === currentPlan) saveDescriptor(descriptor);
         })}>{result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference}</button>
@@ -1529,6 +1601,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
 </div>;
   const aiPanel = <div className="ena-control-content ena-ai-mode-panel ena-workspace-controls-v3 ena-restored-workbench" data-ena-ai-source="stats-results"><header className="ena-panel-heading"><p className="ena-panel-kicker">{restoredCopy.aiKicker}</p><h2>{copy.aiInterpretation.title}</h2><p>{activeInference ? workspaceCopy.ai.ready : workspaceCopy.ai.unavailable}</p></header><button type="button" onClick={() => setMode("stats")}>{workspaceCopy.ai.openStats}</button>
       <div hidden={mode !== "ai"}><OpenEnaAiInterpretation operationOwnerKey={operationOwnerKey} request={activeAiReview?.request ?? null}
+        onLocalWorkChange={aiLocalWorkChanged}
         localScientificIdentity={openEnaAiLocalScientificIdentityV3(activeAiReview)}
         copy={copy.aiInterpretation} disabled={!activeAiReview || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
         {activeAiReview && <details className="ena-panel-details"><summary>{restoredCopy.aiEvidenceScope}</summary><p>{workspaceCopy.ai.wireLimitations}</p></details>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
@@ -1543,6 +1616,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
           </>;
   return <div className="open-ena-page" data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
     <OpenEnaFallbackNotice locale={locale} />
+    {cloudControls}
     <section id="open-ena-workspace" tabIndex={-1} className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} data-skip-label={workspaceCopy.landmarks.skipToWorkspace} aria-busy={sourceBusy || modelState.runStatus === "running"}>
       <div className="ena-workbench-grid">
         <nav className="ena-tool-rail" aria-label={workspaceCopy.shell.modesAria} data-ena-workbench-region="rail">
@@ -1554,7 +1628,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
           <div ref={railToolbarRef} className="ena-rail-modes" role="toolbar" aria-label={workspaceCopy.landmarks.railToolbar} aria-orientation={railOrientation} onKeyDown={onRailToolbarKeyDown}>{OPEN_ENA_RAIL_MODES.map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" tabIndex={railTabStop === entry ? 0 : -1} aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onFocus={() => cancelScheduledRailFocusRestore()} onClick={() => { cancelScheduledRailFocusRestore(); setRailTabStop(entry); setMode(entry); }}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
           <OpenEnaSiteNavigation locale={locale} />
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post" onSubmit={submitOpenEnaLogoutAsDocumentRequest}><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-11 4 4-4 4m-5-4h9" /></svg><span>{authCopy.signOut}</span></button></form>
-          <div className="ena-rail-meta"><span className="ena-rail-privacy">{workspaceCopy.shell.local}</span><span className="sr-only">{workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span></div>
+          <div className="ena-rail-meta"><span className="ena-rail-privacy">{workspaceCopy.shell.local}</span><span className="sr-only">{cloudBridge ? cloudCopy.runtimePrivacy.replace("{version}", JENA_RUNTIME_VERSION) : workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span></div>
         </nav>
         <aside className="ena-control-panel" data-ena-workbench-region="controls" data-ena-rail-panel={mode} role="region" aria-label={workspaceCopy.landmarks[mode]} onKeyDown={onRailPanelKeyDown}><OpenEnaPersistentRailPanels mode={mode} analysisPanel={analysisPanel} aiPanel={aiPanel} /></aside>
         <div className="ena-visual-workspace" data-ena-view={view} data-testid="open-ena-center-surface">

@@ -106,8 +106,8 @@ test("Available and Complete cohort policies have distinct repeated-entity denom
 
 test("Group-centroid paths and individual paths have independent display controls", () => {
 
-  assert.match(v3, /showGroupCentroidPaths, setShowGroupCentroidPaths.*useState\(true\)/);
-  assert.match(v3, /showTrajectories, setShowTrajectories.*useState\(false\)/);
+  assert.match(v3, /showGroupCentroidPaths, setShowGroupCentroidPaths.*useState\(restoredView\?\.showGroupCentroidPaths \?\? true\)/);
+  assert.match(v3, /showTrajectories, setShowTrajectories.*useState\(restoredView\?\.showTrajectories \?\? false\)/);
   assert.match(v3, /checked=\{showGroupCentroidPaths\}/);
   assert.match(v3, /showVariance, showTrajectories/);
 

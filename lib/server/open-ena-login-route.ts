@@ -3,6 +3,7 @@ import { isLocale, type Locale } from "@/lib/i18n";
 import {
   createOpenEnaSessionTokenV2,
   createOpenEnaSessionTokenV3,
+  createOpenEnaSessionTokenV4,
   openEnaDisposableUsernameRef,
   OPEN_ENA_DISPOSABLE_SESSION_MAX_AGE_SECONDS,
   OPEN_ENA_SESSION_COOKIE,
@@ -32,6 +33,7 @@ import {
   openEnaLoginSourceRef,
   readTrustedClientAddress,
 } from "@/lib/server/open-ena-trusted-client-ip";
+import { normalizeOpenEnaEmail, verifyRegisteredOpenEnaCredentials } from "./open-ena-user-credentials";
 
 export const OPEN_ENA_LOGIN_MAX_REQUEST_BYTES = 16 * 1024;
 export const OPEN_ENA_LOGIN_PAIR_FAILURES = 10;
@@ -176,6 +178,7 @@ export function createOpenEnaLoginPostHandler(
     const locale = formLocale(formData.get("locale"));
     const username = formData.get("username")?.trim() ?? "";
     const password = formData.get("password") ?? "";
+    const registeredEmail = environment.OPEN_ENA_CLOUD_PROJECTS_ENABLED === "true" ? normalizeOpenEnaEmail(username) : null;
 
     // Origin and body checks above happen before any credential or limiter work.
     if (!openEnaAuthSecurityConfigurationReady(environment)) {
@@ -190,7 +193,7 @@ export function createOpenEnaLoginPostHandler(
         : noStoreResponse("Login client address is unavailable", 403);
     }
     const sourceRef = openEnaLoginSourceRef(attribution.address, environment);
-    const pairRef = sourceRef ? openEnaLoginPairRef(username, sourceRef, environment) : null;
+    const pairRef = sourceRef ? openEnaLoginPairRef(registeredEmail ?? username, sourceRef, environment) : null;
     if (!sourceRef || !pairRef) return authFailureResponse("not-configured");
 
     let securityStore: OpenEnaAuthSecurityStore | null;
@@ -222,6 +225,13 @@ export function createOpenEnaLoginPostHandler(
               kind: "owner",
               principalRef: null,
               sessionToken: createSessionToken(),
+            };
+          }
+          if (registeredEmail) {
+            const user = await verifyRegisteredOpenEnaCredentials(query, registeredEmail, password);
+            if (user) return {
+              outcome: "authenticated", kind: "user", principalRef: `u_${user.userId}`,
+              sessionToken: createOpenEnaSessionTokenV4(user.userId, user.sessionVersion, Date.now(), environment),
             };
           }
           const usernameRef = openEnaDisposableUsernameRef(username, environment);

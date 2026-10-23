@@ -7,6 +7,7 @@ export const OPEN_ENA_DISPOSABLE_SESSION_MAX_AGE_SECONDS = 15 * 60;
 const SESSION_VERSION = "v1";
 export const OPEN_ENA_SESSION_VERSION_V2 = "v2";
 export const OPEN_ENA_SESSION_VERSION_V3 = "v3";
+export const OPEN_ENA_SESSION_VERSION_V4 = "v4";
 export type OpenEnaPrincipal = {
   principalRef: string;
   jti: string;
@@ -15,7 +16,22 @@ export type OpenEnaPrincipal = {
 };
 export type OpenEnaSessionRevocationLookup = {
   isSessionRevoked(jti: string): Promise<boolean>;
+  isRegisteredSessionCurrent?(userId: string, sessionVersion: number): Promise<boolean>;
 };
+
+export type OpenEnaRegisteredPrincipal = OpenEnaPrincipal & {
+  userId: string;
+  sessionVersion: number;
+};
+
+const REGISTERED_USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+export function isOpenEnaRegisteredPrincipal(principal: OpenEnaPrincipal): principal is OpenEnaRegisteredPrincipal {
+  const registered = principal as Partial<OpenEnaRegisteredPrincipal>;
+  return typeof registered.userId === "string" && REGISTERED_USER_ID.test(registered.userId)
+    && principal.principalRef === `u_${registered.userId}`
+    && Number.isSafeInteger(registered.sessionVersion) && registered.sessionVersion! >= 1;
+}
 
 export type OpenEnaAuthEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -217,13 +233,52 @@ export function verifyOpenEnaSessionTokenV3(
   };
 }
 
+/** Registered identities are stable across domains and independent of the legacy owner. */
+export function createOpenEnaSessionTokenV4(
+  userId: string,
+  sessionVersion: number,
+  issuedAtMilliseconds = Date.now(),
+  environment: OpenEnaAuthEnvironment = process.env,
+) {
+  const secret = configuredSessionSecret(environment);
+  if (!secret || !REGISTERED_USER_ID.test(userId) || !Number.isSafeInteger(sessionVersion)
+    || sessionVersion < 1 || sessionVersion > 2_147_483_647) {
+    throw new TypeError("Invalid registered account session configuration.");
+  }
+  const issued = Math.floor(issuedAtMilliseconds / 1_000);
+  if (!Number.isSafeInteger(issued) || issued < 0) throw new TypeError("Invalid session time.");
+  const payload = `${OPEN_ENA_SESSION_VERSION_V4}.${issued}.${randomUUID()}.${userId}.${sessionVersion}`;
+  return `${payload}.${signature(payload, secret)}`;
+}
+
+export function verifyOpenEnaSessionTokenV4(
+  token: string | undefined,
+  nowMilliseconds = Date.now(),
+  environment: OpenEnaAuthEnvironment = process.env,
+): OpenEnaRegisteredPrincipal | null {
+  const secret = configuredSessionSecret(environment);
+  if (!secret || !token || token.length > 512) return null;
+  const parts = token.split(".");
+  if (parts.length !== 6 || parts[0] !== OPEN_ENA_SESSION_VERSION_V4) return null;
+  const [, issuedText, jti, userId, versionText, supplied] = parts;
+  const issued = Number(issuedText), version = Number(versionText), now = Math.floor(nowMilliseconds / 1_000);
+  if (!/^\d+$/u.test(issuedText) || !Number.isSafeInteger(issued) || !Number.isSafeInteger(now)
+    || !REGISTERED_USER_ID.test(jti) || !REGISTERED_USER_ID.test(userId)
+    || !/^[1-9]\d{0,9}$/u.test(versionText) || version > 2_147_483_647
+    || issued > now + 60 || now - issued >= OPEN_ENA_SESSION_MAX_AGE_SECONDS) return null;
+  if (!constantTimeEqual(supplied, signature(parts.slice(0, 5).join("."), secret))) return null;
+  return { principalRef: `u_${userId}`, userId, sessionVersion: version, jti,
+    issuedAtSeconds: issued, expiresAtSeconds: issued + OPEN_ENA_SESSION_MAX_AGE_SECONDS };
+}
+
 export function verifyOpenEnaSessionTokenAny(
   token: string | undefined,
   nowMilliseconds = Date.now(),
   environment: OpenEnaAuthEnvironment = process.env,
 ) {
   return verifyOpenEnaSessionTokenV2(token, nowMilliseconds, environment)
-    ?? verifyOpenEnaSessionTokenV3(token, nowMilliseconds, environment);
+    ?? verifyOpenEnaSessionTokenV3(token, nowMilliseconds, environment)
+    ?? verifyOpenEnaSessionTokenV4(token, nowMilliseconds, environment);
 }
 
 /**
@@ -256,6 +311,8 @@ export async function verifyOpenEnaSessionTokenAnyWithRevocation(
   const principal = verifyOpenEnaSessionTokenAny(token, nowMilliseconds, environment);
   if (!principal) return null;
   try {
+    if (isOpenEnaRegisteredPrincipal(principal)
+      && !await revocations.isRegisteredSessionCurrent?.(principal.userId, principal.sessionVersion)) return null;
     return await revocations.isSessionRevoked(principal.jti) ? null : principal;
   } catch {
     return null;

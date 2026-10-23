@@ -29,6 +29,7 @@ interface OpenEnaAiInterpretationProps {
   disabledReason: string;
   providerDescriptor?: { provider: string; model: string };
   showHeading?: boolean;
+  onLocalWorkChange?: (hasWork: boolean) => void;
 }
 
 type AiAuditReceiptView = {
@@ -184,6 +185,7 @@ export default function OpenEnaAiInterpretation({
   disabledReason,
   providerDescriptor = { provider: "DeepSeek", model: "server-configured model" },
   showHeading = true,
+  onLocalWorkChange,
 }: OpenEnaAiInterpretationProps) {
   const [consentedRequestIdentity, setConsentedRequestIdentity] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>("idle");
@@ -222,6 +224,7 @@ export default function OpenEnaAiInterpretation({
   const operationStorageKey = operationScope?.key ?? null;
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
   const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;
+  useEffect(() => { onLocalWorkChange?.(currentResponse !== null || generationStatus === "loading"); }, [currentResponse, generationStatus, onLocalWorkChange]);
   const showsRetainedInterpretation = currentResponse !== null;
   // Sample while the previous result is still mounted. currentResponse drops
   // during render, so the focused heading is gone before an effect can see it.

@@ -20,7 +20,7 @@ test("Open ENA removes the Sets rail entry and opens on Data", () => {
   );
   assert.doesNotMatch(types, /OpenEnaMode[^;]*"sets"/);
   assert.doesNotMatch(workspace, /^\s{2}sets:\s*\(/m, "the Sets rail logo must be removed");
-  assert.match(workspace, /useState<OpenEnaMode>\("data"\)/, "Data becomes the initial mode");
+  assert.match(workspace, /useState<OpenEnaMode>\(restoredView\?\.mode\s*\?\?\s*"data"\)/, "a new local workspace opens on Data; a saved project may restore its previous panel");
   assert.doesNotMatch(copy, /modes:\s*\{\s*sets:/, "localized rail labels must not expose Sets");
 });
 

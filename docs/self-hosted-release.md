@@ -12,6 +12,9 @@ Browser, and Reviewed regressions. Artifact availability alone is not release
 approval. The workflow packages files but does not connect to a production
 server, change DNS, or apply database migrations.
 
+Releases enabling registered accounts and private projects also require
+[migration 010 and the cloud-project runtime procedure](open-ena-cloud-projects.md).
+
 The archive includes the traced runtime dependencies, public files, static
 assets, and SQL migrations. Packaging rejects `.env*` files. Runtime account,
 database, session, and provider configuration must be supplied separately by the

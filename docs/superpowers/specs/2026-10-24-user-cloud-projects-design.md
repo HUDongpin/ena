@@ -21,13 +21,15 @@ An additive migration creates registered users, expiring account actions, accoun
 
 Project ownership comes exclusively from a verified session. Every project operation uses an owner predicate and a transaction-local owner context enforced by PostgreSQL row security. IDs from URLs never grant access. A second user sees a missing project instead of another user's metadata. Quota updates serialize on the owner row, and writes require an expected revision to prevent cross-tab overwrites.
 
-Project content is encrypted with AES-256-GCM and a dedicated server key, bound to the user, project ID, and revision. Titles and bounded list metadata remain queryable. The initial bounded service permits 50 projects and 200 MiB of retained project content per account; each snapshot is capped at 16 MiB, consistent with the existing portable JSON admission boundary. Archived projects remain owned, recoverable, and counted toward storage.
+Project content is encrypted with AES-256-GCM and a dedicated server key, bound to the user, project ID, and revision. Titles and bounded list metadata remain queryable. The initial bounded service permits 50 projects and 200 MiB of retained project content per account; each snapshot is capped at 16 MiB, consistent with the existing portable JSON admission boundary. Archived projects remain owned, recoverable, and counted toward storage. To free storage, the owner can explicitly confirm permanent deletion of an already archived project; deletion also checks the current revision and ownership.
 
 ## Workspace snapshot and restoration
 
 A versioned project snapshot contains the normalized imported data, dataset provenance, both Standard/ONA drafts, validated references, the last analysis result, model display choices, and primary plot settings. Saving is explicit. The save interface explains that the private cloud copy includes source data. Pure local analysis does not upload raw data.
 
 Restoration validates the snapshot envelope, plain JSON limits, dataset/draft shapes, reference artifacts, and result integrity. A fresh execution plan is compiled from the stored data/configuration before a restored result is granted current/source-backed authority. Historical or stale results remain historical or stale. Restoration never starts an analysis or paid AI request automatically. Nonportable in-flight requests are not resumed.
+
+Saved statistical reports remain available as read-only tables and downloads. AI narratives, captured comparison sets, historical imports, pending actions, and undo history are outside this snapshot. The save dialog discloses the scope; browser-only work retains its own discard warning after a successful save. Unfinished visible raw model input prevents saving instead of silently retaining an older typed value. Raw edits and preset display overlays participate in dirty tracking.
 
 The UI provides owned project listing, creation from the current workspace, save, open, rename, archive, and restore. Successful save displays the stored revision/time. A failed save leaves the current workspace intact. An obsolete write returns a conflict and offers reopening or saving a copy; it never silently replaces a newer server revision. Opening another project warns before replacing unsaved local work.
 

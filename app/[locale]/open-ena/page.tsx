@@ -4,9 +4,11 @@ import { notFound } from "next/navigation";
 import JsonLd from "@/components/JsonLd";
 import OpenEnaLogin, { OpenEnaAuthRecoveryNotice } from "@/components/open-ena/OpenEnaLogin";
 import OpenEnaWorkspace from "@/components/open-ena/OpenEnaWorkspace";
+import OpenEnaCloudProjects from "@/components/open-ena/OpenEnaCloudProjects";
 import { getLocaleMeta, isLocale, type Locale } from "@/lib/i18n";
 import {
   OPEN_ENA_SESSION_COOKIE,
+  isOpenEnaRegisteredPrincipal,
 } from "@/lib/open-ena-auth";
 import {
   openEnaAuthSecurityConfigurationReady,
@@ -23,10 +25,13 @@ import { openEnaLoginNotice } from "@/lib/open-ena-auth-copy";
 import { pageMetadata } from "@/lib/metadata";
 import { siteConfig } from "@/lib/site";
 import { parseOpenEnaDisabledPluginIds } from "@/lib/open-ena/plugins/runtime-registry";
+import { getOpenEnaCloudPool, openEnaCloudEnabled } from "@/lib/server/open-ena-cloud-db";
+import { openEnaAccountMailReady } from "@/lib/server/open-ena-account-mail";
+import { createOpenEnaUsersStore } from "@/lib/server/open-ena-users";
 
 interface OpenEnaPageProps {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ auth?: string | string[]; retry_after?: string | string[] }>;
+  searchParams: Promise<{ auth?: string | string[]; retry_after?: string | string[]; reauth?: string | string[] }>;
 }
 
 export const dynamic = "force-dynamic";
@@ -75,13 +80,16 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
     ? await verifyProductionOpenEnaSessionTokenAny(sessionCookie) : null;
   const query = await searchParams;
   const notice = openEnaLoginNotice(query.auth, query.retry_after);
+  const cloudEnabled = openEnaCloudEnabled();
 
-  if (!principal) {
+  if (!principal || query.reauth === "1") {
     return (
       <OpenEnaLogin
         locale={typedLocale}
         notice={notice}
         configurationReady={authConfigurationReady}
+        cloudEnabled={cloudEnabled}
+        registrationAvailable={cloudEnabled && process.env.OPEN_ENA_REGISTRATION_ENABLED === "true" && openEnaAccountMailReady()}
       />
     );
   }
@@ -122,15 +130,20 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
     ],
   };
 
+  const registered = cloudEnabled && isOpenEnaRegisteredPrincipal(principal);
+  const profile = registered
+    ? await createOpenEnaUsersStore(getOpenEnaCloudPool()).profile(principal).catch(() => null)
+    : null;
+
   return (
     <>
       <OpenEnaAuthRecoveryNotice locale={typedLocale} notice={notice} />
       <JsonLd data={structuredData} />
-      <OpenEnaWorkspace locale={typedLocale}
-        operationOwnerKey={openEnaAiOperationOwnerKey(principal.principalRef)}
-        providerDescriptor={providerDescriptor}
-        runtimeDisabledPluginIds={parseOpenEnaDisabledPluginIds(process.env.ENA_PLUGIN_LAB_DISABLED_PLUGIN_IDS)}
-      />
+      {registered ? <OpenEnaCloudProjects key={principal.principalRef} locale={typedLocale}
+        operationOwnerKey={openEnaAiOperationOwnerKey(principal.principalRef)} providerDescriptor={providerDescriptor}
+        runtimeDisabledPluginIds={parseOpenEnaDisabledPluginIds(process.env.ENA_PLUGIN_LAB_DISABLED_PLUGIN_IDS)} accountId={principal.userId} accountEmail={profile?.email} />
+        : <OpenEnaWorkspace locale={typedLocale} operationOwnerKey={openEnaAiOperationOwnerKey(principal.principalRef)}
+          providerDescriptor={providerDescriptor} runtimeDisabledPluginIds={parseOpenEnaDisabledPluginIds(process.env.ENA_PLUGIN_LAB_DISABLED_PLUGIN_IDS)} />}
     </>
   );
 }
