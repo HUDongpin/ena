@@ -8,6 +8,7 @@ import type { Row } from "jena-js";
 import type { Locale } from "@/lib/i18n";
 import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
+import OpenEnaSiteNavigation from "./OpenEnaSiteNavigation";
 import OpenEnaPersistentPlotTools, { scheduleOpenEnaDomFocusRestore } from "./OpenEnaPersistentPlotTools";
 import { formatOpenEnaWorkspaceFailureV3, getOpenEnaCopy, type OpenEnaWorkspaceFailureV3 } from "@/lib/open-ena-i18n";
 import { rowsToCsv, resolveOpenEnaPlotExportDimensions, resolveOpenEnaPlotRasterDimensions, openEnaResultTableFocusTarget, resolveOpenEnaResultTableRovingKey, buildOpenEnaResultTable, buildOpenEnaResultTableViewModel, openEnaResultTableAvailability, openEnaResultTableRowCounts, exportOpenEnaResultTableCsv, type OpenEnaResultTableKey, type OpenEnaResultTableViewModel } from "@/lib/open-ena/export";
@@ -1551,6 +1552,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
               aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}>jENA {JENA_RUNTIME_VERSION.split("-", 1)[0]}</a>
           </div>
           <div ref={railToolbarRef} className="ena-rail-modes" role="toolbar" aria-label={workspaceCopy.landmarks.railToolbar} aria-orientation={railOrientation} onKeyDown={onRailToolbarKeyDown}>{OPEN_ENA_RAIL_MODES.map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" tabIndex={railTabStop === entry ? 0 : -1} aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onFocus={() => cancelScheduledRailFocusRestore()} onClick={() => { cancelScheduledRailFocusRestore(); setRailTabStop(entry); setMode(entry); }}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
+          <OpenEnaSiteNavigation locale={locale} />
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post" onSubmit={submitOpenEnaLogoutAsDocumentRequest}><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-11 4 4-4 4m-5-4h9" /></svg><span>{authCopy.signOut}</span></button></form>
           <div className="ena-rail-meta"><span className="ena-rail-privacy">{workspaceCopy.shell.local}</span><span className="sr-only">{workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span></div>
         </nav>

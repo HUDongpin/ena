@@ -37,7 +37,12 @@ test("compact rail retains the ENA mark, Open ENA identity and runtime", () => {
 
 test("the five original inline rail icons remain in Data-to-AI order", () => {
 
-  const rail = shell().match(/<nav class="ena-tool-rail"[\s\S]*?<\/nav>/)?.[0] ?? "";
+  const markup = shell();
+  const railStart = markup.indexOf('<nav class="ena-tool-rail"');
+  const panelStart = markup.indexOf('<aside class="ena-control-panel"', railStart);
+  assert.ok(railStart >= 0 && panelStart > railStart, "the rail precedes the control panel");
+  // The Website popover is a nested nav; its closing tag does not end the rail.
+  const rail = markup.slice(railStart, panelStart);
   assert.equal((rail.match(/class="ena-rail-button"/g) ?? []).length, 5);
   const modes = rail.match(/<div class="ena-rail-modes"[^>]*>[\s\S]*?<\/div>/)?.[0] ?? "";
   assert.match(modes, /role="toolbar"/);
