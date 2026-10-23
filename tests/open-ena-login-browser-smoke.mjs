@@ -147,7 +147,7 @@ async function preparePageForFullPageCapture(page) {
 async function waitForLoginBrand(page) {
   const brandPanel = page.locator(".open-ena-login-context");
   const formPanel = page.locator(".open-ena-login-panel");
-  const logo = page.locator('img[src*="logo-open-ena.svg"]');
+  const logo = page.locator('.open-ena-login-context img[src*="logo-open-ena.svg"]');
   const hero = page.locator('img[src*="open-ena-network-hero.svg"]');
 
   await Promise.all([
@@ -158,7 +158,7 @@ async function waitForLoginBrand(page) {
     page.locator(".open-ena-login-form").waitFor({ state: "visible" }),
   ]);
   await page.waitForFunction(() => {
-    const lockup = document.querySelector('img[src*="logo-open-ena.svg"]');
+    const lockup = document.querySelector('.open-ena-login-context img[src*="logo-open-ena.svg"]');
     const network = document.querySelector('img[src*="open-ena-network-hero.svg"]');
     return Boolean(
       lockup instanceof HTMLImageElement
@@ -195,7 +195,7 @@ async function auditBrandAtViewport(browser, name, viewport, { artifactDirectory
     assert.equal(await page.locator(".open-ena-login-context-copy li").count(), 3);
 
     const brandAudit = await page.evaluate(() => {
-      const lockup = document.querySelector('img[src*="logo-open-ena.svg"]');
+      const lockup = document.querySelector('.open-ena-login-context img[src*="logo-open-ena.svg"]');
       const network = document.querySelector('img[src*="open-ena-network-hero.svg"]');
       const panel = document.querySelector(".open-ena-login-context");
       const shell = document.querySelector(".open-ena-login-shell");
