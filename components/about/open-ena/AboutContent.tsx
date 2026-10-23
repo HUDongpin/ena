@@ -42,20 +42,25 @@ export default function AboutContent({ homeHref = "/" }: { homeHref?: string }) 
           }}
         />
         <section className={styles["about-hero"]} aria-labelledby="about-title">
-          <div>
-            <p className={styles["eyebrow"]}>ABOUT OPEN ENA</p>
-            <h1 id="about-title">A small team.<br /><em>An open horizon.</em></h1>
+          <h1 id="about-title">About Open ENA</h1>
+          <p className={styles["about-subtitle"]}>A small team. <span>An open horizon.</span></p>
+          <div className={styles["about-introduction"]}>
+            <div className={styles["about-hero-copy"]}>
+              <p>Open ENA brings together learning science, quantitative ethnography, artificial intelligence, and educational technology.</p>
+              <p>We are building a transparent and approachable path into Epistemic Network Analysis—one where methods, interface decisions, and future capabilities can be inspected rather than hidden.</p>
+            </div>
+            <div className={styles["about-principle"]}>
+              <h2 id="principle-title">Why open</h2>
+              <p className={styles["about-principle-lead"]}>Openness is more than access.</p>
+              <p>It means making the path from evidence to interpretation visible: what the model receives, what the computation does, what the figure shows, and what it cannot claim.</p>
+            </div>
           </div>
-          <div className={styles["about-hero-copy"]}>
-            <p>Open ENA brings together learning science, quantitative ethnography, artificial intelligence, and educational technology.</p>
-            <p>We are building a transparent and approachable path into Epistemic Network Analysis—one where methods, interface decisions, and future capabilities can be inspected rather than hidden.</p>
-          </div>
+          <Link className={styles["button-primary"]} href={homeHref} prefetch={false}>Explore Open ENA</Link>
         </section>
 
         <section className={styles["team-section"]} aria-labelledby="team-title">
           <div className={styles["team-section-heading"]}>
-            <p className={styles["eyebrow"]}>THE TEAM</p>
-            <h2 id="team-title">People behind the open work.</h2>
+            <h2 id="team-title">The team</h2>
             <span>Four perspectives, connected by a shared commitment to understandable research tools.</span>
           </div>
           <div className={styles["team-grid"]}>
@@ -65,8 +70,7 @@ export default function AboutContent({ homeHref = "/" }: { homeHref?: string }) 
 
         <section className={styles["publications-section"]} aria-labelledby="publications-title">
           <div className={styles["publications-heading"]}>
-            <p className={styles["eyebrow"]}>PROJECT PUBLICATIONS</p>
-            <h2 id="publications-title">Research behind the open work.</h2>
+            <h2 id="publications-title">Project publications</h2>
             <span>Selected work across three-dimensional ENA, data literacy, and the development of open, web-based analysis tools.</span>
           </div>
           <div className={styles["publications-grid"]}>
@@ -76,17 +80,6 @@ export default function AboutContent({ homeHref = "/" }: { homeHref?: string }) 
           </div>
         </section>
 
-        <section className={styles["about-principle"]} aria-labelledby="principle-title">
-          <div className={styles["about-principle-mark"]} aria-hidden="true">
-            <img src="/open-ena-about/logo-open-ena-mark.svg" alt="" width="118" height="118" />
-          </div>
-          <div>
-            <p className={styles["eyebrow"]}>WHY OPEN</p>
-            <h2 id="principle-title">Openness is more than access.</h2>
-            <p>It means making the path from evidence to interpretation visible: what the model receives, what the computation does, what the figure shows, and what it cannot claim.</p>
-            <Link className={styles["button-primary"]} href={homeHref} prefetch={false}>Explore Open ENA</Link>
-          </div>
-        </section>
       </div>
     </>
   );
