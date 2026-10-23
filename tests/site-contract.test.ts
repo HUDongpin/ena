@@ -162,13 +162,13 @@ test("Open ENA uses the same neutral navigation treatment as the other destinati
   assert.match(headerSource, /mission[\s\S]*?open-ena[\s\S]*?news/);
 });
 
-test("the shared Home uses the Open ENA preview and localized ENA footer", () => {
+test("the shared Home keeps its hero and localized footer without the static workbench preview", () => {
   const homeSource = readFileSync(join(projectRoot, "app", "[locale]", "page.tsx"), "utf8");
   const sharedHome = readFileSync(join(projectRoot, "components", "home-source", "UnifiedHome.tsx"), "utf8");
   assert.match(homeSource, /<UnifiedHome/);
   assert.match(homeSource, /<HubFooter copy=\{getHomeFooterCopy\(locale, getDictionary\(locale\)\)\}/);
   assert.match(sharedHome, /<NetworkHero/);
-  assert.match(sharedHome, /<OpenEnaPreview/);
+  assert.doesNotMatch(sharedHome, /OpenEnaPreview/);
   assert.match(sharedHome, /lang="en" dir="ltr"/);
 });
 

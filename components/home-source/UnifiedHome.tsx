@@ -1,9 +1,8 @@
 import Link from "next/link";
 import NetworkHero from "./NetworkHero";
-import OpenEnaPreview from "./OpenEnaPreview";
 import styles from "./unified-home/Home.module.css";
 
-export default function UnifiedHome({ aboutHref = "/about", footer }: { aboutHref?: string; footer: React.ReactNode }) {
+export default function UnifiedHome({ aboutHref = "/about", openEnaHref, footer }: { aboutHref?: string; openEnaHref: string; footer: React.ReactNode }) {
   return (<>
     <div className={styles.home} lang="en" dir="ltr">
       <main id="main-content">
@@ -13,7 +12,7 @@ export default function UnifiedHome({ aboutHref = "/about", footer }: { aboutHre
             <h1 id="open-hero-title">Epistemic networks,<br /><em>open by design.</em></h1>
             <p className="open-hero-lead">Open ENA is a focused, browser-based path from coded discourse to interpretable connections—designed around jENA and shaped for transparent research.</p>
             <div className="open-hero-actions">
-              <a className="button-primary" href="#workspace">Explore the interface</a>
+              <Link className="button-primary" href={openEnaHref} prefetch={false}>Open ENA</Link>
               <Link className="button-secondary" href={aboutHref} prefetch={false}>Meet the team</Link>
             </div>
             <dl className="open-hero-facts">
@@ -24,7 +23,6 @@ export default function UnifiedHome({ aboutHref = "/about", footer }: { aboutHre
           </div>
           <NetworkHero />
         </section>
-        <OpenEnaPreview />
       </main>
     </div>
     {footer}

@@ -6,23 +6,20 @@ import { getOpenEnaHomeCopy } from "../lib/open-ena-home-copy";
 
 const projectRoot = process.cwd();
 
-test("the merged homepage keeps the accessible preview and a local analysis entry point", () => {
+test("the homepage keeps the hero and local analysis entry point without the static preview", () => {
   const home = readFileSync(join(projectRoot, "app", "[locale]", "page.tsx"), "utf8");
   const shared = readFileSync(join(projectRoot, "components", "home-source", "UnifiedHome.tsx"), "utf8");
   const figure = readFileSync(join(projectRoot, "components", "home-source", "NetworkHero.tsx"), "utf8");
-  const preview = readFileSync(join(projectRoot, "components", "home-source", "OpenEnaPreview.tsx"), "utf8");
   const footer = readFileSync(join(projectRoot, "components", "shared-home-footer", "HubFooter.tsx"), "utf8");
 
   assert.match(home, /<UnifiedHome/);
+  assert.match(home, /openEnaHref=\{`\/\$\{locale\}\/open-ena`\}/);
   assert.match(home, /featureBase=\{`\/\$\{locale\}`\}/);
   assert.match(footer, /href: `\$\{featureBase\}\/open-ena`/);
   assert.match(shared, /<NetworkHero/);
-  assert.match(shared, /<OpenEnaPreview/);
+  assert.doesNotMatch(shared, /OpenEnaPreview|href="#workspace"/);
+  assert.match(shared, /href=\{openEnaHref\}/);
   assert.match(figure, /role="img" aria-labelledby="network-title network-desc"/);
-  assert.match(preview, /data-ui-preview="static"/);
-  assert.match(preview, /aria-label="Preview analysis modes"/);
-  assert.match(preview, /It is not computed from user data/);
-  assert.match(preview, /disabled>Build model with jENA/);
 });
 
 test("Open ENA homepage copy explains openness, local processing, and reproducibility honestly", () => {
