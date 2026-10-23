@@ -14545,3 +14545,118 @@ html:has(.open-ena-page) {
   user-select: none;
   touch-action: none;
 }
+
+/* Website navigation sits above Sign out; the popover uses the browser top layer. */
+.ena-site-navigation {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ena-site-trigger {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 4px;
+  padding: 5px 2px;
+  color: #c4d0d0;
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.ena-site-trigger:hover,
+.ena-site-trigger[aria-expanded="true"] {
+  color: #b9e7fc;
+  background: #294457;
+}
+
+.ena-site-trigger:focus-visible {
+  outline: 2px solid #7dc8e9;
+  outline-offset: -2px;
+}
+
+.ena-site-trigger svg {
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ena-site-globe { width: 19px; height: 19px; }
+.ena-site-chevron { position: absolute; inset-inline-end: 0; top: 10px; width: 12px; height: 12px; }
+.ena-site-chevron:dir(rtl) { transform: rotate(180deg); }
+
+.ena-site-menu {
+  position: fixed;
+  inset: auto;
+  width: 224px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  visibility: hidden;
+  border: 1px solid #c8d5dc;
+  border-radius: 4px;
+  color: #253f4b;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(24, 37, 51, 0.18);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ena-site-menu[data-open="true"] { visibility: visible; }
+.ena-site-menu a {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 2px;
+  color: inherit;
+  text-decoration: none;
+}
+.ena-site-menu a:hover { color: #205d7e; background: #edf8fd; }
+.ena-site-menu a:focus-visible { outline: 2px solid #327ba1; outline-offset: -2px; background: #edf8fd; }
+.ena-site-new-tab {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: #78909b;
+}
+.ena-site-menu a:hover .ena-site-new-tab,
+.ena-site-menu a:focus-visible .ena-site-new-tab { color: #327ba1; }
+
+@media (max-width: 900px) {
+  .ena-site-navigation { grid-column: 1 / -1; padding: 4px 8px; }
+  .ena-site-trigger { min-height: 44px; flex-direction: row; gap: 6px; padding: 6px 8px; font-size: 12px; }
+  .ena-site-trigger .ena-site-chevron { position: static; transform: rotate(90deg); }
+}
+
+@media (min-width: 901px) {
+  @container open-ena-viewport (max-width: 900px) {
+    .ena-site-navigation { grid-column: 1 / -1; padding: 4px 8px; }
+    .ena-site-trigger { min-height: 44px; flex-direction: row; gap: 6px; padding: 6px 8px; font-size: 12px; }
+    .ena-site-trigger .ena-site-chevron { position: static; transform: rotate(90deg); }
+  }
+}
