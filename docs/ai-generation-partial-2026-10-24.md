@@ -11,6 +11,13 @@ The planned nine-generation release matrix has not been run on an accepted
 candidate. This work must not be described as a Chinese AI fix or a completed
 three-item production release. Issue #108 remains open.
 
+The owner subsequently authorized a narrower release of the verified workspace
+language switch, retained/clearable AI records, first-visit guidance, and bounded
+diagnostics. That scope does not require the unpassed provider-success matrix
+as an admission gate and does not claim a Chinese-generation repair. Production
+acceptance for those released behaviors is recorded separately; #108 stays open
+until the output contract is repaired and real multilingual generation passes.
+
 The production provider transport, approved V2 prompt bytes and hashes,
 1,800-token budget and strict interpretation/evidence contract remain unchanged.
 The implementation adds bounded diagnostics and rejects non-string prose at
