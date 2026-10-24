@@ -70,9 +70,10 @@ export interface DeepSeekClientOptions {
   reservationMicroUsd?: number;
 }
 
-function boundedJson(response: Response): Promise<unknown> {
+function boundedJson(response: Response, measured?: (bytes: number) => void): Promise<unknown> {
   const declared = response.headers.get("content-length");
   if (declared && /^\d+$/u.test(declared) && Number(declared) > OPEN_ENA_AI_MAX_RESPONSE_BYTES) {
+    measured?.(Math.min(Number(declared), Number.MAX_SAFE_INTEGER));
     throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
   }
   if (!response.body) return response.json() as Promise<unknown>;
@@ -85,6 +86,7 @@ function boundedJson(response: Response): Promise<unknown> {
         const { done, value } = await reader.read();
         if (done) break;
         size += value.byteLength;
+        measured?.(size);
         if (size > OPEN_ENA_AI_MAX_RESPONSE_BYTES) {
           await reader.cancel();
           throw new Error("oversize");
@@ -139,10 +141,69 @@ type DeepSeekFailureStage =
   | "responses-contract-limitation" | "responses-contract-binding"
   | "responses-contract-structure" | "responses-contract-other";
 
-function reportFailure(stage: DeepSeekFailureStage, status?: number) {
+type FailureDiagnostic = {
+  locale: string; promptVersion: string; model: string; httpStatus: number | null;
+  responseStatus: "completed" | "incomplete" | "failed" | "in_progress" | "unknown" | null;
+  incompleteReason: "max_output_tokens" | "content_filter" | "unknown" | null;
+  responseBytes: number | null; outputTokens: number | null; rule: string | null; field: string | null;
+};
+
+function reportFailure(stage: DeepSeekFailureStage, diagnostic: FailureDiagnostic, status?: number) {
   if (process.env.NODE_ENV !== "production") return;
-  // Fixed stage and numeric status only: no request, response, key, or account data.
-  console.error(`open-ena-deepseek-failure:${stage}${status === undefined ? "" : `:${status}`}`);
+  // Only normalized configuration, fixed enums/paths and measured numbers.
+  // Never include exception messages, output field names or provider text.
+  console.error(`open-ena-deepseek-failure:${stage}${status === undefined ? "" : `:${status}`}`,
+    JSON.stringify({ ...diagnostic, stage, httpStatus: status ?? diagnostic.httpStatus }));
+}
+
+function contractFailureDetail(error: unknown, interpretation: unknown): Pick<FailureDiagnostic, "rule" | "field"> {
+  if (error instanceof SyntaxError) return { rule: "json-syntax", field: "interpretation" };
+  const message = error instanceof Error ? error.message : "";
+  let field = "interpretation";
+  if (/binding/iu.test(message)) field = "binding";
+  else if (/evidence ref|cites evidence|must cite aggregate/iu.test(message)) field = "interpretation.observedPatterns[].evidenceRefs";
+  else if (/observed pattern \d+.*statement/iu.test(message)) field = "interpretation.observedPatterns[].statement";
+  else if (/observed pattern \d+/iu.test(message)) field = "interpretation.observedPatterns[]";
+  else if (/observed patterns/iu.test(message)) field = "interpretation.observedPatterns";
+  else if (/contextual question/iu.test(message)) field = "interpretation.contextualQuestions";
+  else if (/limitation/iu.test(message)) field = "interpretation.limitations";
+  let rule = "contract";
+  if (/unexpected field/iu.test(message)) rule = "unexpected-field";
+  else if (/missing a required field/iu.test(message)) {
+    rule = "required-field";
+    if (field === "interpretation" && interpretation && typeof interpretation === "object" && !Array.isArray(interpretation)) {
+      const missing = ["observedPatterns", "contextualQuestions", "limitations"].find((key) => !Object.hasOwn(interpretation, key));
+      if (missing) field = `interpretation.${missing}`;
+    }
+  } else if (/must be a string/iu.test(message)) rule = "string-type";
+  else if (/must be an array/iu.test(message)) rule = "array-type";
+  else if (/must be an object/iu.test(message)) rule = "object-type";
+  else if (/exceeds its allowed length/iu.test(message)) rule = "array-length";
+  else if (/was not supplied/iu.test(message)) rule = "evidence-reference";
+  else if (/must cite aggregate|at least one limitation/iu.test(message)) rule = "empty-array";
+  else if (/must be unique/iu.test(message)) rule = "duplicate";
+  else if (/must be nonempty/iu.test(message)) rule = "empty-text";
+  else if (/is too long/iu.test(message)) rule = "text-length";
+  else if (/binding/iu.test(message)) rule = "binding-mismatch";
+  return { rule, field };
+}
+
+/** New provider output must not inherit the historical reader's text coercion. */
+function assertGeneratedProseTypes(value: unknown): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(record.observedPatterns)) record.observedPatterns.forEach((pattern: unknown, index: number) => {
+    if (pattern && typeof pattern === "object" && !Array.isArray(pattern) && Object.hasOwn(pattern, "statement")
+      && typeof (pattern as Record<string, unknown>).statement !== "string") {
+      throw new Error(`AI v2 observed pattern ${index + 1} statement must be a string.`);
+    }
+  });
+  for (const [key, label] of [["contextualQuestions", "contextual question"], ["limitations", "limitation"]] as const) {
+    const items = record[key];
+    if (Array.isArray(items)) items.forEach((item: unknown, index: number) => {
+      if (typeof item !== "string") throw new Error(`AI v2 ${label} ${index + 1} must be a string.`);
+    });
+  }
 }
 
 function contractFailureStage(error: unknown): DeepSeekFailureStage {
@@ -188,6 +249,9 @@ export async function generateLunaInterpretation(
   if (model !== OPEN_ENA_AI_DEFAULT_MODEL) {
     throw new LunaClientError("invalid-configuration", "AI interpretation provider model is not approved.");
   }
+  const diagnostic: FailureDiagnostic = { locale: normalized.locale, promptVersion: normalized.promptVersion, model,
+    httpStatus: null, responseStatus: null, incompleteReason: null, responseBytes: null, outputTokens: null, rule: null, field: null };
+  const report = (stage: DeepSeekFailureStage, status?: number) => reportFailure(stage, diagnostic, status);
   const timeoutMs = options.timeoutMs ?? 20_000;
   if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || timeoutMs > OPEN_ENA_BILLABLE_MAX_PROVIDER_REQUEST_MS) {
     throw new LunaClientError("invalid-configuration", "AI interpretation provider configuration is invalid.");
@@ -227,12 +291,12 @@ export async function generateLunaInterpretation(
       });
     } catch {
       if (controller.signal.aborted) throw cancelled(false);
-      reportFailure("balance-network");
+      report("balance-network");
       throw new LunaClientError("upstream-network", "AI interpretation provider could not be reached.");
     }
     activeResponse = balance;
     if (!balance.ok) {
-      reportFailure("balance-http", balance.status);
+      report("balance-http", balance.status);
       throw requestError(balance.status, false);
     }
     try {
@@ -240,7 +304,7 @@ export async function generateLunaInterpretation(
       if (body?.is_available !== true) throw new Error("balance unavailable");
     } catch {
       if (controller.signal.aborted) throw cancelled(false);
-      reportFailure("balance-body");
+      report("balance-body", balance.status);
       throw new LunaClientError("invalid-configuration", "AI interpretation provider balance is unavailable.");
     }
     if (controller.signal.aborted) throw cancelled(false);
@@ -266,26 +330,36 @@ export async function generateLunaInterpretation(
       });
     } catch {
       if (controller.signal.aborted) throw cancelled(true);
-      reportFailure("responses-network");
+      report("responses-network");
       throw new LunaClientError("upstream-network", "AI interpretation provider could not be reached.", true);
     }
     activeResponse = upstream;
+    diagnostic.httpStatus = upstream.status;
     if (!upstream.ok) {
-      reportFailure("responses-http", upstream.status);
+      report("responses-http", upstream.status);
       throw requestError(upstream.status, true);
     }
     let payload: unknown;
     try {
-      payload = await boundedJson(upstream);
+      payload = await boundedJson(upstream, (bytes) => { diagnostic.responseBytes = bytes; });
     } catch {
       if (controller.signal.aborted) throw cancelled(true);
-      reportFailure("responses-body");
+      diagnostic.rule = diagnostic.responseBytes !== null && diagnostic.responseBytes > OPEN_ENA_AI_MAX_RESPONSE_BYTES ? "response-size" : "response-body";
+      diagnostic.field = "response";
+      report("responses-body");
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true);
     }
     const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
     // Usage is independent of the scientific response contract. A paid response
     // can be unusable while still carrying valid, accountable provider usage.
     const usage = readUsage(record.usage);
+    diagnostic.outputTokens = usage?.completionTokens ?? null;
+    diagnostic.responseStatus = ["completed", "incomplete", "failed", "in_progress"].includes(record.status as string)
+      ? record.status as FailureDiagnostic["responseStatus"] : "unknown";
+    const incomplete = record.incomplete_details && typeof record.incomplete_details === "object"
+      ? (record.incomplete_details as Record<string, unknown>).reason : null;
+    diagnostic.incompleteReason = incomplete == null ? null
+      : incomplete === "max_output_tokens" || incomplete === "content_filter" ? incomplete : "unknown";
     const output = Array.isArray(record.output) ? record.output : [];
     const texts = output.flatMap((item) => {
       if (!item || typeof item !== "object") return [];
@@ -297,10 +371,14 @@ export async function generateLunaInterpretation(
       )).map((entry) => entry.text);
     });
     if (record.status !== "completed" || texts.length !== 1 || texts[0].includes(apiKey)) {
-      reportFailure("responses-shape");
+      diagnostic.rule = "response-shape"; diagnostic.field = "response";
+      report("responses-shape");
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true, usage);
     }
+    let interpretation: unknown;
     try {
+      interpretation = JSON.parse(texts[0]);
+      assertGeneratedProseTypes(interpretation);
       const response = parseOpenEnaAiInterpretationResponse({
         schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
         promptVersion: normalized.promptVersion,
@@ -308,11 +386,12 @@ export async function generateLunaInterpretation(
         provider: "deepseek",
         model,
         generatedAt: (options.clock ?? (() => new Date()))().toISOString(),
-        interpretation: JSON.parse(texts[0]),
+        interpretation,
       }, normalized);
       return { response, usage, providerDispatched: true };
     } catch (error) {
-      reportFailure(contractFailureStage(error));
+      Object.assign(diagnostic, contractFailureDetail(error, interpretation));
+      report(contractFailureStage(error));
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true, usage);
     }
   } finally {

@@ -30,10 +30,10 @@ export const OPEN_ENA_AI_PROMPT_VERIFICATION_SCHEMA_VERSION_V1 =
 const LOCALES = ["en", "zh-hant", "zh-hans"] as const;
 
 const CONTRACT_TEST_SOURCE_SHA256 = deepFreeze({
-  client: "57820d5da23cbdfcbbdfc8143c721789eb6d3099a2939acb6e0a9cbb2eba59db",
+  client: "5452c139887049e48865e7b3d8537937e4125334e4940ae6bfdf23229c484b64",
   payload: "4e46712d5a086885b4bef1650368c3b74978899821c08efe3b06ed2e3c3426ad",
   route: "691f29580251e9e8571584460254721e4adc3f9875e80cf99224d2b080e501d9",
-  workspace: "71f8da1662f8ce61414e8da7dd814b75ca78c5be08e607fddc8f476c9872604d",
+  workspace: "55f8cb4ed1983f7cfeb73e98c350065766d855b1f6e581bd7fbf32b1d74d47c7",
 } as const satisfies Readonly<Record<ContractTestSourceKey, string>>);
 
 const MOCK_CLIENT_COVERAGE_BINDINGS = [
@@ -107,7 +107,7 @@ const MOCK_CLIENT_COVERAGE_BINDINGS = [
     coverageId: "workspace-binding-change-revokes-output",
     sourceKey: "workspace",
     sourceFile: "tests/open-ena-ai-interpretation-workspace.test.ts",
-    testName: "changing the evidence binding aborts work, revokes consent, and makes old output unrenderable",
+    testName: "changing the evidence binding aborts work and revokes consent while retaining labeled completed output",
   },
   {
     coverageId: "workspace-stale-generation-cannot-settle",
