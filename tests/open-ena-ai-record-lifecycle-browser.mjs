@@ -20,6 +20,7 @@ function Harness({ saved }) {
   window.setLocale = setLocale;
   window.setScience = setScience;
   window.copy = getOpenEnaCopy(locale).aiInterpretation;
+  window.currentLocale = locale;
   return <Ai locale={locale} request={interpretationRequest(locale)} copy={window.copy}
     localScientificIdentity={science} operationOwnerKey={owner} disabled={false} disabledReason=""
     savedInterpretation={saved} onInterpretationChange={(value) => { window.completed = value; window.recordChanges.push(value); }} />;
@@ -120,10 +121,29 @@ try {
     await page.locator('button[data-ena-ai-recovery="retry"]').click();
     await page.waitForFunction(() => window.recordChanges.length === 3);
     assert.notEqual(operations[rateCount - 1], operations[rateCount], "release proof permits a new operation after the cooldown");
+    responseKind = "rate";
+    await generate.click();
+    await page.locator("[data-ena-ai-retry-after]").waitFor();
+    const beforeLocaleWait = operations.length;
+    await page.evaluate((locale) => window.setLocale(locale), initialLocale);
+    await consent.check();
+    assert.equal(await page.getByRole("alert").count(), 0, "changing the reviewed request clears the old error");
+    assert.equal(await page.locator("[data-ena-ai-retry-after]").count(), 1,
+      "a retained Retry-After deadline must remain visible after language clears the old error");
+    const waitingText = await page.locator("[data-ena-ai-retry-after]").textContent();
+    const waitingPrefix = await page.evaluate(() => window.copy.retryAfter.split('{seconds}')[0]);
+    assert.ok(waitingText.startsWith(waitingPrefix), "the wait status uses the selected language");
+    assert.equal(await generate.isDisabled(), true);
+    assert.equal(operations.length, beforeLocaleWait, "language and new consent cannot bypass the cooldown");
+    await page.waitForFunction(() => !document.querySelector('.ena-ai-actions button').disabled);
+    assert.equal(await page.locator("[data-ena-ai-retry-after]").count(), 0);
+    responseKind = "success";
+    await generate.click();
+    await page.waitForFunction(() => window.recordChanges.length === 4);
     const latest = await statement();
     responseKind = "session";
     await generate.click(); await page.locator('a[data-ena-ai-recovery="sign-in"]').waitFor();
-    assert.equal(await page.locator('a[data-ena-ai-recovery="sign-in"]').getAttribute("href"), `/${nextLocale}/open-ena`);
+    assert.equal(await page.locator('a[data-ena-ai-recovery="sign-in"]').getAttribute("href"), `/${await page.evaluate(() => window.currentLocale)}/open-ena`);
     assert.equal(await generate.isDisabled(), true);
     assert.equal(await statement(), latest);
     // Opening a persisted record restores readable history and never restores consent.

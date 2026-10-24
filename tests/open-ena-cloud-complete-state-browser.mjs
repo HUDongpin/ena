@@ -141,7 +141,8 @@ try {
   const second = await pageAt("http://127.0.0.1:31995/");
   await second.evaluate((text) => window.cloudOpen(text), snapshotText);
   await second.getByRole("button", { name: "Review historical configuration", exact: true }).waitFor();
-  assert.equal(await second.evaluate(() => window.jobs.length), 0, "restoration must not rerun an analysis");
+  const restoredAnalysisRuns = await second.evaluate(() => window.jobs.length);
+  assert.equal(restoredAnalysisRuns, 0, "restoration must not rerun an analysis");
   await second.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
   await second.getByText("Cloud-restored synthetic AI interpretation.", { exact: true }).waitFor();
   assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false, "saved records do not restore consent");
@@ -208,6 +209,15 @@ try {
   assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,
     "changing the scientific comparison must label the restored AI evidence changed");
   assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
+  const changedComparisonText = await second.evaluate(() => window.cloudSave());
+  assert.equal(JSON.parse(changedComparisonText).resultStatus, "current", "changing comparison leaves the model current");
+  assert.deepEqual(JSON.parse(changedComparisonText).aiInterpretation, beforeLanguage.aiInterpretation, "the original record must remain immutable");
+  await second.evaluate((text) => window.cloudOpen(text), changedComparisonText);
+  await second.getByText("Cloud-restored synthetic AI interpretation.", { exact: true }).waitFor();
+  assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,
+    "comparison save/reopen must compare against the AI record's original controls, not the new mount baseline");
+  assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
+  assert.equal(aiRequests, 1);
   await second.evaluate((text) => window.cloudOpen(text), historicalBaselineText);
   await second.getByRole("button", { name: "Stats & Export", exact: true }).click();
   await second.getByRole("button", { name: "Run confirmed inference", exact: true }).click();
@@ -216,6 +226,25 @@ try {
   assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,
     "newly confirmed statistics must label the restored evidence changed without restoring consent");
   assert.equal(await second.locator("[data-ena-ai-record-state=historical]").count(), 1);
+  assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
+  assert.equal(aiRequests, 1);
+  await second.evaluate((text) => window.cloudOpen(text), historicalBaselineText);
+  // A successful rebuild clears resultStatus=stale, but the AI record still belongs to its old result.
+  await second.getByRole("button", { name: "Model", exact: true }).click();
+  await second.getByRole("tab", { name: /Windows,/ }).click();
+  await second.getByRole("checkbox", { name: "Align target-fitted center to the origin", exact: true }).uncheck();
+  await second.getByTestId("open-ena-run-model").click();
+  await second.waitForFunction(() => window.jobs.length === 1);
+  await second.evaluate(() => window.resolveRun(0));
+  await second.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]').dataset.resultStatus === "current");
+  await second.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+  const rebuiltText = await second.evaluate(() => window.cloudSave());
+  assert.equal(JSON.parse(rebuiltText).resultStatus, "current");
+  assert.deepEqual(JSON.parse(rebuiltText).aiInterpretation, beforeLanguage.aiInterpretation);
+  await second.evaluate((text) => window.cloudOpen(text), rebuiltText);
+  await second.getByText("Cloud-restored synthetic AI interpretation.", { exact: true }).waitFor();
+  assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,
+    "a successful rebuild/save/reopen must retain the mismatch with the original AI result provenance");
   assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
   assert.equal(aiRequests, 1);
   await second.evaluate((text) => window.cloudOpen(text), historicalBaselineText);
@@ -268,10 +297,10 @@ try {
   assert.equal(aiRequests, 1);
   assert.deepEqual(errors, []);
   const receipt = { status: "PASS", sourceOrigin: new URL(first.url()).origin, restoredOrigin: new URL(second.url()).origin,
-    syntheticAiRequests: aiRequests, restoredAnalysisRuns: await second.evaluate(() => window.jobs.length),
+    syntheticAiRequests: aiRequests, restoredAnalysisRuns, explicitRebuilds: await second.evaluate(() => window.jobs.length),
     comparisonSets: resaved.analysisSets.length, historicalImports: resaved.historicalImports.length,
     aiRoundTrip: true, comparisonRoundTrip: true, originalImportBytesRoundTrip: true, resave: true,
-    consentRestored: false, browserOnlyWarningAfterCompletedSave: false, pendingAiSaveBlocked: true, pendingSetSaveBlocked: true, removalPersisted: true, aiClearPersisted: true, localeRetainsAllSavedState: true, historicalModelEditExplained: true, historicalComparisonEditExplained: true, historicalStatisticsEditExplained: true, historicalPresentationUnchanged: true, historicalStaleReopenExplained: true };
+    consentRestored: false, browserOnlyWarningAfterCompletedSave: false, pendingAiSaveBlocked: true, pendingSetSaveBlocked: true, removalPersisted: true, aiClearPersisted: true, localeRetainsAllSavedState: true, historicalModelEditExplained: true, historicalComparisonEditExplained: true, historicalStatisticsEditExplained: true, historicalPresentationUnchanged: true, historicalStaleReopenExplained: true, historicalComparisonReopenExplained: true, historicalRebuildReopenExplained: true };
   await writeFile(`${evidenceDir}/receipt.json`, JSON.stringify(receipt, null, 2) + "\n");
   console.log(JSON.stringify(receipt));
 } finally { releaseAi?.(); await browser.close(); }

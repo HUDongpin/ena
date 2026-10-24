@@ -18,6 +18,7 @@ import { openEnaAiReviewedRequestIdentityV3 } from "@/lib/open-ena/workspace-con
 import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
 import type { SavedOpenEnaAiInterpretation } from "@/lib/open-ena/cloud-workspace-extras";
 import { getLocaleMeta, type Locale } from "@/lib/i18n";
+import { canonicalJsonV3 } from "@/lib/open-ena/model-v3/canonical-json";
 
 interface OpenEnaAiInterpretationProps {
   locale?: Locale;
@@ -168,6 +169,44 @@ export async function executeOpenEnaAiGeneration<T>({
     onError(caught instanceof Error ? caught.message : fallbackError);
   } finally {
     if (!isStaleGeneration()) onSettled();
+  }
+}
+
+/** Compare readable native provenance only; this never reconstructs inference,
+ * consent or retry authority from a saved record. Opaque legacy identities remain unknown. */
+export function openEnaAiSavedWorkspaceEvidenceChanged({ record, result, comparisonContext }: {
+  record: SavedOpenEnaAiInterpretation | null;
+  result: { binding: unknown; configuration: unknown; createdAt: string } | null;
+  comparisonContext: unknown;
+}): boolean {
+  if (!record) return false;
+  const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+  const selection = (value: unknown) => {
+    if (!object(value) || !Array.isArray(value.axes)) return null;
+    if (Object.hasOwn(value, "request")) return { axes: value.axes, request: value.request };
+    if (Object.hasOwn(value, "primaryGroup") && Object.hasOwn(value, "secondaryGroup")) {
+      return { axes: value.axes, primaryGroup: value.primaryGroup, secondaryGroup: value.secondaryGroup };
+    }
+    return null;
+  };
+  try {
+    const original: unknown = JSON.parse(record.localScientificIdentity);
+    if (!object(original) || !object(original.binding) || !object(original.configuration)) return false;
+    const originalSelection = selection(original.context);
+    if (!originalSelection) return false;
+    const originalBindingKey = canonicalJsonV3(original.binding);
+    const originalConfigurationKey = canonicalJsonV3(original.configuration);
+    const originalSelectionKey = canonicalJsonV3(originalSelection);
+    if (!result || originalBindingKey !== canonicalJsonV3(result.binding)
+      || originalConfigurationKey !== canonicalJsonV3(result.configuration)
+      || record.request.binding.analyzedAt !== result.createdAt) return true;
+    // Identity confirmation is intentionally not restored. Typed groups, periods,
+    // design and axes still describe the saved comparison without granting authority.
+    return originalSelectionKey !== canonicalJsonV3(selection(comparisonContext));
+  } catch {
+    // The historical reader also admits opaque/noncanonical source identities.
+    // They remain readable history and cannot establish either mismatch or authority.
+    return false;
   }
 }
 
@@ -619,6 +658,8 @@ export default function OpenEnaAiInterpretation({
         ) : null}
       </div>
 
+      {retrySeconds > 0 && <p role="status" data-ena-ai-retry-after>{copy.retryAfter.replace("{seconds}", String(retrySeconds))}</p>}
+
       {aiError ? (
         <div
           className="ena-ai-error"
@@ -628,7 +669,6 @@ export default function OpenEnaAiInterpretation({
         >
           <strong>{copy.errorTitle}</strong>
           <p>{aiError}</p>
-          {retrySeconds > 0 && <p role="status" data-ena-ai-retry-after>{copy.retryAfter.replace("{seconds}", String(retrySeconds))}</p>}
           {showsRetainedInterpretation ? (
             <p data-ena-ai-evidence-boundary="previous-interpretation-retained">{completedStatus?.scienceChanged ? copy.recordScienceChanged : completedRecord?.historical ? copy.recordHistorical : copy.evidenceBoundaryRetained}</p>
           ) : (

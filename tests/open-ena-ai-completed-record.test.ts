@@ -5,7 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import * as panel from "../components/open-ena/OpenEnaAiInterpretation";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import { interpretationRequest } from "./helpers/ai-interpretation-request-v2";
-import type { SavedOpenEnaAiInterpretation } from "../lib/open-ena/cloud-workspace-extras";
+import { openEnaAiLocalScientificIdentityV3 } from "../lib/open-ena/workspace-consumer-authority-v3";
+import { captureSavedOpenEnaAiInterpretation, type SavedOpenEnaAiInterpretation } from "../lib/open-ena/cloud-workspace-extras";
 
 const request = interpretationRequest();
 const record: SavedOpenEnaAiInterpretation = {
@@ -82,4 +83,61 @@ test("retained audit provenance falls back to the completed response rather than
   }));
   assert.match(html, /Model: synthetic-test/);
   assert.doesNotMatch(html, /different-current-model/);
+});
+
+const originalNativeScience = {
+  binding: { scientificResultSha256: "a".repeat(64), datasetSha256: "b".repeat(64) },
+  configuration: { analysisFamily: "standard", analysis: { model: { type: "EndPoint" } } },
+  context: { axes: ["SVD1", "SVD2"], primaryGroup: { type: "string", value: "Primary" }, secondaryGroup: { type: "string", value: "Secondary" } },
+};
+const nativeRecord = { ...record, localScientificIdentity: openEnaAiLocalScientificIdentityV3(originalNativeScience)! };
+const currentNativeResult = { binding: originalNativeScience.binding, configuration: originalNativeScience.configuration, createdAt: record.request.binding.analyzedAt };
+function savedWorkspaceChanged(overrides: Record<string, unknown> = {}) {
+  const fn = (panel as unknown as Record<string, unknown>).openEnaAiSavedWorkspaceEvidenceChanged;
+  assert.equal(typeof fn, "function", "historical mismatch must be derived from the AI record's original native provenance");
+  return (fn as (input: unknown) => boolean)({ record: nativeRecord, result: currentNativeResult,
+    comparisonContext: originalNativeScience.context, ...overrides });
+}
+test("saved comparison mismatch is detected from original typed controls after the mount baseline resets", () => {
+  assert.equal(savedWorkspaceChanged(), false);
+  assert.equal(savedWorkspaceChanged({ comparisonContext: { ...originalNativeScience.context,
+    primaryGroup: { type: "string", value: "Other" } } }), true);
+  assert.equal(savedWorkspaceChanged({ comparisonContext: { ...originalNativeScience.context, axes: ["SVD1", "SVD3"] } }), true);
+  assert.equal(savedWorkspaceChanged({ comparisonContext: null }), true);
+});
+test("a rebuilt current result is compared with the original AI binding, configuration and analysis timestamp", () => {
+  assert.equal(savedWorkspaceChanged({ result: { ...currentNativeResult, binding: { ...currentNativeResult.binding, scientificResultSha256: "c".repeat(64) } } }), true);
+  assert.equal(savedWorkspaceChanged({ result: { ...currentNativeResult, configuration: { ...currentNativeResult.configuration, changed: true } } }), true);
+  assert.equal(savedWorkspaceChanged({ result: { ...currentNativeResult, createdAt: "2026-10-24T12:00:00.000Z" } }), true);
+  assert.equal(savedWorkspaceChanged({ result: null }), true);
+});
+test("saved provenance comparison ignores presentation and missing live authority, and tolerates opaque older identities", () => {
+  assert.equal(savedWorkspaceChanged({ comparisonContext: { ...originalNativeScience.context, plotZoom: 2, showPoints: false } }), false);
+  for (const identity of ["legacy-opaque-identity", "{}", "null", "[]"]) {
+    assert.equal(savedWorkspaceChanged({ record: { ...nativeRecord, localScientificIdentity: identity } }), false,
+      "unknown provenance cannot prove a change or grant currentness");
+  }
+});
+test("trajectory selection compares original periods and design without restoring identity confirmation", () => {
+  const trajectory = { ...originalNativeScience, context: {
+    axes: ["SVD1", "SVD2"], identityConfirmed: true, frameIndexHorizons: ["h1", "h2"], unitSequences: [], scientificContextSha256: "d".repeat(64),
+    request: { kind: "trajectory-paired-periods", group: { type: "string", value: "Primary" },
+      earlierPeriod: [{ column: "horizon", value: { type: "string", value: "h1" } }],
+      laterPeriod: [{ column: "horizon", value: { type: "string", value: "h2" } }], cohortPolicy: "pairwise-complete" },
+  } };
+  const saved = { ...record, localScientificIdentity: openEnaAiLocalScientificIdentityV3(trajectory)! };
+  const comparisonContext = { axes: trajectory.context.axes, request: trajectory.context.request, identityConfirmed: false };
+  assert.equal(savedWorkspaceChanged({ record: saved, comparisonContext }), false);
+  assert.equal(savedWorkspaceChanged({ record: saved, comparisonContext: { ...comparisonContext,
+    request: { ...comparisonContext.request, laterPeriod: [{ column: "horizon", value: { type: "string", value: "h3" } }] } } }), true);
+});
+
+test("an admitted opaque historical identity cannot crash the workspace provenance comparison", () => {
+  const identity = '{"binding":{"legacyNumber":1e400},"configuration":{},"context":{"axes":["SVD1","SVD2"],"primaryGroup":"a","secondaryGroup":"b"}}';
+  const admitted = captureSavedOpenEnaAiInterpretation({ ...record, localScientificIdentity: identity });
+  assert.equal(admitted.localScientificIdentity, identity);
+  assert.equal(savedWorkspaceChanged({ record: admitted }), false,
+    "noncanonical historical provenance remains readable but cannot establish a scientific mismatch");
+  assert.equal(savedWorkspaceChanged({ record: admitted, result: null }), false,
+    "missing current science does not make noncanonical historical provenance trustworthy");
 });

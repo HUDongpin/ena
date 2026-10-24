@@ -79,7 +79,7 @@ import OpenEnaGroupContrast from "./OpenEnaGroupContrast";
 import OpenEna3DGroupContrast from "./OpenEna3DGroupContrast";
 import OpenEnaOrderedResultLayout from "./OpenEnaOrderedResultLayout";
 import OpenEna3DOrderedResultLayout from "./OpenEna3DOrderedResultLayout";
-import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
+import OpenEnaAiInterpretation, { openEnaAiSavedWorkspaceEvidenceChanged } from "./OpenEnaAiInterpretation";
 import OpenEnaCodeColorPicker from "./OpenEnaCodeColorPicker";
 import { OpenEnaTrajectoryAnalysisPanelV3, trajectoryAnalysisCopyV3 } from "./model-v3/OpenEnaTrajectoryAnalysisPanelV3";
 import type { OpenEnaTrajectoryPathControlsV3 } from "@/lib/open-ena/trajectory-path-inference-v3";
@@ -612,11 +612,17 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const endpointControls: OpenEnaEndpointControlsV3 | null = primary && secondary && primary.token !== secondary.token && twoDAxes.length === 2
     ? { primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, axes: [twoDAxes[0], twoDAxes[1]] } : null;
   const isTrajectory = result?.configuration.analysisFamily === "standard" && result.configuration.analysis.model.type !== "EndPoint";
-  const trajectoryControls: OpenEnaTrajectoryControlsV3 | null = isTrajectory && twoDAxes.length === 2 && (inferenceDesign === "independent" ? endpointControls && periods[0] && periods.length === 1 : identityConfirmed && (inferenceDesign === "paired" ? periods.length === 2 : periods.length >= 3))
-    ? { axes: [twoDAxes[0], twoDAxes[1]], identityConfirmed, request: inferenceDesign === "independent"
+  // A comparison selection remains inspectable after restore even though the
+  // confirmation required for running paired/repeated inference is never restored.
+  const trajectorySelection: OpenEnaTrajectoryControlsV3["request"] | null = isTrajectory && twoDAxes.length === 2
+    && (inferenceDesign === "independent" ? endpointControls && periods[0] && periods.length === 1 : inferenceDesign === "paired" ? periods.length === 2 : periods.length >= 3)
+    ? inferenceDesign === "independent"
       ? { kind: "trajectory-independent-period", period: periods[0], primaryGroup: endpointControls!.primaryGroup, secondaryGroup: endpointControls!.secondaryGroup }
       : inferenceDesign === "paired" ? { kind: "trajectory-paired-periods", group: primary?.fields[0].value ?? null, earlierPeriod: periods[0], laterPeriod: periods[1], cohortPolicy: "pairwise-complete" }
-        : { kind: "trajectory-repeated-periods", group: primary?.fields[0].value ?? null, periods, cohortPolicy: "all-period-complete", posthocContrasts: "all-period-pairs" } } : null;
+        : { kind: "trajectory-repeated-periods", group: primary?.fields[0].value ?? null, periods, cohortPolicy: "all-period-complete", posthocContrasts: "all-period-pairs" }
+    : null;
+  const trajectoryControls: OpenEnaTrajectoryControlsV3 | null = trajectorySelection && (inferenceDesign === "independent" || identityConfirmed)
+    ? { axes: [twoDAxes[0], twoDAxes[1]], identityConfirmed, request: trajectorySelection } : null;
   const controls = isTrajectory ? trajectoryControls : endpointControls;
   const consumerKey = openEnaConsumerAuthorityKeyV3({
     binding: result?.binding ?? null,
@@ -627,14 +633,12 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   });
   const consumerKeyRef = useRef(consumerKey); consumerKeyRef.current = consumerKey;
   const activeInference = inference?.key === consumerKey && current ? inference.value : null;
-  // A restored AI record has no live review. Compare session science with the
-  // restoration baseline so a real edit is distinguishable from missing review.
-  // Locale, presentation controls and execution-only epochs are deliberately absent.
-  const historicalEvidenceContext = canonicalJsonV3({ datasetSha256: context.datasetSha256, family: context.family,
-    scientificRevision: context.scientificRevision, draftFingerprint: context.draftFingerprint, consumerKey });
-  const restoredAiEvidenceContext = useRef(historicalEvidenceContext);
-  const historicalEvidenceInvalidated = modelState.resultStatus === "stale"
-    || restoredAiEvidenceContext.current !== historicalEvidenceContext || activeInference !== null;
+  const historicalComparisonContext = isTrajectory ? { axes: twoDAxes, request: trajectorySelection } : endpointControls;
+  const historicalComparisonKey = canonicalJsonV3(historicalComparisonContext);
+  const historicalSavedEvidenceChanged = useMemo(() => openEnaAiSavedWorkspaceEvidenceChanged({
+    record: savedAiInterpretation, result, comparisonContext: historicalComparisonContext,
+  }), [savedAiInterpretation, result, historicalComparisonKey]);
+  const historicalEvidenceInvalidated = modelState.resultStatus === "stale" || historicalSavedEvidenceChanged || activeInference !== null;
   const trajectoryFrameKey = canonicalJsonV3({ context, binding: result?.binding ?? null, plan: currentPlan?.header.executionPlanSha256 ?? null, current });
   const pathControls: Omit<OpenEnaTrajectoryPathControlsV3, "independentGroupsConfirmed"> | null = isTrajectory && threeDDimensions && primary && secondary && primary.token !== secondary.token
     ? { axes: [threeDDimensions[0], threeDDimensions[1], threeDDimensions[2]], identityConfirmed, primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, horizons: periods, cohortPolicy: "all-period-complete", repetitions: 500, seed: 2026 } : null;
