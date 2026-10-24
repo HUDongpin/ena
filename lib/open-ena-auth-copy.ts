@@ -55,7 +55,7 @@ const en: OpenEnaAuthCopy = {
   requestInvalid: "The sign-in request could not be read. Return to the sign-in page and try again.",
   returnToSignIn: "Return to sign in",
   collaborationNotice:
-    "Registration will be available in the future. For academic collaboration, please contact Professor Sandy TU Yun-Fang (sandy0692@gmail.com).",
+    "This entry is for existing accounts. For academic collaboration, please contact Professor Sandy TU Yun-Fang (sandy0692@gmail.com).",
   privacyNote: "Your source data remains in this browser workspace unless you intentionally export it.",
   workspaceLabel: "Epistemic Network Analysis Research Workspace",
   researchFlow: ["Data", "Model", "Evidence"],
@@ -83,7 +83,7 @@ const zhHant: OpenEnaAuthCopy = {
   requestInvalid: "無法讀取這次登入請求。請返回登入頁再試。",
   returnToSignIn: "返回登入",
   collaborationNotice:
-    "未來會開放註冊。學術合作請聯絡Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
+    "此入口供現有帳戶登入。學術合作請聯絡Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
   privacyNote: "除非您主動匯出，來源資料只會保留在此瀏覽器工作區。",
   workspaceLabel: "認知網絡分析研究工作區",
   researchFlow: ["資料", "模型", "證據"],
@@ -111,7 +111,7 @@ const zhHans: OpenEnaAuthCopy = {
   requestInvalid: "无法读取这次登录请求。请返回登录页再试。",
   returnToSignIn: "返回登录",
   collaborationNotice:
-    "未来会开放注册。学术合作请联系Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
+    "此入口供现有账号登录。学术合作请联系Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
   privacyNote: "除非您主动导出，源数据只会保留在此浏览器工作区。",
   workspaceLabel: "认知网络分析研究工作区",
   researchFlow: ["数据", "模型", "证据"],

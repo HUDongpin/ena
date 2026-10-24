@@ -114,16 +114,16 @@ test("the login copy is English, Traditional Chinese, and Simplified Chinese", a
 
   assert.equal(en.title, "Sign in to Open ENA");
   assert.match(en.unavailable, /secure authentication is not configured/i);
-  assert.match(en.collaborationNotice, /Registration will be available in the future/);
+  assert.match(en.collaborationNotice, /This entry is for existing accounts/);
   assert.match(en.collaborationNotice, /Professor Sandy TU Yun-Fang \(sandy0692@gmail\.com\)/);
   assert.equal(zhHant.title, "登入 Open ENA");
   assert.match(zhHant.unavailable, /安全驗證/);
-  assert.match(zhHant.collaborationNotice, /未來會開放註冊/);
+  assert.match(zhHant.collaborationNotice, /此入口供現有帳戶登入/);
   assert.equal(zhHans.title, "登录 Open ENA");
   assert.match(zhHans.unavailable, /安全验证/);
   assert.equal(
     zhHans.collaborationNotice,
-    "未来会开放注册。学术合作请联系Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
+    "此入口供现有账号登录。学术合作请联系Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
   );
   assert.equal(copyModule.getOpenEnaAuthCopy("fr").title, en.title);
 

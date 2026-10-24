@@ -5,6 +5,22 @@ collection across `www.ena.hk` and `www.open-ena.com`. Users sign in on each
 domain separately; cookies remain host-only. The existing configured owner and
 disposable accounts retain their existing behavior.
 
+## First visit and access
+
+Home, Mission and Plugin Lab link to the current locale's `/open-ena` entry.
+Signed-out visitors see the existing sign-in page, which explains coded-data
+analysis, private project storage and the shared account across both domains.
+New users follow email registration → inbox verification → password creation →
+sign-in. Each domain requires its own sign-in; this is not cross-domain SSO.
+
+Registration availability comes from the existing deployment flag and mail
+readiness. When unavailable, the page explains this and offers the existing
+support contact rather than an unusable registration link. Password recovery
+and research collaboration remain separate actions. Local processing, explicit
+cloud saving and separate AI-sharing consent retain their existing meanings.
+This replaces the earlier invitation/waitlist choices in issue #60; no new
+access-request service is introduced.
+
 ## What a project saves
 
 Save is explicit. A project contains the normalized source table, optional

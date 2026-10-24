@@ -7,6 +7,7 @@ import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 import { OPEN_ENA_PLUGIN_CATALOG } from "@/lib/open-ena/plugins/catalog";
 import { pageMetadata } from "@/lib/metadata";
 import { readPluginLabPublicSummaries } from "@/lib/server/plugin-lab-read";
+import { getOpenEnaNavLabel } from "@/lib/open-ena-i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function PluginLabPage({ params }: { params: Promise<{ loca
   const publicSummaries = await readPluginLabPublicSummaries();
   return <div className="plugin-lab-page" lang={copy.contentFallback ? "en" : undefined}>
     {copy.contentFallback ? <p className="container plugin-language-note">{copy.fallbackNotice}</p> : null}
-    <section className="container plugin-lab-hero"><p className="eyebrow">{copy.eyebrow}</p><h1>{copy.title}</h1><p>{copy.intro}</p><div className="button-row"><Link className="button button-primary" href={`/${typed}/plugins/propose`}>{copy.propose}</Link><Link className="button button-secondary" href={`/${typed}/plugins/status`}>{copy.status}</Link></div></section>
+    <section className="container plugin-lab-hero"><p className="eyebrow">{copy.eyebrow}</p><h1>{copy.title}</h1><p>{copy.intro}</p><div className="button-row"><Link className="button button-primary" href={`/${typed}/plugins/propose`}>{copy.propose}</Link><Link className="button button-secondary" href={`/${typed}/plugins/status`}>{copy.status}</Link><Link className="button button-secondary" href={`/${typed}/open-ena`}>{getOpenEnaNavLabel(typed)}</Link></div></section>
     <aside className="container plugin-boundary-note"><strong>{copy.independentBoundaryTitle}</strong><p>{copy.independentBoundary}</p></aside>
     <section className="container plugin-catalog" aria-labelledby="plugin-catalog-title"><div className="section-heading"><p className="eyebrow">ENA Plugins</p><h2 id="plugin-catalog-title">{copy.catalogTitle}</h2><p>{copy.catalogIntro}</p></div><div className="plugin-grid">{OPEN_ENA_PLUGIN_CATALOG.map((plugin) => <PluginCard key={plugin.pluginId} plugin={plugin} locale={typed} copy={copy} />)}</div></section>
     <section className="container plugin-cocreate"><div><p className="eyebrow">{copy.coCreateEyebrow}</p><h2>{copy.coCreateTitle}</h2><p>{copy.coCreateText}</p><ul><li>{copy.publicTrack}</li><li>{copy.privateTrack}</li></ul></div><Link className="button button-primary" href={`/${typed}/plugins/propose`}>{copy.propose}</Link></section>
