@@ -70,7 +70,7 @@ function syntheticResponse(body) {
   }
   return {
     schemaVersion: "open-ena-ai-interpretation-response-v2",
-    promptVersion: "open-ena-aggregate-inference-review-v2",
+    promptVersion: body.promptVersion,
     binding: body.binding,
     provider: "deepseek",
     model: "synthetic-review",
@@ -322,8 +322,9 @@ try {
 
   const assertCleared = async (label) => {
     const cleared = await aiState(page);
-    assert.equal(cleared.text, "", `${label} must clear the interpretation`);
-    assert.equal(cleared.evidenceKey, "", `${label} must clear the evidence key`);
+    assert.equal(cleared.text, retained.text, `${label} must retain the completed interpretation`);
+    assert.equal(await page.locator("[data-ena-ai-record-state=stale]").count(), 1, label);
+    assert.equal(cleared.evidenceKey, retained.evidenceKey, `${label} must retain the original evidence key`);
     assert.equal(cleared.consent, false, `${label} must clear consent`);
     assert.equal(cleared.generateDisabled, true, `${label} must disable Generate`);
     assert.equal(endpoint.fetchCount(), 1, `${label} must not request another interpretation`);
@@ -365,7 +366,8 @@ try {
   const trajectoryStats = trajectory.page.locator(".ena-workspace-stats-v3");
   const trajectoryCleared = async (label) => {
     const cleared = await aiState(trajectory.page);
-    assert.equal(cleared.text, "", label);
+    assert.equal(cleared.text, trajectoryRetained.text, label);
+    assert.equal(await trajectory.page.locator("[data-ena-ai-record-state=stale]").count(), 1, label);
     assert.equal(cleared.consent, false, label);
     assert.equal(cleared.generateDisabled, true, label);
     assert.equal(trajectory.fetchCount(), 1, label);
@@ -399,7 +401,7 @@ try {
   await failed.waitFor();
   assert.equal(await recovery.page.getByTestId("open-ena-run-model").isDisabled(), true);
   const blocked = await aiState(recovery.page);
-  assert.equal(blocked.text, "");
+  assert.equal(blocked.text, recovered.text);
   assert.equal(blocked.consent, false);
   assert.equal(blocked.generateDisabled, true);
   assert.equal(recovery.fetchCount(), 2);
@@ -413,13 +415,13 @@ try {
   await recovery.page.waitForFunction(() => ![...document.querySelectorAll("[role=alert]")].some((node) => node.textContent?.includes("The requested operation failed")));
   assert.equal(await recovery.page.evaluate(() => window.jobs.length), jobs, "repairing Projection & Rotation must not auto-run");
   const restored = await aiState(recovery.page);
-  assert.equal(restored.text, "");
+  assert.equal(restored.text, recovered.text);
   assert.equal(restored.consent, false);
   assert.equal(restored.generateDisabled, true);
   assert.equal(recovery.fetchCount(), 2);
   assert.deepEqual(recovery.errors, []);
   await recovery.page.close();
-  console.log("Workspace AI retention: presentation keeps one interpretation; scientific edits clear it; failure retry and missing Reference recovery PASS");
+  console.log("Workspace AI retention: presentation keeps one interpretation; scientific edits mark it stale; failure retry and missing Reference recovery PASS");
 } finally {
   await browser.close();
 }

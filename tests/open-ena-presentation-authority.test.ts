@@ -226,7 +226,7 @@ test("official workbench wires presentation-safe consumer and AI invalidation", 
   assert.match(aiComponent, /openEnaAiReviewedRequestIdentityV3/);
   assert.match(
     aiComponent,
-    /useEffect\(\(\)\s*=>\s*\{[\s\S]*?setAiResponse\(null\)[\s\S]*?setConsentedRequestIdentity\(null\)[\s\S]*?\},\s*\[[^\]]*requestIdentity[^\]]*\]\);/,
+    /useEffect\(\(\)\s*=>\s*\{[\s\S]*?setConsentedRequestIdentity\(null\)[\s\S]*?\},\s*\[[^\]]*requestIdentity[^\]]*\]\);/,
   );
   assert.match(workspaceV3Source, /onReset=\{\(\) => \{ setEdgeScale/);
   assert.doesNotMatch(

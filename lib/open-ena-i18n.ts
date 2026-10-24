@@ -1145,6 +1145,13 @@ export interface OpenEnaAiInterpretationCopy {
   evidenceBoundary: string;
   evidenceBoundaryRetained: string;
   previousInterpretation: string;
+  clear: string;
+  recordCurrent: string;
+  recordHistorical: string;
+  recordScienceChanged: string;
+  recordLanguageMismatch: string;
+  originalLanguage: string;
+  retryAfter: string;
   errorTitle: string;
   noCurrentResult: string;
   staleResult: string;
@@ -3362,6 +3369,13 @@ const en: OpenEnaCopy = {
     evidenceBoundary: "The computed ENA model results are still valid. Only the AI interpretation is missing.",
     evidenceBoundaryRetained: "The ENA model results remain valid. This new AI interpretation attempt failed; the interpretation shown below is from an earlier request for the same evidence.",
     previousInterpretation: "Previous interpretation",
+    clear: "Clear AI interpretation",
+    recordCurrent: "Latest completed interpretation · current evidence",
+    recordHistorical: "Saved historical interpretation. Review the current evidence and give new consent to generate again.",
+    recordScienceChanged: "The source, model, comparison, or statistical evidence has changed. This earlier interpretation is retained for reference and does not describe the current analysis.",
+    recordLanguageMismatch: "This interpretation is in the language used when it was generated. Review the current preview and give new consent to generate in the selected language.",
+    originalLanguage: "Original language",
+    retryAfter: "Wait {seconds} seconds before retrying.",
     errorTitle: "AI interpretation was not generated",
     noCurrentResult: "Run and confirm a current result in Stats & Export before requesting an AI interpretation.",
     staleResult: "Rebuild the ENA model so the interpretation matches the current configuration.",
@@ -3815,6 +3829,13 @@ const zhHant: OpenEnaCopy = {
     evidenceBoundary: "已計算的 ENA 模型結果仍然有效。缺少的只是 AI 解讀。",
     evidenceBoundaryRetained: "ENA 模型結果仍然有效。這次新的 AI 解讀嘗試失敗；下方顯示的解讀來自較早對同一證據的請求。",
     previousInterpretation: "先前的解讀",
+    clear: "清除 AI 解讀",
+    recordCurrent: "最近完成的解讀 · 對應目前證據",
+    recordHistorical: "已儲存的歷史解讀。再次生成前，請審閱目前證據並重新同意。",
+    recordScienceChanged: "資料來源、模型、比較或統計證據已改變。此先前解讀保留供參考，不代表目前分析。",
+    recordLanguageMismatch: "此解讀保留生成時的語言。若要使用目前選擇的語言，請審閱預覽、重新同意並生成。",
+    originalLanguage: "原始語言",
+    retryAfter: "請等待 {seconds} 秒後重試。",
     errorTitle: "未能生成 AI 解讀",
     noCurrentResult: "請先在「統計與匯出」執行並確認目前的結果，再請求 AI 解讀。",
     staleResult: "請重新建立 ENA 模型，確保解讀符合目前設定。",
@@ -4232,6 +4253,13 @@ const zhHans: OpenEnaCopy = {
     evidenceBoundary: "已计算的 ENA 模型结果仍然有效。缺少的只是 AI 解读。",
     evidenceBoundaryRetained: "ENA 模型结果仍然有效。这次新的 AI 解读尝试失败；下方显示的解读来自较早对同一证据的请求。",
     previousInterpretation: "先前的解读",
+    clear: "清除 AI 解读",
+    recordCurrent: "最近完成的解读 · 对应当前证据",
+    recordHistorical: "已保存的历史解读。再次生成前，请审阅当前证据并重新同意。",
+    recordScienceChanged: "数据来源、模型、比较或统计证据已改变。此先前解读保留供参考，不代表当前分析。",
+    recordLanguageMismatch: "此解读保留生成时的语言。若要使用当前选择的语言，请审阅预览、重新同意并生成。",
+    originalLanguage: "原始语言",
+    retryAfter: "请等待 {seconds} 秒后重试。",
     errorTitle: "未能生成 AI 解读",
     noCurrentResult: "请先在“统计与导出”运行并确认当前结果，再请求 AI 解读。",
     staleResult: "请重新构建 ENA 模型，确保解读符合当前设置。",

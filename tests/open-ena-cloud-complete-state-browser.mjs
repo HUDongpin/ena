@@ -10,7 +10,7 @@ const retention = await readFile("tests/open-ena-ai-interpretation-retention-bro
 const entryStart = retention.indexOf("const entry = `") + "const entry = `".length;
 const entryEnd = retention.indexOf("\n`;", entryStart);
 assert.ok(entryStart > 20 && entryEnd > entryStart);
-let entry = retention.slice(entryStart, entryEnd);
+let entry = retention.slice(entryStart, entryEnd).replace("import OpenEnaWorkspace from './components/open-ena/OpenEnaWorkspace';", "import OpenEnaWorkspaceSession from './components/open-ena/OpenEnaWorkspaceSession';");
 entry = `
 import { restoreOpenEnaCloudWorkspace } from './lib/open-ena/cloud-workspace';
 import { buildAnalysisBundleV3 } from './lib/open-ena/analysis-bundle-v3';
@@ -25,7 +25,7 @@ let serial = 0;
 const changed = () => { window.cloudChanges += 1; };
 const local = (value) => { window.localOnlyWork = value; };
 function mount(restored) {
-  root.render(<OpenEnaWorkspace key={++serial} locale="en" operationOwnerKey={operationOwnerKey}
+  root.render(<OpenEnaWorkspaceSession key={++serial} initialLocale="en" operationOwnerKey={operationOwnerKey}
     initialSource={restored ? undefined : { dataset: data, datasetSha256: 'c'.repeat(64), drafts }}
     initialCloudWorkspace={restored} cloudBridge={window.cloudBridge} onCloudChange={changed}
     onLocalOnlyWorkChange={local} worker={worker} />);
@@ -45,7 +45,7 @@ window.withSecondSet = async (text) => {
 mount(null);
 `);
 const bundle = await build({ stdin: { contents: entry, loader: "tsx", resolveDir: process.cwd(), sourcefile: "cloud-complete-state.tsx" },
-  bundle: true, format: "iife", platform: "browser", jsx: "automatic", write: false, logLevel: "silent" });
+  bundle: true, define: { "process.env.NODE_ENV": '"production"', "process.env": "{}" }, format: "iife", platform: "browser", jsx: "automatic", write: false, logLevel: "silent" });
 const script = bundle.outputFiles[0].text;
 const mark = await readFile("public/ena-mark.svg", "utf8");
 const styles = await readFile("app/globals.css", "utf8");
@@ -64,7 +64,7 @@ async function pageAt(origin) {
       if (aiRequests === 1) await new Promise((resolve) => { releaseAi = resolve; });
       const request = route.request().postDataJSON();
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({
-        schemaVersion: "open-ena-ai-interpretation-response-v2", promptVersion: "open-ena-aggregate-inference-review-v2",
+        schemaVersion: "open-ena-ai-interpretation-response-v2", promptVersion: request.promptVersion,
         binding: request.binding, provider: "deepseek", model: "synthetic-cloud-storage-check", generatedAt: "2026-10-24T05:00:00.000Z",
         interpretation: { observedPatterns: [{ statement: "Cloud-restored synthetic AI interpretation.", evidenceRefs: [request.evidence.descriptive.axes[0].id] }],
           contextualQuestions: ["Which comparison needs review?"], limitations: ["Synthetic browser storage verification only."] } }),
@@ -170,12 +170,49 @@ try {
   await second.getByRole("button", { name: "Review historical configuration", exact: true }).click();
   await second.getByRole("button", { name: "Keep read-only historical result", exact: true }).click();
   assert.equal(await second.getByRole("button", { name: "Review historical configuration", exact: true }).count(), 1);
+  const beforeLanguage = JSON.parse(await second.evaluate(() => window.cloudSave()));
+  await second.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+  for (const locale of ["zh-hans", "zh-hant", "en"]) {
+    await second.getByTestId("open-ena-workspace-language").selectOption(locale);
+    await second.getByText("Cloud-restored synthetic AI interpretation.", { exact: true }).waitFor();
+    assert.equal(await second.locator("[data-ena-ai-record-state=historical]").count(), 1);
+    assert.equal(await second.locator("[data-ena-ai-language-mismatch]").count(), locale === "en" ? 0 : 1);
+    const afterLanguage = JSON.parse(await second.evaluate(() => window.cloudSave()));
+    for (const key of ["dataset", "drafts", "analysis", "statisticsReport", "aiInterpretation", "analysisSets", "setComparison", "historicalImports"]) {
+      assert.deepEqual(afterLanguage[key], beforeLanguage[key], `${locale} retains ${key}`);
+    }
+    assert.equal(aiRequests, 1, "language selection never dispatches AI");
+    await second.screenshot({ path: `${evidenceDir}/retained-ai-${locale}.png`, fullPage: true });
+  }
+  await second.setViewportSize({ width: 390, height: 844 });
+  await second.getByTestId("open-ena-workspace-language").scrollIntoViewIfNeeded();
+  const languageBox = await second.getByTestId("open-ena-workspace-language").boundingBox();
+  assert.ok(languageBox && languageBox.x >= 0 && languageBox.x + languageBox.width <= 390, "language control fits the narrow viewport");
+  await second.screenshot({ path: `${evidenceDir}/retained-ai-mobile.png`, fullPage: true });
+  await second.setViewportSize({ width: 1440, height: 1100 });
+  const changesBeforeClear = await second.evaluate(() => window.cloudChanges);
+  const beforeClear = JSON.parse(await second.evaluate(() => window.cloudSave()));
+  await second.locator("[data-ena-ai-clear]").click();
+  assert.equal(await second.locator(".ena-ai-result").count(), 0, "Clear removes the readable AI record");
+  assert.ok(await second.evaluate(() => window.cloudChanges) > changesBeforeClear, "Clear marks cloud state dirty");
+  const clearedText = await second.evaluate(() => window.cloudSave());
+  const cleared = JSON.parse(clearedText);
+  assert.equal(cleared.schemaVersion, 2);
+  assert.equal(cleared.aiInterpretation, null, "Clear is persisted as null");
+  for (const key of ["dataset", "drafts", "analysis", "statisticsReport", "analysisSets", "setComparison", "historicalImports"]) {
+    assert.deepEqual(cleared[key], beforeClear[key], `Clear preserves ${key}`);
+  }
+  await second.evaluate((text) => window.cloudOpen(text), clearedText);
+  await second.getByRole("button", { name: "Generate AI interpretation", exact: true }).waitFor();
+  assert.equal(await second.locator(".ena-ai-result").count(), 0, "saving and reopening must not resurrect the cleared record");
+  assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
+  assert.equal(aiRequests, 1);
   assert.deepEqual(errors, []);
   const receipt = { status: "PASS", sourceOrigin: new URL(first.url()).origin, restoredOrigin: new URL(second.url()).origin,
     syntheticAiRequests: aiRequests, restoredAnalysisRuns: await second.evaluate(() => window.jobs.length),
     comparisonSets: resaved.analysisSets.length, historicalImports: resaved.historicalImports.length,
     aiRoundTrip: true, comparisonRoundTrip: true, originalImportBytesRoundTrip: true, resave: true,
-    consentRestored: false, browserOnlyWarningAfterCompletedSave: false, pendingAiSaveBlocked: true, pendingSetSaveBlocked: true, removalPersisted: true };
+    consentRestored: false, browserOnlyWarningAfterCompletedSave: false, pendingAiSaveBlocked: true, pendingSetSaveBlocked: true, removalPersisted: true, aiClearPersisted: true, localeRetainsAllSavedState: true };
   await writeFile(`${evidenceDir}/receipt.json`, JSON.stringify(receipt, null, 2) + "\n");
   console.log(JSON.stringify(receipt));
 } finally { releaseAi?.(); await browser.close(); }

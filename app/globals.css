@@ -14726,3 +14726,44 @@ html:has(.open-ena-page) {
     .ena-site-trigger .ena-site-chevron { position: static; transform: rotate(90deg); }
   }
 }
+
+/* Session language stays visible above both persistent control panels. */
+.ena-control-panel:has(> .ena-workspace-language) {
+  display: flex;
+  flex-direction: column;
+}
+.ena-workspace-language {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 8px 18px;
+  border-bottom: 1px solid #d5dfde;
+  font-size: 12px;
+}
+.ena-workspace-language select {
+  max-width: 160px;
+  min-height: 30px;
+  border: 1px solid #829692;
+  border-radius: 3px;
+  background: #fff;
+  color: #243d37;
+  font: inherit;
+}
+.ena-control-panel:has(> .ena-workspace-language) > .ena-persistent-analysis-panel,
+.ena-control-panel:has(> .ena-workspace-language) > .ena-persistent-ai-lifecycle {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+.ena-ai-record-status {
+  padding: 10px 12px;
+  border-inline-start: 3px solid #418476;
+  background: #f0f6f4;
+}
+.ena-ai-result[data-ena-ai-record-state="stale"] .ena-ai-record-status,
+.ena-ai-result[data-ena-ai-record-state="historical"] .ena-ai-record-status {
+  border-inline-start-color: #94651c;
+  background: #fff9ed;
+}

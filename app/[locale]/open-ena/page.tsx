@@ -3,8 +3,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import JsonLd from "@/components/JsonLd";
 import OpenEnaLogin, { OpenEnaAuthRecoveryNotice } from "@/components/open-ena/OpenEnaLogin";
-import OpenEnaWorkspace from "@/components/open-ena/OpenEnaWorkspace";
-import OpenEnaCloudProjects from "@/components/open-ena/OpenEnaCloudProjects";
+import OpenEnaWorkspaceSession from "@/components/open-ena/OpenEnaWorkspaceSession";
 import { getLocaleMeta, isLocale, type Locale } from "@/lib/i18n";
 import {
   OPEN_ENA_SESSION_COOKIE,
@@ -139,11 +138,10 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
     <>
       <OpenEnaAuthRecoveryNotice locale={typedLocale} notice={notice} />
       <JsonLd data={structuredData} />
-      {registered ? <OpenEnaCloudProjects key={principal.principalRef} locale={typedLocale}
+      <OpenEnaWorkspaceSession key={principal.principalRef} initialLocale={typedLocale}
         operationOwnerKey={openEnaAiOperationOwnerKey(principal.principalRef)} providerDescriptor={providerDescriptor}
-        runtimeDisabledPluginIds={parseOpenEnaDisabledPluginIds(process.env.ENA_PLUGIN_LAB_DISABLED_PLUGIN_IDS)} accountId={principal.userId} accountEmail={profile?.email} />
-        : <OpenEnaWorkspace locale={typedLocale} operationOwnerKey={openEnaAiOperationOwnerKey(principal.principalRef)}
-          providerDescriptor={providerDescriptor} runtimeDisabledPluginIds={parseOpenEnaDisabledPluginIds(process.env.ENA_PLUGIN_LAB_DISABLED_PLUGIN_IDS)} />}
+        runtimeDisabledPluginIds={parseOpenEnaDisabledPluginIds(process.env.ENA_PLUGIN_LAB_DISABLED_PLUGIN_IDS)}
+        accountId={registered ? principal.userId : undefined} accountEmail={profile?.email} />
     </>
   );
 }
