@@ -300,7 +300,7 @@ test("the ENA About page exposes the shared team, publications and local assets"
   const aboutSource = readFileSync(join(projectRoot, "app", "[locale]", "about", "page.tsx"), "utf8");
   assert.match(aboutSource, /<AboutContent/);
   assert.deepEqual(teamMembers.map(member => member.name), [
-    "Dr. Peter HU Dongpin", "Prof. Eric Hamilton", "Prof. Sandy TU Yun-Fang", "Ms. Shirleen XU Qiaolin",
+    "Dr. Peter HU Dongpin", "Prof. Eric Hamilton", "Ludwig Jianxing Yu", "Prof. Sandy TU Yun-Fang", "Ms. Shirleen XU Qiaolin",
   ]);
   assert.deepEqual(projectPublications.map(publication => publication.id), [
     "rena-to-jena", "data-literacy-reflection", "ena-3d",

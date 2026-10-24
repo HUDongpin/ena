@@ -35,6 +35,18 @@ export const teamMembers: TeamMember[] = [
     profileLabel: "Pepperdine profile",
   },
   {
+    name: "Ludwig Jianxing Yu",
+    institution: "3D ENA Research Group · Hong Kong",
+    role: "ENA variants · Dimensionality-reduction algorithms",
+    bio: "He has played a pioneering role in advancing ENA variants such as 3D ENA and dimensionality-reduction algorithms for ENA. As the key developer of 3D ENA 1.0, he combines computer science and psychology to develop interactive research tools.",
+    // Portrait and background from https://3dena.com/team.
+    image: "/open-ena-about/team/ludwig-jianxing-yu.jpg",
+    imageAlt: "Portrait of Ludwig Jianxing Yu",
+    imagePosition: "center 24%",
+    profileUrl: "https://3dena.com/team",
+    profileLabel: "3D ENA team profile",
+  },
+  {
     name: "Prof. Sandy TU Yun-Fang",
     institution: "National Taiwan University of Science and Technology",
     role: "Assistant Professor · Graduate Institute of Digital Learning and Education",
