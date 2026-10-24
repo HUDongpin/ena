@@ -10,6 +10,10 @@ import { createWorkspaceStateV3, emptyWorkspaceDraftsV3 } from "../components/op
 import { captureOpenEnaCloudWorkspace, defaultOpenEnaCloudPresentation, restoreOpenEnaCloudWorkspace } from "../lib/open-ena/cloud-workspace.ts";
 import type { ParsedDataset } from "../lib/open-ena/types.ts";
 import type { StandardEnaDraftV3 } from "../lib/open-ena/model-v3/types.ts";
+import { interpretationRequest } from "./helpers/ai-interpretation-request-v2.ts";
+import { captureAnalysisSetV3, compareAnalysisSetsV3 } from "../lib/open-ena/sets-bound-v3.ts";
+import { buildAnalysisBundleV3 } from "../lib/open-ena/analysis-bundle-v3.ts";
+import { importOpenEnaArtifactV3 } from "../lib/open-ena/model-artifact-imports-v3.ts";
 
 const argument = process.argv.indexOf("--fixture");
 const fixtureFile = resolve(argument >= 0 ? process.argv[argument + 1] : "output/cloud-projects-20261024/local-fixture.json");
@@ -73,8 +77,17 @@ try {
   const result = await bindResultV3(plan, runStandardPlanV3(plan), { processedRows: plan.rows.length, maximumBufferedRows: 0,
     numericCellsAllocated: 120, peakBytesObservedOrBounded: 10_240, observationMethod: "exact-counters-and-conservative-byte-bound" }, compiled.diagnostics);
   const initial = createWorkspaceStateV3({ dataset, datasetSha256: "a".repeat(64), drafts: { ...emptyWorkspaceDraftsV3(), standard: draft } });
-  const snapshot = await captureOpenEnaCloudWorkspace({ state: { ...initial, model: { ...initial.model, result, resultStatus: "current" } }, currentPlan: plan,
-    presentation: { ...defaultOpenEnaCloudPresentation(), mode: "plot", edgeScale: 2 } });
+  const historicalText = JSON.stringify(await buildAnalysisBundleV3(result), null, 2) + "\n";
+  const historical = await importOpenEnaArtifactV3(historicalText);
+  const analysisSets = await Promise.all(["first", "second"].map((id) => captureAnalysisSetV3(result, plan, { id })));
+  const setComparison = compareAnalysisSetsV3(analysisSets[0], analysisSets[1]);
+  const aiRequest = interpretationRequest();
+  const aiInterpretation = { request: aiRequest, localScientificIdentity: "synthetic-http-saved-evidence", auditReceipt: null,
+    response: { schemaVersion: "open-ena-ai-interpretation-response-v2" as const, promptVersion: "open-ena-aggregate-inference-review-v2" as const,
+      binding: aiRequest.binding, provider: "deepseek" as const, model: "synthetic-http-check", generatedAt: "2026-10-24T05:00:00.000Z",
+      interpretation: { observedPatterns: [{ statement: "Synthetic saved interpretation.", evidenceRefs: ["axis-1"] }], contextualQuestions: [], limitations: ["Storage test only."] } } };
+  const snapshot = await captureOpenEnaCloudWorkspace({ state: { ...initial, historical: [historical], model: { ...initial.model, result, resultStatus: "current" } }, currentPlan: plan,
+    presentation: { ...defaultOpenEnaCloudPresentation(), mode: "plot", edgeScale: 2 }, analysisSets, setComparison, aiInterpretation });
   const projectId = randomUUID();
   const created = await call("/api/open-ena/projects", { method: "POST", cookie: cookieA, json: { id: projectId, title: "HTTP cross-origin model", snapshot } });
   assert.equal(created.status, 201); assert.equal((await body(created)).revision, 1);
@@ -83,7 +96,12 @@ try {
   const saved = await body(loaded), restored = await restoreOpenEnaCloudWorkspace(saved.snapshot);
   assert.equal(restored.resultStatus, "current"); assert.equal(restored.result?.binding.scientificResultSha256, result.binding.scientificResultSha256);
   assert.deepEqual(restored.dataset?.rows, dataset.rows); assert.deepEqual(restored.drafts.standard, draft); assert.equal(restored.presentation.edgeScale, 2);
-  check("saved source rows, model, result hash and display settings reopen across origins");
+  assert.deepEqual(restored.aiInterpretation, aiInterpretation);
+  assert.deepEqual(restored.analysisSets, analysisSets); assert.deepEqual(restored.setComparison, setComparison);
+  assert.deepEqual(compareAnalysisSetsV3(restored.analysisSets[0], restored.analysisSets[1]), setComparison);
+  assert.equal(restored.historical[0].receivedArtifactSha256, historical.receivedArtifactSha256);
+  assert.equal(JSON.parse(saved.snapshot).historicalImports[0], historicalText);
+  check("saved source, model, result, AI evidence, usable comparison sets and original historical imports reopen across origins");
   assert.equal((await body(await call("/api/open-ena/projects", { cookie: cookieB, origin: originB }))).projects.length, 0);
   assert.equal((await call(`/api/open-ena/projects/${projectId}`, { cookie: cookieB, origin: originB })).status, 404);
   assert.equal((await call(`/api/open-ena/projects/${projectId}`, { method: "PUT", cookie: cookieB, origin: originB, json: { title: "forged", revision: 1, snapshot } })).status, 404);

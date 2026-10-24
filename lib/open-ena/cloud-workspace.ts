@@ -15,6 +15,9 @@ import type { ParsedDataset } from "./types";
 import { captureOpenEnaCloudDataset, decodeOpenEnaCloudDataset, parseOpenEnaCloudSnapshot,
   validateOpenEnaCloudSnapshotEnvelope, type OpenEnaCloudSnapshot } from "./cloud-workspace-envelope";
 import { decodeOpenEnaCloudDisplay, encodeOpenEnaCloudDisplay, type OpenEnaCloudPresentation } from "./cloud-workspace-presentation";
+import { captureSavedOpenEnaAiInterpretation, type SavedOpenEnaAiInterpretation, type OpenEnaCloudExtras } from "./cloud-workspace-extras";
+import { serializeAnalysisSetV3, restoreAnalysisSetV3, compareAnalysisSetsV3, type OpenEnaAnalysisSetV3 } from "./sets-bound-v3";
+import { originalOpenEnaImportTextV3, importOpenEnaArtifactV3, type HistoricalImportV3 } from "./model-artifact-imports-v3";
 
 export { defaultOpenEnaCloudPresentation } from "./cloud-workspace-presentation";
 export type { OpenEnaCloudPresentation } from "./cloud-workspace-presentation";
@@ -26,6 +29,8 @@ export type RestoredOpenEnaCloudWorkspace = {
   compilation: { result: StandardCompileResultV3 | OnaCompileResultV3; plan: OpenEnaExecutionPlanV3 | null; error: string | null } | null;
   presentation: OpenEnaCloudPresentation; sourceReference: OpenEnaStandardReferenceV2 | null;
   originalSource: { name: string; text: string } | null; statisticsReport: Record<string, unknown> | null;
+  aiInterpretation: SavedOpenEnaAiInterpretation | null; analysisSets: OpenEnaAnalysisSetV3[];
+  setComparison: ReturnType<typeof compareAnalysisSetsV3> | null; historical: HistoricalImportV3[];
 };
 const restoredWorkspaces = new WeakSet<object>();
 export function isRestoredOpenEnaCloudWorkspace(value: unknown): value is RestoredOpenEnaCloudWorkspace {
@@ -36,6 +41,8 @@ export async function captureOpenEnaCloudWorkspace(input: {
   state: WorkspaceStateV3; currentPlan: OpenEnaExecutionPlanV3 | null; presentation: OpenEnaCloudPresentation;
   sourceReference?: OpenEnaStandardReferenceV2 | null; originalSource?: { name: string; text: string } | null;
   statisticsReport?: Record<string, unknown> | null;
+  aiInterpretation?: SavedOpenEnaAiInterpretation | null; analysisSets?: readonly OpenEnaAnalysisSetV3[];
+  setComparison?: ReturnType<typeof compareAnalysisSetsV3> | null;
 }): Promise<OpenEnaCloudSnapshot> {
   const { state } = input;
   if (state.model.runStatus === "running") throw new TypeError("Wait for the running analysis before saving this project.");
@@ -50,16 +57,20 @@ export async function captureOpenEnaCloudWorkspace(input: {
     drafts: state.model.drafts, onaDraftInitialized: state.model.onaDraftInitialized, display: encodeOpenEnaCloudDisplay(state.model.display),
     references: state.references, result: state.model.result, resultStatus: state.model.resultStatus,
     presentation: input.presentation, sourceReference: input.sourceReference ?? null, originalSource: input.originalSource ?? null,
-    statisticsReport: input.statisticsReport ?? null }) as {
+    statisticsReport: input.statisticsReport ?? null,
+    aiInterpretation: input.aiInterpretation ? captureSavedOpenEnaAiInterpretation(input.aiInterpretation) : null,
+    analysisSets: (input.analysisSets ?? []).map(serializeAnalysisSetV3),
+    setComparison: input.setComparison ? { primaryId: input.setComparison.primary.setId, secondaryId: input.setComparison.secondary.setId, axes: input.setComparison.axes } : null,
+    historicalImports: state.historical.map(originalOpenEnaImportTextV3) }) as {
       dataset: typeof dataset; datasetSha256: string; drafts: ModelWorkspaceDraftsV3; onaDraftInitialized: boolean;
       display: OpenEnaCloudSnapshot["display"]; references: OpenEnaStandardReferenceV2[]; result: BoundResultV3 | null;
       resultStatus: OpenEnaCloudSnapshot["resultStatus"]; presentation: OpenEnaCloudPresentation; sourceReference: OpenEnaStandardReferenceV2 | null;
       originalSource: OpenEnaCloudSnapshot["originalSource"]; statisticsReport: Record<string, unknown> | null;
-    };
+    } & OpenEnaCloudExtras;
   const currentPlan = input.currentPlan;
   if (captured.result && captured.resultStatus === "current" && !currentPlan) throw new TypeError("Current analysis plan is still being checked. Try saving again.");
   const { result, ...fields } = captured;
-  const payload = { schemaVersion: 1 as const, kind: "open-ena-cloud-project" as const, ...fields,
+  const payload = { schemaVersion: 2 as const, kind: "open-ena-cloud-project" as const, ...fields,
     dataset: captured.dataset ? { ...captured.dataset, tableSha256: await sha256CanonicalJsonV3({ headers: captured.dataset.headers, cells: captured.dataset.cells }) } : null,
     analysis: result ? await buildAnalysisBundleV3(result, captured.resultStatus === "current" && currentPlan ? { expectedPlan: currentPlan } : {}) : null };
   return deepFreezeV3(await validateOpenEnaCloudSnapshotEnvelope({ ...payload, integritySha256: await sha256CanonicalJsonV3(payload) }));
@@ -103,10 +114,23 @@ export async function restoreOpenEnaCloudWorkspace(text: string): Promise<Restor
   if (sourceReference && (!result || sourceReference.source.executionPlanSha256 !== result.binding.executionPlanSha256
     || sourceReference.source.configurationSha256 !== result.binding.configurationSha256)) throw new TypeError("Saved Reference does not belong to the saved analysis.");
   if (snapshot.statisticsReport && (!result || canonicalJsonV3(snapshot.statisticsReport.binding) !== canonicalJsonV3(result.binding))) throw new TypeError("Saved statistics do not belong to the saved analysis.");
+  const aiInterpretation = snapshot.schemaVersion === 2 && snapshot.aiInterpretation ? captureSavedOpenEnaAiInterpretation(snapshot.aiInterpretation) : null;
+  const analysisSets = snapshot.schemaVersion === 2 ? await Promise.all(snapshot.analysisSets.map(restoreAnalysisSetV3)) : [];
+  const selection = snapshot.schemaVersion === 2 ? snapshot.setComparison : null;
+  const setComparison = selection ? compareAnalysisSetsV3(analysisSets.find((set) => set.id === selection.primaryId)!,
+    analysisSets.find((set) => set.id === selection.secondaryId)!, selection.axes) : null;
+  const historical: HistoricalImportV3[] = [];
+  for (const text of snapshot.schemaVersion === 2 ? snapshot.historicalImports : []) {
+    const artifact = await importOpenEnaArtifactV3(text);
+    if (artifact.kind !== "historical-result") throw new TypeError("Saved historical import is not an analysis result.");
+    if (historical.some((existing) => existing.receivedArtifactSha256 === artifact.receivedArtifactSha256)) throw new TypeError("Duplicate saved historical import.");
+    historical.push(artifact);
+  }
   const restored: RestoredOpenEnaCloudWorkspace = deepFreezeV3({ dataset, datasetSha256: snapshot.datasetSha256,
     drafts: snapshot.drafts, onaDraftInitialized: snapshot.onaDraftInitialized, references, result, resultStatus, compilation,
     display: decodeOpenEnaCloudDisplay(snapshot.display, snapshot.datasetSha256, result), presentation: snapshot.presentation,
-    sourceReference, originalSource: snapshot.originalSource, statisticsReport: snapshot.statisticsReport });
+    sourceReference, originalSource: snapshot.originalSource, statisticsReport: snapshot.statisticsReport,
+    aiInterpretation, analysisSets, setComparison, historical });
   restoredWorkspaces.add(restored);
   return restored;
 }

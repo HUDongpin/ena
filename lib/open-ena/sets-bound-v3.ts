@@ -1,4 +1,6 @@
-import type { BoundStandardResultV3 } from "./model-v3/types";
+import type { BoundStandardResultV3, OpenEnaAnalysisBundleV3 } from "./model-v3/types";
+import { buildAnalysisBundleV3, parseAnalysisBundleV3 } from "./analysis-bundle-v3";
+import { boundResultFromBundleV3 } from "./bundle-contract-v3";
 import {
   canonicalJsonV3,
   deepFreezeV3,
@@ -10,6 +12,7 @@ import {
 } from "./inference-consumers-v3";
 
 const captures = new WeakSet<object>();
+const captureBundles = new WeakMap<object, OpenEnaAnalysisBundleV3>();
 function options(input: unknown) {
   const value = snapshotPlainJsonRecordV3(input, "analysis-set options");
   if (Object.keys(value).some((k) => !["id", "name", "capturedAt"].includes(k)))
@@ -42,7 +45,13 @@ export async function captureAnalysisSetV3(
   );
   if (admitted.configuration.analysisFamily !== "standard")
     throw new TypeError("ONA analysis-sets blocked");
-  const result = admitted as BoundStandardResultV3,
+  const set = deriveAnalysisSetV3(admitted as BoundStandardResultV3, opts);
+  captureBundles.set(set, await buildAnalysisBundleV3(admitted));
+  return set;
+}
+
+function deriveAnalysisSetV3(result: BoundStandardResultV3, opts: { id?: string; name?: string; capturedAt?: string }) {
+  const
     p = result.executionProvenance;
   if (result.configuration.analysis.model.type !== "EndPoint")
     throw new TypeError("Analysis sets require EndPoint results");
@@ -136,6 +145,33 @@ export async function captureAnalysisSetV3(
 export type OpenEnaAnalysisSetV3 = Awaited<
   ReturnType<typeof captureAnalysisSetV3>
 >;
+
+export type SerializedOpenEnaAnalysisSetV3 = {
+  id: string; name: string; capturedAt: string; analysis: OpenEnaAnalysisBundleV3;
+};
+
+/** Keep the internally validated historical bundle, never an executable plan. */
+export function serializeAnalysisSetV3(set: OpenEnaAnalysisSetV3): SerializedOpenEnaAnalysisSetV3 {
+  const analysis = captureBundles.get(set);
+  if (!captures.has(set) || !analysis) throw new TypeError("Analysis-set capture authority required");
+  return deepFreezeV3({ id: set.id, name: set.name, capturedAt: set.capturedAt, analysis });
+}
+
+/** Reconstruct historical geometry from the checked bundle. This grants only
+ * retained-set comparison, never current-result, fit or Reference authority. */
+export async function restoreAnalysisSetV3(value: SerializedOpenEnaAnalysisSetV3): Promise<OpenEnaAnalysisSetV3> {
+  const input = snapshotPlainJsonRecordV3(value, "saved analysis set");
+  if (Object.keys(input).length !== 4 || !["id", "name", "capturedAt", "analysis"].every((key) => Object.hasOwn(input, key))) {
+    throw new TypeError("Invalid saved analysis set");
+  }
+  const opts = options({ id: input.id, name: input.name, capturedAt: input.capturedAt });
+  const analysis = await parseAnalysisBundleV3(canonicalJsonV3(input.analysis));
+  const result = boundResultFromBundleV3(analysis);
+  if (result.configuration.analysisFamily !== "standard") throw new TypeError("ONA analysis-sets blocked");
+  const set = deriveAnalysisSetV3(result as BoundStandardResultV3, opts);
+  captureBundles.set(set, analysis);
+  return set;
+}
 
 /** Historical retained-set comparison: each set was admitted at capture; this
  * operation makes no claim that either is the currently edited model. */

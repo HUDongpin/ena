@@ -195,6 +195,16 @@ jobs:
         run: npm run test:browser:open-ena-ai-presentation-retention
       - name: Run the AI interpretation retention workspace browser gate
         run: npm run test:browser:open-ena-ai-interpretation-retention
+      - name: Verify complete cloud workspace restoration across browser origins
+        run: node tests/open-ena-cloud-complete-state-browser.mjs
+      - name: Upload complete cloud workspace evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: open-ena-complete-cloud-state-${{ github.sha }}
+          path: output/cloud-complete-state-20261024/browser
+          if-no-files-found: warn
+          retention-days: 14
       - name: Run the keyboard focus-recovery gate
         run: npm run test:browser:open-ena-focus-recovery
       - name: Run the workspace landmarks and narrow-viewport gate

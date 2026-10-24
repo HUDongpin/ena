@@ -173,7 +173,7 @@ export function createWorkspaceStateFromCloud(restored: RestoredOpenEnaCloudWork
   const model = { ...createModelStateV3(restored.drafts, restored.datasetSha256),
     onaDraftInitialized: restored.onaDraftInitialized, display: restored.display, result: restored.result, resultStatus: restored.resultStatus };
   const state = reconcileRaw({ ...createWorkspaceStateV3(), dataset: restored.dataset, model,
-    raw: rawEditors(restored.drafts), references: restored.references });
+    raw: rawEditors(restored.drafts), references: restored.references, historical: restored.historical });
   return { ...state, compilation: restored.compilation ? { ...restored.compilation, context: modelScientificContextV3(state.model) } : null };
 }
 

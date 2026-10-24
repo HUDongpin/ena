@@ -17,6 +17,8 @@ import { openEnaAiOperationScope, openEnaAiOperationStore } from "@/lib/open-ena
 import { OPEN_ENA_AI_OWNER_HEADER, OPEN_ENA_AI_OWNER_KEY } from "@/lib/open-ena/ai-operation-owner";
 import { openEnaAiReviewedRequestIdentityV3 } from "@/lib/open-ena/workspace-consumer-authority-v3";
 import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
+import type { SavedOpenEnaAiInterpretation, OpenEnaAiAuditReceipt } from "@/lib/open-ena/cloud-workspace-extras";
+import OpenEnaSavedAiInterpretation from "./OpenEnaSavedAiInterpretation";
 
 interface OpenEnaAiInterpretationProps {
   /** Full native binding/context remains local and participates in consent,
@@ -30,19 +32,12 @@ interface OpenEnaAiInterpretationProps {
   providerDescriptor?: { provider: string; model: string };
   showHeading?: boolean;
   onLocalWorkChange?: (hasWork: boolean) => void;
+  onInterpretationChange?: (value: SavedOpenEnaAiInterpretation) => void;
+  savedInterpretation?: SavedOpenEnaAiInterpretation | null;
+  savedInterpretationNote?: string;
 }
 
-type AiAuditReceiptView = {
-  id: string;
-  durable: string;
-  status: string;
-  recordedAt: string;
-  operationId: string;
-  requestSha256: string;
-  consentPolicyVersion: string;
-  provider: string;
-  model: string;
-};
+type AiAuditReceiptView = OpenEnaAiAuditReceipt;
 
 type GenerationStatus = "idle" | "loading";
 
@@ -186,6 +181,9 @@ export default function OpenEnaAiInterpretation({
   providerDescriptor = { provider: "DeepSeek", model: "server-configured model" },
   showHeading = true,
   onLocalWorkChange,
+  onInterpretationChange,
+  savedInterpretation = null,
+  savedInterpretationNote = "",
 }: OpenEnaAiInterpretationProps) {
   const [consentedRequestIdentity, setConsentedRequestIdentity] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>("idle");
@@ -224,7 +222,7 @@ export default function OpenEnaAiInterpretation({
   const operationStorageKey = operationScope?.key ?? null;
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
   const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;
-  useEffect(() => { onLocalWorkChange?.(currentResponse !== null || generationStatus === "loading"); }, [currentResponse, generationStatus, onLocalWorkChange]);
+  useLayoutEffect(() => { onLocalWorkChange?.(generationStatus === "loading"); }, [generationStatus, onLocalWorkChange]);
   const showsRetainedInterpretation = currentResponse !== null;
   // Sample while the previous result is still mounted. currentResponse drops
   // during render, so the focused heading is gone before an effect can see it.
@@ -483,6 +481,7 @@ export default function OpenEnaAiInterpretation({
           setAiResponse(parsed);
           setAiResponseRequestIdentity(requestedIdentity);
           setAuditReceipt(receipt);
+          if (localScientificIdentity) onInterpretationChange?.({ request, response: parsed, localScientificIdentity, auditReceipt: receipt });
         },
         onError: setAiError,
         onSettled: releaseThisGeneration,
@@ -528,6 +527,7 @@ export default function OpenEnaAiInterpretation({
         <span>{copy.notStatisticalInference}</span>
       </aside>
 
+      {!currentResponse && savedInterpretation ? <OpenEnaSavedAiInterpretation value={savedInterpretation} copy={copy} note={savedInterpretationNote} /> : null}
       {request ? (
         <details className="ena-ai-payload-preview" data-ena-ai-payload-preview="reviewed-aggregate">
           <summary>{copy.previewTitle}</summary>

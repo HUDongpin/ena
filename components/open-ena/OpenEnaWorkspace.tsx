@@ -99,6 +99,7 @@ import { captureOpenEnaCloudWorkspace, type RestoredOpenEnaCloudWorkspace, type 
 import type { OpenEnaCloudWorkbenchBridge } from "@/lib/open-ena/cloud-workbench-bridge";
 import { buildReferenceV2 } from "@/lib/open-ena/model-v3/reference-v2";
 import { getOpenEnaCloudCopy } from "@/lib/open-ena/cloud-copy";
+import type { SavedOpenEnaAiInterpretation } from "@/lib/open-ena/cloud-workspace-extras";
 
 import { createOpenEnaPluginContextV1 } from "@/lib/open-ena/plugins/runtime-context";
 import { openEnaRuntimePluginAvailability, openEnaHistorical3dDisplayAvailability } from "@/lib/open-ena/plugins/runtime-registry";
@@ -529,10 +530,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
   const [trajectoryRanks, setTrajectoryRanks] = useState<{ frameKey: string; items: NonNullable<OpenEnaTrajectoryExportOptionsV3["ranks"]> }>({ frameKey: "", items: [] });
   const [aiReview, setAiReview] = useState<{ key: string; value: Awaited<ReturnType<typeof buildAiInterpretationReviewV3>> } | null>(null);
   const [aiLimitation, setAiLimitation] = useState("");
-  const [sets, setSets] = useState<OpenEnaAnalysisSetV3[]>([]);
-  const [aiLocalWork, setAiLocalWork] = useState({ hasWork: false, revision: 0 });
-  const aiLocalWorkChanged = useCallback((hasWork: boolean) => setAiLocalWork((previous) => ({ hasWork, revision: previous.revision + 1 })), []);
-  const [setComparison, setSetComparison] = useState<ReturnType<typeof compareAnalysisSetsV3> | null>(null);
+  const [sets, setSets] = useState<OpenEnaAnalysisSetV3[]>(initialCloudWorkspace?.analysisSets ?? []);
+  const [setsBusy, setSetsBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [savedAiInterpretation, setSavedAiInterpretation] = useState<SavedOpenEnaAiInterpretation | null>(initialCloudWorkspace?.aiInterpretation ?? null);
+  const [setComparison, setSetComparison] = useState<ReturnType<typeof compareAnalysisSetsV3> | null>(initialCloudWorkspace?.setComparison ?? null);
   const pendingSetFocusIdRef = useRef<string | null>(null);
   const pendingSetFocusCancelRef = useRef<() => void>(() => {});
   const plotSvgRef = useRef<SVGSVGElement>(null);
@@ -848,6 +850,16 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
     setSourceBusy(false);
     if (returnFocus) requestAnimationFrame(() => { if (generation === sourceGeneration.current) sourceFileTriggerRef.current?.focus(); });
   }
+  async function captureCurrentAnalysisSet() {
+    if (!result || !currentPlan || !current || setsBusy) return;
+    setSetsBusy(true);
+    try {
+      const captured = await captureAnalysisSetV3(result, currentPlan, { name: dataset?.name });
+      if (mounted.current && latest.current.current && latest.current.state.model.result === result) {
+        setSets((values) => upsertAnalysisSetV3(values, captured));
+      }
+    } finally { if (mounted.current) setSetsBusy(false); }
+  }
   function removeCapturedAnalysisSet(setId: string) {
     const remaining = sets.filter((set) => set.id !== setId);
     pendingSetFocusIdRef.current = nextAnalysisSetRemovalFocusId(
@@ -1126,23 +1138,23 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
     showTrajectories, showGroupCentroidPaths, endpointsOnly, unitCircle, flipX, flipY, edgeThreshold, edgeScale, pointScale, plotZoom,
     textScale, inferenceDesign, selectedPeriods };
   const cloudPresentationKey = canonicalJsonV3({ ...cloudPresentation, mode: "data" });
-  const cloudChangeInputs = [dataset, modelState.drafts, modelState.display, result, originalSource, cloudPresentationKey, activeInference, state.references, state.raw, state.presetHiddenGroups];
+  const cloudChangeInputs = [dataset, modelState.drafts, modelState.display, result, originalSource, cloudPresentationKey, activeInference, state.references, state.raw, state.presetHiddenGroups, savedAiInterpretation, sets, setComparison, state.historical];
   const cloudBaseline = useRef(cloudChangeInputs);
   useEffect(() => {
     const changed = cloudChangeInputs.some((value, index) => value !== cloudBaseline.current[index]);
     cloudBaseline.current = cloudChangeInputs;
     if (changed) onCloudChange?.();
-  }, [dataset, modelState.drafts, modelState.display, result, originalSource, cloudPresentationKey, activeInference, state.references, state.raw, state.presetHiddenGroups, onCloudChange]);
+  }, [dataset, modelState.drafts, modelState.display, result, originalSource, cloudPresentationKey, activeInference, state.references, state.raw, state.presetHiddenGroups, savedAiInterpretation, sets, setComparison, state.historical, onCloudChange]);
+  const cloudWorkPending = modelState.runStatus === "running" || sourceBusy || aiBusy || setsBusy || inferenceBusy || controller.importPending;
   useLayoutEffect(() => {
-    onLocalOnlyWorkChange?.(sets.length > 0 || state.historical.length > 0 || sourcePreview !== null || state.preview !== null
-      || aiLocalWork.hasWork || sourceBusy || modelState.runStatus === "running");
-  }, [sets, state.historical, sourcePreview, state.preview, aiLocalWork, sourceBusy, modelState.runStatus, onLocalOnlyWorkChange]);
+    onLocalOnlyWorkChange?.(sourcePreview !== null || state.preview !== null || cloudWorkPending);
+  }, [sourcePreview, state.preview, cloudWorkPending, onLocalOnlyWorkChange]);
   useLayoutEffect(() => {
     if (!cloudBridge) return;
-    const bridge: OpenEnaCloudWorkbenchBridge = { running: modelState.runStatus === "running" || sourceBusy,
+    const bridge: OpenEnaCloudWorkbenchBridge = { running: cloudWorkPending,
       defaultTitle: dataset?.name ?? null,
       capture: async () => {
-        if (modelState.runStatus === "running" || sourceBusy) throw new Error(cloudCopy.waitForAnalysis);
+        if (cloudWorkPending) throw new Error(cloudCopy.waitForAnalysis);
         let sourceReference = initialCloudWorkspace?.sourceReference
           && initialCloudWorkspace.sourceReference.source.executionPlanSha256 === result?.binding.executionPlanSha256
           ? initialCloudWorkspace.sourceReference : null;
@@ -1157,7 +1169,8 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
         }
         return captureOpenEnaCloudWorkspace({ state: { ...state, model: { ...modelState,
           display: { ...modelState.display, [result?.configuration.analysisFamily ?? family]: display } } }, currentPlan,
-          presentation: cloudPresentation, sourceReference, originalSource, statisticsReport });
+          presentation: cloudPresentation, sourceReference, originalSource, statisticsReport,
+          aiInterpretation: savedAiInterpretation, analysisSets: sets, setComparison });
       } };
     cloudBridge.current = bridge;
     return () => { if (cloudBridge.current === bridge) cloudBridge.current = null; };
@@ -1572,7 +1585,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
         })}>{result?.binding.referenceId ? workspaceCopy.artifacts.reexportReference : workspaceCopy.artifacts.exportReference}</button>
         {referenceDisclosure && referenceNote ? <OpenEnaExportApplicabilityNote id={referenceNoteId} action="reference" text={referenceNote} reason={referenceDisclosure.reason} familyApplies={referenceDisclosure.familyApplies} /> : null}
         <h3 id="open-ena-sets-heading" tabIndex={-1}>{copy.sets.title}</h3>
-        <button type="button" id="open-ena-capture-set" data-testid="open-ena-capture-analysis-set" disabled={!captureEligibility.eligible} aria-describedby={!captureEligibility.eligible ? capturePrerequisiteId : undefined} onClick={() => void attempt(async () => { if (result && currentPlan) { const captured = await captureAnalysisSetV3(result, currentPlan, { name: dataset?.name }); if (mounted.current && latest.current.current && latest.current.state.model.result === result) setSets((values) => upsertAnalysisSetV3(values, captured)); } })}>{workspaceCopy.artifacts.captureSet(sets.length)}</button>
+        <button type="button" id="open-ena-capture-set" data-testid="open-ena-capture-analysis-set" disabled={!captureEligibility.eligible || setsBusy} aria-describedby={!captureEligibility.eligible ? capturePrerequisiteId : undefined} onClick={() => void attempt(captureCurrentAnalysisSet)}>{workspaceCopy.artifacts.captureSet(sets.length)}</button>
         <OpenEnaUnmetPrerequisiteList id={capturePrerequisiteId} testId="open-ena-capture-analysis-set-prerequisites" title={workspaceCopy.artifacts.unmetPrerequisites} items={captureUnmetItems} />
         {sets.length > 0 ? (
           <ul className="ena-artifact-sets" aria-label={copy.sets.title}>
@@ -1599,9 +1612,10 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
       </section>
       </details>
 </div>;
-  const aiPanel = <div className="ena-control-content ena-ai-mode-panel ena-workspace-controls-v3 ena-restored-workbench" data-ena-ai-source="stats-results"><header className="ena-panel-heading"><p className="ena-panel-kicker">{restoredCopy.aiKicker}</p><h2>{copy.aiInterpretation.title}</h2><p>{activeInference ? workspaceCopy.ai.ready : workspaceCopy.ai.unavailable}</p></header><button type="button" onClick={() => setMode("stats")}>{workspaceCopy.ai.openStats}</button>
+  const aiPanel = <div className="ena-control-content ena-ai-mode-panel ena-workspace-controls-v3 ena-restored-workbench" data-ena-ai-source="stats-results"><header className="ena-panel-heading"><p className="ena-panel-kicker">{restoredCopy.aiKicker}</p><h2>{copy.aiInterpretation.title}</h2><p>{savedAiInterpretation && cloudBridge && !activeAiReview ? cloudCopy.savedAiAvailable : activeInference ? workspaceCopy.ai.ready : workspaceCopy.ai.unavailable}</p></header><button type="button" onClick={() => setMode("stats")}>{workspaceCopy.ai.openStats}</button>
       <div hidden={mode !== "ai"}><OpenEnaAiInterpretation operationOwnerKey={operationOwnerKey} request={activeAiReview?.request ?? null}
-        onLocalWorkChange={aiLocalWorkChanged}
+        onLocalWorkChange={setAiBusy} onInterpretationChange={setSavedAiInterpretation}
+        savedInterpretation={cloudBridge ? savedAiInterpretation : null} savedInterpretationNote={cloudCopy.savedAiNote}
         localScientificIdentity={openEnaAiLocalScientificIdentityV3(activeAiReview)}
         copy={copy.aiInterpretation} disabled={!activeAiReview || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
         {activeAiReview && <details className="ena-panel-details"><summary>{restoredCopy.aiEvidenceScope}</summary><p>{workspaceCopy.ai.wireLimitations}</p></details>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
