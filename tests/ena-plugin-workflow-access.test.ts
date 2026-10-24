@@ -93,3 +93,13 @@ test("earlier receipts can establish scoped legacy access without leaving the pa
   assert.match(response.headers.get("set-cookie")!, /ena-plugin-lab-legacy=/u);
   assert.doesNotMatch(response.headers.get("set-cookie")!, new RegExp(code, "u"));
 });
+
+test("a pre-update HTML status form establishes access for the new status screen", async () => {
+  const id = "plg_AAAAAAAAAAAAAAAAAAAAAA";
+  const code = "B".repeat(43);
+  const handler = createPluginLabStatusSessionPostHandler({ environment, storeFactory: async () => ({ consumeRateLimit: async () => true, accessHashFor: async () => hashPluginLabAccessCode(id, code, environment.ENA_PLUGIN_LAB_SECRET) } as unknown as PluginLabStore) });
+  const response = await handler(new Request("https://www.ena.hk/api/plugin-lab/status-session", { method: "POST", headers: { origin: "https://www.ena.hk", "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ proposalId: id, accessCode: code, locale: "zh-hans" }) }));
+  assert.equal(response.status, 303);
+  assert.ok(response.headers.getSetCookie().some((value) => value.startsWith("ena-plugin-lab-legacy=")));
+  assert.ok(response.headers.getSetCookie().some((value) => value.startsWith("ena-plugin-lab-researcher=;") && value.includes("Max-Age=0")));
+});

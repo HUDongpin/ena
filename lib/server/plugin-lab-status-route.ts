@@ -40,6 +40,11 @@ export function createPluginLabStatusSessionPostHandler(dependencies: Dependenci
       response.headers.append("set-cookie", pluginLabSessionCookie(PLUGIN_LAB_RESEARCHER_COOKIE, "", 0));
       return response;
     }
-    return respond("", 303, { location: destination.toString(), "set-cookie": cookie });
+    const response = respond("", 303, { location: destination.toString(), "set-cookie": cookie });
+    // A status form opened before this release still posts without JSON Accept.
+    // Establish the same scoped identity used by the new client after redirect.
+    response.headers.append("set-cookie", pluginLabSessionCookie(PLUGIN_LAB_LEGACY_COOKIE, token));
+    response.headers.append("set-cookie", pluginLabSessionCookie(PLUGIN_LAB_RESEARCHER_COOKIE, "", 0));
+    return response;
   };
 }
