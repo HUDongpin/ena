@@ -47,7 +47,7 @@ mount(null);
 const bundle = await build({ stdin: { contents: entry, loader: "tsx", resolveDir: process.cwd(), sourcefile: "cloud-complete-state.tsx" },
   bundle: true, format: "iife", platform: "browser", jsx: "automatic", write: false, logLevel: "silent" });
 const script = bundle.outputFiles[0].text;
-const mark = await readFile("public/ena-mark.svg", "utf8");
+const mark = await readFile("public/unified-home/logo-open-ena-mark.svg", "utf8");
 const styles = await readFile("app/globals.css", "utf8");
 const browser = await chromium.launch({ headless: true });
 const errors = [];
@@ -72,7 +72,7 @@ async function pageAt(origin) {
           "x-open-ena-ai-request-sha256": "d".repeat(64) } });
     }
     if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") return route.abort();
-    if (url.pathname === "/ena-mark.svg") return route.fulfill({ contentType: "image/svg+xml", body: mark });
+    if (url.pathname === "/unified-home/logo-open-ena-mark.svg") return route.fulfill({ contentType: "image/svg+xml", body: mark });
     return route.fulfill({ contentType: "text/html", body: `<!doctype html><html lang="en"><head><style>${styles}</style></head><body><div id="root"></div></body></html>` });
   });
   await page.goto(origin);

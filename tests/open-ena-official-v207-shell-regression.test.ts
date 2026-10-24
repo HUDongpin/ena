@@ -83,11 +83,11 @@ test("v2.0.7-inspired desktop shell gives the research workbench the full vertic
   );
 });
 
-test("the rail owns one ENA mark and visible runtime version", () => {
+test("the rail owns one Open ENA mark and visible runtime version", () => {
 
   const markup = shell();
   assert.equal((markup.match(/data-ena-rail-brand="true"/g) ?? []).length, 1);
-  assert.match(markup, /src="\/ena-mark.svg"/);
+  assert.match(markup, /src="\/unified-home\/logo-open-ena-mark\.svg"/);
   assert.match(markup, />OPEN ENA</);
   assert.match(markup, /data-ena-rail-version="true"/);
 

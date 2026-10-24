@@ -61,8 +61,8 @@ try {
     if (url.pathname === "/data/academy/ena-design-talk-sample.csv") {
       return route.fulfill({ contentType: "text/csv; charset=utf-8", body: teachingCsv });
     }
-    if (url.pathname === "/ena-mark.svg") {
-      return route.fulfill({ contentType: "image/svg+xml", body: await readFile(`${projectRoot}/public/ena-mark.svg`, "utf8") });
+    if (url.pathname === "/unified-home/logo-open-ena-mark.svg") {
+      return route.fulfill({ contentType: "image/svg+xml", body: await readFile(`${projectRoot}/public/unified-home/logo-open-ena-mark.svg`, "utf8") });
     }
     return route.fulfill({ contentType: "text/html; charset=utf-8",
       body: `<!doctype html><meta charset="utf-8"><style>${css}</style><div id="root"></div>` });

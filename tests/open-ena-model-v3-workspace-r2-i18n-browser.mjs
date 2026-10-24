@@ -47,7 +47,7 @@ try {
       observations.network.push(url.origin);
       return route.abort();
     }
-    if (url.pathname === "/ena-mark.svg") return route.fulfill({ contentType: "image/svg+xml", body: await readFile(`${projectRoot}/public/ena-mark.svg`, "utf8") });
+    if (url.pathname === "/unified-home/logo-open-ena-mark.svg") return route.fulfill({ contentType: "image/svg+xml", body: await readFile(`${projectRoot}/public/unified-home/logo-open-ena-mark.svg`, "utf8") });
     if (url.pathname.startsWith("/data/academy/")) return route.fulfill({ status: 503, contentType: "text/plain; charset=utf-8", body: "unavailable" });
     return route.fulfill({ contentType: "text/html; charset=utf-8", body: `<!doctype html><meta charset="utf-8"><style>${css}</style><div id="root"></div>` });
   });

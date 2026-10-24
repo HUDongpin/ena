@@ -91,7 +91,7 @@ const es: Dictionary = {
     eyebrow: "Misión y método",
     title: "Facilitar el aprendizaje, la aplicación y el debate del pensamiento relacional.",
     intro:
-      "ENA.HK está concebido como un punto de entrada público y claro al Análisis de Redes Epistémicas, con conceptos precisos, un alcance transparente y rutas directas hacia los recursos primarios.",
+      "Open ENA está concebido como un punto de entrada público y claro al Análisis de Redes Epistémicas, con conceptos precisos, un alcance transparente y rutas directas hacia los recursos primarios.",
     definitionTitle: "Lo que ENA hace visible",
     definitionText:
       "El Análisis de Redes Epistémicas es un método para identificar, cuantificar y visualizar conexiones entre elementos de datos codificados. Permite realizar comparaciones manteniendo la interpretación vinculada al contexto cualitativo.",
@@ -288,7 +288,7 @@ const fr: Dictionary = {
     eyebrow: "Mission et méthode",
     title: "Faciliter l'apprentissage, l'application et la discussion de la pensée relationnelle.",
     intro:
-      "ENA.HK est conçu comme un point d'entrée public et clair vers l'Analyse des Réseaux Épistémiques, avec des concepts précis, un périmètre transparent et des accès directs aux ressources primaires.",
+      "Open ENA est conçu comme un point d'entrée public et clair vers l'Analyse des Réseaux Épistémiques, avec des concepts précis, un périmètre transparent et des accès directs aux ressources primaires.",
     definitionTitle: "Ce qu'ENA rend visible",
     definitionText:
       "L'Analyse des Réseaux Épistémiques est une méthode qui permet d'identifier, de quantifier et de visualiser les connexions entre les éléments de données codées. Elle facilite la comparaison tout en maintenant l'interprétation liée au contexte qualitatif.",
@@ -485,7 +485,7 @@ const pt: Dictionary = {
     eyebrow: "Missão e método",
     title: "Facilitar a aprendizagem, a aplicação e a discussão do pensamento relacional.",
     intro:
-      "ENA.HK foi concebido como um ponto de entrada público e claro para a Análise de Redes Epistémicas, com conceitos rigorosos, âmbito transparente e caminhos diretos para recursos primários.",
+      "Open ENA foi concebido como um ponto de entrada público e claro para a Análise de Redes Epistémicas, com conceitos rigorosos, âmbito transparente e caminhos diretos para recursos primários.",
     definitionTitle: "O que ENA torna visível",
     definitionText:
       "A Análise de Redes Epistémicas é um método para identificar, quantificar e visualizar ligações entre elementos de dados codificados. Permite a comparação, mantendo a interpretação ligada ao contexto qualitativo.",
@@ -682,7 +682,7 @@ const de: Dictionary = {
     eyebrow: "Mission und Methode",
     title: "Relationales Denken leichter erlernbar, anwendbar und diskutierbar machen.",
     intro:
-      "ENA.HK ist als klarer öffentlicher Einstieg in die Epistemische Netzwerkanalyse konzipiert, mit präzisen Konzepten, transparentem Umfang und direkten Wegen zu Primärressourcen.",
+      "Open ENA ist als klarer öffentlicher Einstieg in die Epistemische Netzwerkanalyse konzipiert, mit präzisen Konzepten, transparentem Umfang und direkten Wegen zu Primärressourcen.",
     definitionTitle: "Was ENA sichtbar macht",
     definitionText:
       "Die Epistemische Netzwerkanalyse ist eine Methode zur Identifizierung, Quantifizierung und Visualisierung von Verbindungen zwischen Elementen codierter Daten. Sie unterstützt Vergleiche und hält die Interpretation zugleich an den qualitativen Kontext gebunden.",

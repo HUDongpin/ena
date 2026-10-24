@@ -19,7 +19,7 @@ const browser=await chromium.launch({headless:true});const reports=[];const erro
 try{
  for(const kind of ['legacy','reference','draft','preset']){
   const page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/*',async route=>{if(route.request().url()==='http://localhost:32557/ena-mark.svg')return route.fulfill({contentType:'image/svg+xml',body:await readFile('public/ena-mark.svg')});if(route.request().url()==='http://localhost:32557/')return route.fulfill({contentType:'text/html',body:'<!doctype html><div id="root"></div>'});blocked.push(route.request().url());return route.abort();});
+  await page.route('**/*',async route=>{if(route.request().url()==='http://localhost:32557/unified-home/logo-open-ena-mark.svg')return route.fulfill({contentType:'image/svg+xml',body:await readFile('public/unified-home/logo-open-ena-mark.svg')});if(route.request().url()==='http://localhost:32557/')return route.fulfill({contentType:'text/html',body:'<!doctype html><div id="root"></div>'});blocked.push(route.request().url());return route.abort();});
   await page.goto('http://localhost:32557/');await page.addScriptTag({content:bundle.outputFiles[0].text});
   await page.getByRole('button',{name:'Model',exact:true}).click();
   const run=page.getByTestId('open-ena-run-model');await page.waitForFunction(()=>document.querySelector('[data-testid="open-ena-run-model"]')?.disabled===false);

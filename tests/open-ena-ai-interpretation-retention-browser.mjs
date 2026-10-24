@@ -61,7 +61,7 @@ const bundle = await build({
   logLevel: "silent",
 });
 const script = bundle.outputFiles[0].text;
-const mark = await readFile("public/ena-mark.svg", "utf8");
+const mark = await readFile("public/unified-home/logo-open-ena-mark.svg", "utf8");
 
 function syntheticResponse(body) {
   const evidenceId = body?.evidence?.descriptive?.axes?.[0]?.id;
@@ -129,7 +129,7 @@ async function openWorkspace(browser, { model = "EndPoint", failOnce = false } =
       });
     }
     if (url.hostname !== "localhost") return route.abort();
-    if (url.pathname === "/ena-mark.svg") return route.fulfill({ contentType: "image/svg+xml", body: mark });
+    if (url.pathname === "/unified-home/logo-open-ena-mark.svg") return route.fulfill({ contentType: "image/svg+xml", body: mark });
     return route.fulfill({ contentType: "text/html", body: '<!doctype html><div id="root"></div>' });
   });
   await page.goto("http://localhost:31993/");

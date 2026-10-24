@@ -1660,13 +1660,14 @@ button:focus-visible {
 
 .footer-grid {
   display: grid;
-  grid-template-columns: 1.35fr 0.65fr 0.85fr;
-  gap: clamp(38px, 7vw, 96px);
-  padding-block: 62px;
+  width: min(960px, calc(100vw - 32px));
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  padding-block: 36px;
 }
 
 .footer-brand .brand-lockup {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
   padding: 8px 12px;
   background: #f7fbfe;
 }
@@ -1688,7 +1689,7 @@ button:focus-visible {
 }
 
 .site-footer h2 {
-  margin: 0 0 19px;
+  margin: 0 0 12px;
   color: var(--nav-text);
   font-size: 0.75rem;
   font-weight: 800;
@@ -1698,9 +1699,14 @@ button:focus-visible {
 
 .footer-links {
   display: grid;
-  gap: 12px;
+  gap: 4px;
   color: var(--nav-muted);
   font-size: 0.88rem;
+}
+
+.footer-navigation-links {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
 }
 
 .footer-links a {
@@ -1713,11 +1719,21 @@ button:focus-visible {
 }
 
 .footer-bottom {
-  padding: 20px 16px;
+  padding: 14px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.09);
   color: var(--nav-muted);
   font-size: 0.75rem;
   text-align: center;
+}
+
+@media (max-width: 900px) {
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footer-brand {
+    grid-column: 1 / -1;
+  }
 }
 
 .back-to-top {
@@ -2549,6 +2565,11 @@ body:has(.open-ena-login-page) .back-to-top {
   height: 34px;
 }
 
+.ena-rail-brand .ena-mini-mark {
+  border-radius: 8px;
+  background: #f7fbfe;
+}
+
 .ena-rail-product {
   margin-top: 2px;
   color: #eaf4f2;
@@ -2641,56 +2662,6 @@ body:has(.open-ena-login-page) .back-to-top {
 
 .ena-rail-button[aria-current="step"]::before {
   background: var(--accent);
-}
-
-.ena-rail-meta {
-  display: grid;
-  flex: 0 0 auto;
-  min-height: 58px;
-  align-content: center;
-  gap: 4px;
-  padding: 7px 5px 8px;
-  color: #aebfbe;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  background: #182533;
-  text-align: center;
-}
-
-.ena-rail-meta .ena-run-status {
-  min-height: 16px;
-  justify-content: center;
-  gap: 5px;
-  font-size: calc(0.51rem + var(--ena-font-step, 1px));
-  line-height: 1;
-}
-
-.ena-rail-meta .ena-run-status > span:first-child {
-  width: 6px;
-  height: 6px;
-  flex-basis: 6px;
-  background: #8ea5a2;
-}
-
-.ena-rail-meta .ena-run-status[data-state="result"] > span:first-child {
-  background: var(--ena-accent);
-  box-shadow: 0 0 0 2px rgba(137, 207, 240, 0.24);
-}
-
-.ena-rail-status-label {
-  min-width: 0;
-  overflow: hidden;
-  color: #d9e5e3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ena-rail-privacy {
-  color: #7b9391;
-  font-size: calc(0.46rem + var(--ena-font-step, 1px));
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  line-height: 1;
-  text-transform: uppercase;
 }
 
 .ena-rail-logout {
@@ -5434,10 +5405,6 @@ body:has(.open-ena-login-page) .back-to-top {
     padding: 6px;
   }
 
-  .ena-rail-meta {
-    display: none;
-  }
-
   .ena-rail-brand,
   .ena-rail-modes,
   .ena-rail-logout {
@@ -5827,14 +5794,6 @@ body:has(.open-ena-login-page) .back-to-top {
     grid-template-rows: auto;
   }
 
-  .footer-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .footer-brand {
-    grid-column: 1 / -1;
-  }
-
   .profile-links-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5959,7 +5918,8 @@ body:has(.open-ena-login-page) .back-to-top {
 
   .footer-grid {
     grid-template-columns: 1fr;
-    padding-block: 48px;
+    gap: 24px;
+    padding-block: 28px;
   }
 
   .footer-brand {
@@ -13737,10 +13697,6 @@ html:has(.open-ena-page) {
       gap: 4px;
       padding: 6px;
       overflow: visible;
-    }
-
-    .ena-rail-meta {
-      display: none;
     }
 
     .ena-rail-logout {
