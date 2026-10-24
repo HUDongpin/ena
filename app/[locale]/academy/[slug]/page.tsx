@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AcademyCard from "@/components/AcademyCard";
 import AcademyLessonVisual from "@/components/AcademyLessonVisual";
+import AcademyCoverCredit from "@/components/AcademyCoverCredit";
 import JsonLd from "@/components/JsonLd";
 import {
   academyLessons,
@@ -109,8 +110,15 @@ export default async function AcademyDetailPage({ params }: AcademyDetailPagePro
         </Link>
 
         <div className="news-detail-hero academy-detail-hero">
-          <div className="news-detail-image academy-detail-visual">
-            <AcademyLessonVisual variant={lesson.visual} alt={lesson.visualAlt} sequence={lesson.sequence} />
+          <div className="academy-detail-figure">
+            <div className="news-detail-image academy-detail-visual">
+              <AcademyLessonVisual
+                lessonId={lesson.id}
+                sizes="(max-width: 620px) calc(100vw - 54px), (max-width: 870px) calc(100vw - 52px), (max-width: 1040px) 820px, (max-width: 1212px) 39vw, 448px"
+                preload
+              />
+            </div>
+            <AcademyCoverCredit lessonId={lesson.id} showCaption />
           </div>
           <div className="news-detail-heading academy-detail-heading">
             <div className="news-detail-badges">
@@ -225,7 +233,15 @@ export default async function AcademyDetailPage({ params }: AcademyDetailPagePro
         <div className="container">
           <h2>{copy.relatedLessons}</h2>
           <div className="news-card-list academy-card-list">
-            {related.map((item) => <AcademyCard key={item.id} lesson={item} locale={typedLocale} copy={copy} />)}
+            {related.map((item) => (
+              <AcademyCard
+                key={item.id}
+                lesson={item}
+                locale={typedLocale}
+                copy={copy}
+                coverSizes="(max-width: 1040px) calc(100vw - 34px), (max-width: 1212px) calc(50vw - 28px), 578px"
+              />
+            ))}
           </div>
         </div>
       </section>

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,6 +11,7 @@ import {
 import { filterAcademyLessons } from "../lib/academy-filter";
 import { getAcademyCopy, getAcademyResultLabel } from "../lib/academy-i18n";
 import { ACADEMY_LEVELS, ACADEMY_TRACKS, ACADEMY_VISUALS } from "../lib/academy-types";
+import { academyCovers, getAcademyCover } from "../lib/academy-covers";
 import { locales } from "../lib/i18n";
 import { learningResourceJsonLd } from "../lib/structured-data";
 
@@ -216,7 +218,7 @@ test("Academy structured data identifies an English tutorial rather than News", 
   assert.doesNotMatch(JSON.stringify(data), /NewsArticle|ScholarlyArticle/);
 });
 
-test("Academy routes keep English fallback content explicit and use tutorial visuals", () => {
+test("Academy routes preserve English content and every lesson has an attributed tutorial cover", () => {
   const detailSource = readFileSync(join(projectRoot, "app", "[locale]", "academy", "[slug]", "page.tsx"), "utf8");
   const indexSource = readFileSync(join(projectRoot, "app", "[locale]", "academy", "page.tsx"), "utf8");
   const visualSource = readFileSync(join(projectRoot, "components", "AcademyLessonVisual.tsx"), "utf8");
@@ -229,7 +231,29 @@ test("Academy routes keep English fallback content explicit and use tutorial vis
   assert.doesNotMatch(detailSource, /reviewArticleJsonLd|NewsArticle/);
   assert.match(indexSource, /AcademyFilters/);
   assert.match(indexSource, /AcademyCard/);
-  assert.match(visualSource, /COMPARISON PLOT/);
-  assert.match(visualSource, /SOURCE ROWS/);
-  assert.match(visualSource, /ONE NETWORK = ONE TEAM/);
+  assert.deepEqual(Object.keys(academyCovers).sort(), academyLessons.map((lesson) => lesson.id).sort());
+  const imageHashes = new Set<string>();
+  for (const lesson of academyLessons) {
+    const cover = getAcademyCover(lesson.id);
+    assert.match(cover.src, /^\/images\/academy\/tutorial-2024-fig(?:\d+|[a-z]+)\.webp$/);
+    assert.equal(cover.width, 1600);
+    assert.equal(cover.height, 900);
+    assert.ok(cover.alt.length > 40, `Describe the artwork for ${lesson.id}`);
+    const bytes = readFileSync(publicPath(cover.src));
+    assert.ok(bytes.length > 1000 && bytes.length <= 256_000, `Cover size budget: ${lesson.id}`);
+    imageHashes.add(createHash("sha256").update(bytes).digest("hex"));
+    assert.match(cover.sourceUrl, /^https:\/\/link\.springer\.com\/chapter\//);
+    assert.equal(cover.license, "CC BY 4.0");
+    assert.equal(cover.licenseUrl, "https://creativecommons.org/licenses/by/4.0/");
+    assert.match(cover.credit, /Tan et al\. \(2024\)/);
+    assert.ok(cover.caption.length > 15);
+  }
+  assert.equal(imageHashes.size, new Set(academyLessons.map((lesson) => getAcademyCover(lesson.id).src)).size,
+    "Different source assets must not accidentally contain duplicate image bytes");
+  const credits = readFileSync(join(projectRoot, "components", "AcademyCoverCredit.tsx"), "utf8");
+  assert.match(credits, /href=\{cover.sourceUrl\}/);
+  assert.match(credits, /href=\{cover.licenseUrl\}/);
+  assert.throws(() => getAcademyCover("missing-lesson"), /Missing Academy cover/);
+  assert.match(visualSource, /from "next\/image"/);
+  assert.match(visualSource, /getAcademyCover/);
 });

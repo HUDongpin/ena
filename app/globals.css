@@ -6220,341 +6220,43 @@ body:has(.open-ena-login-page) .back-to-top {
     linear-gradient(180deg, var(--surface), var(--page));
 }
 
-/* ENA Academy keeps the collection grammar while presenting reproducible method tutorials. */
-.academy-card-media {
+/* Academy covers reproduce attributed tutorial figures in a consistent 16:9 frame. */
+.academy-card .academy-card-media {
   display: grid;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  align-self: start;
 }
 
 .academy-lesson-visual {
+  position: relative;
   width: 100%;
-  height: 100%;
-  min-height: 100%;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
-  color: var(--ink);
-  background: var(--surface-soft);
+  background: #fff;
 }
 
-.academy-lesson-visual svg {
+.academy-card .academy-lesson-visual img,
+.academy-detail-figure .academy-lesson-visual img {
   display: block;
   width: 100%;
   height: 100%;
+  object-fit: contain;
 }
 
-.academy-card .academy-lesson-visual svg {
-  transition: transform 300ms ease, filter 300ms ease;
-}
-
-.academy-card:hover .academy-lesson-visual svg {
-  transform: scale(1.012);
-  filter: saturate(1.03);
-}
-
-.academy-visual-topbar rect {
-  fill: var(--nav-deep);
-}
-
-.academy-visual-topbar circle {
-  fill: #f08b75;
-}
-
-.academy-visual-topbar circle:nth-of-type(2) {
-  fill: #f4c66a;
-}
-
-.academy-visual-topbar circle:nth-of-type(3) {
-  fill: var(--accent);
-}
-
-.academy-visual-topbar text,
-.academy-visual-caption,
-.academy-visual-section-label,
-.academy-visual-rail text,
-.academy-visual-table text,
-.academy-visual-matrix text,
-.academy-visual-mini-network text,
-.academy-visual-evidence-panel text,
-.academy-visual-status text,
-.academy-visual-network text,
-.academy-visual-interpret-network text,
-.plot-label {
-  font-family: var(--font-geist-mono), monospace;
-}
-
-.academy-visual-topbar text {
-  fill: #f7fffd;
-  font-size: 17px;
-  font-weight: 760;
-  letter-spacing: 0.08em;
-}
-
-.academy-visual-topbar .academy-visual-ready {
-  fill: var(--accent);
-  font-size: 13px;
-  font-weight: 850;
-  letter-spacing: 0.12em;
-}
-
-.academy-visual-section-label {
-  fill: var(--faint);
-  font-size: 13px;
-  font-weight: 820;
-  letter-spacing: 0.1em;
-}
-
-.academy-visual-rail > rect,
-.academy-visual-table > rect,
-.academy-visual-matrix > rect,
-.academy-visual-plot-frame > rect,
-.academy-visual-mini-network > rect,
-.academy-visual-interpret-network > rect,
-.academy-visual-evidence-panel > rect {
-  fill: rgba(255, 255, 255, 0.92);
-  stroke: #cededb;
-  stroke-width: 1.5;
-}
-
-.academy-visual-rail > text {
-  fill: var(--faint);
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-}
-
-.academy-visual-rail g circle {
-  fill: #c5d7d4;
-}
-
-.academy-visual-rail g text {
-  fill: #687874;
-  font-size: 13px;
-  font-weight: 740;
-}
-
-.academy-visual-rail g.is-active circle {
-  fill: var(--accent-strong);
-  stroke: var(--accent);
-  stroke-width: 5;
-}
-
-.academy-visual-rail g.is-active text {
-  fill: var(--accent-strong);
-  font-weight: 900;
-}
-
-.academy-visual-network .edge,
-.academy-visual-mini-network .edge,
-.academy-visual-interpret-network .edge {
-  stroke: var(--accent-strong);
-  stroke-linecap: round;
-}
-
-.academy-visual-network .edge-soft,
-.academy-visual-mini-network .edge-soft,
-.academy-visual-interpret-network .edge-soft {
-  opacity: 0.3;
-  stroke-width: 5;
-}
-
-.academy-visual-network .edge-mid,
-.academy-visual-mini-network .edge-mid,
-.academy-visual-interpret-network .edge-mid {
-  opacity: 0.58;
-  stroke-width: 8;
-}
-
-.academy-visual-network .edge-strong,
-.academy-visual-mini-network .edge-strong,
-.academy-visual-interpret-network .edge-strong {
-  opacity: 0.88;
-  stroke-width: 12;
-}
-
-.academy-visual-network g circle,
-.academy-visual-mini-network circle,
-.academy-visual-interpret-network g circle {
-  fill: #fff;
-  stroke: var(--accent-strong);
-  stroke-width: 7;
-}
-
-.academy-visual-network g text,
-.academy-visual-interpret-network g text {
-  fill: #3f5551;
-  font-size: 13px;
-  font-weight: 820;
-  letter-spacing: 0.04em;
-}
-
-.academy-visual-status rect {
-  fill: var(--nav-deep);
-}
-
-.academy-visual-status circle {
-  fill: var(--accent);
-}
-
-.academy-visual-status text {
-  fill: #e8f8f5;
-  font-size: 13px;
-  font-weight: 790;
-  letter-spacing: 0.06em;
-}
-
-.academy-visual-table .table-header {
-  fill: var(--nav-deep);
-  stroke: none;
-}
-
-.academy-visual-table line {
-  stroke: #dce8e6;
-  stroke-width: 1;
-}
-
-.academy-visual-table text,
-.academy-visual-matrix text {
-  fill: #61716e;
-  font-size: 12px;
-  font-weight: 760;
-}
-
-.academy-visual-table > text {
-  fill: #f5fffd;
-}
-
-.academy-visual-table .evidence-line {
-  fill: #9fb6b2;
-  opacity: 0.74;
-}
-
-.academy-visual-arrow {
-  fill: none;
-  stroke: var(--accent-strong);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 4;
-}
-
-.academy-visual-matrix .matrix-on {
-  fill: var(--accent-strong);
-}
-
-.academy-visual-matrix .matrix-off {
-  fill: #e5eeec;
-}
-
-.academy-visual-plot-frame .axis {
-  stroke: #657672;
-  stroke-width: 2;
-}
-
-.academy-visual-plot-frame .axis-grid {
-  stroke: #d8e4e1;
-  stroke-dasharray: 6 8;
-  stroke-width: 1.5;
-}
-
-.academy-visual-plot-frame .point-a {
-  fill: var(--accent-strong);
-  opacity: 0.7;
-}
-
-.academy-visual-plot-frame .point-b {
-  fill: #e27a63;
-  opacity: 0.72;
-}
-
-.academy-visual-plot-frame .mean-a {
-  fill: var(--accent-strong);
-  stroke: #fff;
-  stroke-width: 3;
-}
-
-.academy-visual-plot-frame .mean-b {
-  fill: #d96953;
-  stroke: #fff;
-  stroke-width: 3;
-}
-
-.academy-visual-plot-frame .plot-label {
-  fill: #52635f;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-}
-
-.academy-visual-mini-network > text {
-  fill: #667773;
-  font-size: 12px;
-  font-weight: 820;
-  letter-spacing: 0.05em;
-}
-
-.academy-visual-mini-network.is-secondary .edge {
-  stroke: #d96953;
-}
-
-.academy-visual-mini-network.is-secondary circle {
-  stroke: #d96953;
-}
-
-.academy-visual-caption {
-  fill: var(--accent-strong);
-  font-size: 13px;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-}
-
-.academy-visual-evidence-panel g > rect {
-  fill: #f7faf9;
-  stroke: #dbe7e4;
-  stroke-width: 1.2;
-}
-
-.academy-visual-evidence-panel g.is-selected > rect {
-  fill: var(--accent-soft);
-  stroke: var(--accent);
-}
-
-.academy-visual-evidence-panel g circle {
-  fill: var(--accent-strong);
-}
-
-.academy-visual-evidence-panel g text {
-  fill: #4b5d59;
-  font-size: 10px;
-  font-weight: 810;
-  letter-spacing: 0.035em;
-}
-
-.academy-visual-evidence-panel g .excerpt {
-  fill: #788783;
-  font-size: 9px;
-  font-weight: 680;
-}
-
-.academy-visual-evidence-panel .evidence-status {
-  fill: var(--nav-deep);
-  stroke: none;
-}
-
-.academy-visual-evidence-panel .evidence-status-text {
-  fill: var(--accent);
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.05em;
+.academy-card:hover .academy-card-media .academy-lesson-visual img {
+  transform: none;
+  filter: none;
 }
 
 .academy-card-copy .news-card-summary {
   -webkit-line-clamp: 4;
 }
 
-.academy-detail-visual {
+.academy-detail-page .academy-detail-visual {
   display: grid;
-}
-
-.academy-detail-visual .academy-lesson-visual {
-  position: absolute;
-  inset: 0;
+  aspect-ratio: 16 / 9;
 }
 
 .academy-detail-summary {
