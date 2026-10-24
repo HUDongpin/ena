@@ -90,7 +90,7 @@ const ar: Dictionary = {
     eyebrow: "المهمة والمنهج",
     title: "جعل التفكير العلائقي أسهل في التعلم والتطبيق والمناقشة.",
     intro:
-      "صمم ENA.HK ليكون مدخلا عاما واضحا إلى تحليل الشبكات المعرفية، بمفاهيم دقيقة ونطاق شفاف ومسارات مباشرة إلى الموارد الأصلية.",
+      "صمم Open ENA ليكون مدخلا عاما واضحا إلى تحليل الشبكات المعرفية، بمفاهيم دقيقة ونطاق شفاف ومسارات مباشرة إلى الموارد الأصلية.",
     definitionTitle: "ما الذي يجعله ENA مرئيا",
     definitionText:
       "تحليل الشبكات المعرفية منهج لتحديد الروابط بين العناصر في البيانات المرمزة وقياسها وتمثيلها بصريا. وهو يدعم المقارنة مع إبقاء التفسير مرتبطا بالسياق النوعي.",
@@ -286,7 +286,7 @@ const ru: Dictionary = {
     eyebrow: "Миссия и метод",
     title: "Сделать реляционное мышление проще для изучения, применения и обсуждения.",
     intro:
-      "ENA.HK создан как понятная общедоступная точка входа в эпистемический сетевой анализ с точными понятиями, прозрачными границами и прямым доступом к первичным материалам.",
+      "Open ENA создан как понятная общедоступная точка входа в эпистемический сетевой анализ с точными понятиями, прозрачными границами и прямым доступом к первичным материалам.",
     definitionTitle: "Что делает видимым ENA",
     definitionText:
       "Эпистемический сетевой анализ является методом выявления, количественной оценки и визуализации связей между элементами закодированных данных. Он поддерживает сравнение, сохраняя связь интерпретации с качественным контекстом.",
@@ -483,7 +483,7 @@ const id: Dictionary = {
     eyebrow: "Misi dan metode",
     title: "Mempermudah pemikiran relasional untuk dipelajari, diterapkan, dan didiskusikan.",
     intro:
-      "ENA.HK dirancang sebagai pintu masuk publik yang jelas menuju Analisis Jaringan Epistemik, dengan konsep yang akurat, cakupan yang transparan, dan jalur langsung ke sumber primer.",
+      "Open ENA dirancang sebagai pintu masuk publik yang jelas menuju Analisis Jaringan Epistemik, dengan konsep yang akurat, cakupan yang transparan, dan jalur langsung ke sumber primer.",
     definitionTitle: "Apa yang dibuat terlihat oleh ENA",
     definitionText:
       "Analisis Jaringan Epistemik adalah metode untuk mengidentifikasi, mengukur, dan memvisualisasikan hubungan antarelemen dalam data berkode. Metode ini mendukung perbandingan sambil menjaga interpretasi tetap terkait dengan konteks kualitatif.",
@@ -680,7 +680,7 @@ const bn: Dictionary = {
     eyebrow: "লক্ষ্য ও পদ্ধতি",
     title: "সম্পর্কভিত্তিক চিন্তা শেখা, প্রয়োগ করা ও আলোচনা করা আরও সহজ করা।",
     intro:
-      "ENA.HK এপিস্টেমিক নেটওয়ার্ক বিশ্লেষণের একটি স্পষ্ট সর্বজনীন প্রবেশপথ হিসেবে তৈরি, যেখানে রয়েছে নির্ভুল ধারণা, স্বচ্ছ পরিধি এবং প্রাথমিক সম্পদে যাওয়ার সরাসরি পথ।",
+      "Open ENA এপিস্টেমিক নেটওয়ার্ক বিশ্লেষণের একটি স্পষ্ট সর্বজনীন প্রবেশপথ হিসেবে তৈরি, যেখানে রয়েছে নির্ভুল ধারণা, স্বচ্ছ পরিধি এবং প্রাথমিক সম্পদে যাওয়ার সরাসরি পথ।",
     definitionTitle: "ENA যা দৃশ্যমান করে",
     definitionText:
       "এপিস্টেমিক নেটওয়ার্ক বিশ্লেষণ হলো কোড করা উপাত্তের উপাদানগুলোর মধ্যে সংযোগ শনাক্ত, পরিমাপ ও দৃশ্যায়নের একটি পদ্ধতি। এটি গুণগত প্রেক্ষাপটের সঙ্গে ব্যাখ্যার সম্পর্ক বজায় রেখে তুলনা করতে সহায়তা করে।",

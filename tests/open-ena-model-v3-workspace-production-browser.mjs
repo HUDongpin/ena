@@ -45,7 +45,7 @@ try {
   if(path==='/app.js')return route.fulfill({contentType:'application/javascript',body:main.outputFiles[0].text});
   if(path.endsWith('/jena.worker.ts'))return route.fulfill({contentType:'application/javascript',body:worker.outputFiles[0].text});
   if(path.endsWith('.csv'))return route.fulfill({contentType:'text/csv',body:await readFile('public'+path,'utf8')});
-  if(path==='/ena-mark.svg')return route.fulfill({contentType:'image/svg+xml',body:await readFile('public/ena-mark.svg','utf8')});
+  if(path==='/unified-home/logo-open-ena-mark.svg')return route.fulfill({contentType:'image/svg+xml',body:await readFile('public/unified-home/logo-open-ena-mark.svg','utf8')});
   return route.fulfill({contentType:'text/html',body:'<!doctype html><html><body><main id="root"></main><script type="module" src="/app.js"></script></body></html>'});
  });
  await page.goto('http://localhost:31992/');

@@ -1,6 +1,6 @@
 export const siteConfig = {
   name: "ENA",
-  brandName: "ENA.HK",
+  brandName: "Open ENA",
   longName: "Epistemic Network Analysis",
   tagline: "Epistemic Network Analysis Hub of Knowledge",
   url: "https://www.ena.hk",

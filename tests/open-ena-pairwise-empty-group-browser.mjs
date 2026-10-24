@@ -91,7 +91,7 @@ try {
       externalRequests.push(url.href);
       return route.abort();
     }
-    if (url.pathname === "/ena-mark.svg") {
+    if (url.pathname === "/unified-home/logo-open-ena-mark.svg") {
       return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg"/>' });
     }
     return route.fulfill({ contentType: "text/html", body: '<!doctype html><div id="root"></div>' });

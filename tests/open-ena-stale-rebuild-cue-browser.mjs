@@ -37,8 +37,8 @@ try {
   await page.route("**/*", async (route) => {
     const url = new URL(route.request().url());
     if (url.hostname !== "localhost") return route.abort();
-    if (url.pathname === "/ena-mark.svg") {
-      return route.fulfill({ contentType: "image/svg+xml", body: await readFile(`${projectRoot}/public/ena-mark.svg`, "utf8") });
+    if (url.pathname === "/unified-home/logo-open-ena-mark.svg") {
+      return route.fulfill({ contentType: "image/svg+xml", body: await readFile(`${projectRoot}/public/unified-home/logo-open-ena-mark.svg`, "utf8") });
     }
     if (url.pathname === "/data/academy/ena-design-talk-sample.csv") {
       return route.fulfill({ contentType: "text/csv; charset=utf-8", body: teachingCsv });

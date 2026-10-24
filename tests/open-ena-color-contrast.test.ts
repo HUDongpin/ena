@@ -155,11 +155,11 @@ test("group caption colors preserve their identity while meeting normal-text con
   assert.notEqual(readableColors[0], readableColors[1], "audited baseline and scaffolded labels need distinct colors");
 });
 
-test("the Local privacy label passes on the dark analysis rail", () => {
-  const privacyRule = ruleBody(".ena-rail-privacy");
+test("the Open ENA product label passes on the dark analysis rail", () => {
+  const productRule = ruleBody(".ena-rail-product");
   assertNormalTextContrast(
-    "Local privacy label",
-    declaration(privacyRule, "color"),
+    "Open ENA product label",
+    declaration(productRule, "color"),
     "#182533",
   );
 });
