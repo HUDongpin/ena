@@ -82,6 +82,11 @@ try {
     if (consent) responses.push(response.status);
     // Preserve the real exchange's Set-Cookie while emulating its final local page.
     const headers = Object.fromEntries(response.headers); delete headers.location;
+    // Playwright splits newline-separated Set-Cookie values into distinct HTTP
+    // headers. A comma-joined Headers entry can apply a later Max-Age=0 to the
+    // first cookie, unlike the real server's multi-header response.
+    const cookies = response.headers.getSetCookie();
+    if (cookies.length) headers["set-cookie"] = cookies.join("\n");
     await route.fulfill({ status: response.status === 303 ? 200 : response.status, headers, body: await response.text() });
   });
   const pageA = await context.newPage();
