@@ -16,6 +16,7 @@ import type { BoundResultV3, ModelWorkspaceDraftsV3, OpenEnaStandardReferenceV2,
 import { createModelStateV3, modelScientificContextV3, modelStateReducerV3, type ModelStateActionV3, type ModelStateV3, type ModelScientificContextV3, type ModelRunRequestV3 } from "./model-state";
 import { createWindowsPanelRawStateV3, windowFieldBlockersV3, parseWindowExtentInputV3, type OpenEnaWindowsPanelRawStateV3 } from "./OpenEnaWindowsPanelV3";
 import { createOrderPolicyEditorRawStateV3, orderPolicyFromRawStateV3, confirmationMatchesContextV3, type OrderPolicyEditorRawStateV3 } from "./OpenEnaOrderPolicyEditorV3";
+import { isRestoredOpenEnaCloudWorkspace, type RestoredOpenEnaCloudWorkspace } from "../../../lib/open-ena/cloud-workspace";
 
 export interface WorkspaceRawEditorsV3 {
   readonly windows: OpenEnaWindowsPanelRawStateV3;
@@ -166,6 +167,16 @@ export function createWorkspaceStateV3(input?: { dataset: ParsedDataset; dataset
     raw: rawEditors(drafts), compilation: null, references: [], preview: null, historical: [], sourceWitness: null, presetHiddenGroups: null, progress: null, colorCompanions: { standard: {}, ona: {} }, error: null, autoRunIntent: null, rebuildCue: null });
 }
 
+/** Only the source-backed cloud decoder can initialize a restored result; imported JSON has no such authority. */
+export function createWorkspaceStateFromCloud(restored: RestoredOpenEnaCloudWorkspace): WorkspaceStateV3 {
+  if (!isRestoredOpenEnaCloudWorkspace(restored)) throw new TypeError("Cloud workspace has not passed restoration validation.");
+  const model = { ...createModelStateV3(restored.drafts, restored.datasetSha256),
+    onaDraftInitialized: restored.onaDraftInitialized, display: restored.display, result: restored.result, resultStatus: restored.resultStatus };
+  const state = reconcileRaw({ ...createWorkspaceStateV3(), dataset: restored.dataset, model,
+    raw: rawEditors(restored.drafts), references: restored.references });
+  return { ...state, compilation: restored.compilation ? { ...restored.compilation, context: modelScientificContextV3(state.model) } : null };
+}
+
 export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceActionV3): WorkspaceStateV3 {
   switch (action.type) {
     case "model": {
@@ -265,8 +276,9 @@ const productionWorkerV3: WorkspaceWorkerV3 = async (plan, options) => {
   return { result: await analyzePlanInWorkerV3(plan, options), sourceWitness: null };
 };
 
-export function useOpenEnaWorkspaceV3(options: { initial?: Parameters<typeof createWorkspaceStateV3>[0]; worker?: WorkspaceWorkerV3 } = {}) {
-  const [state, reactDispatch] = useReducer(workspaceReducerV3, options.initial, createWorkspaceStateV3);
+export function useOpenEnaWorkspaceV3(options: { initial?: Parameters<typeof createWorkspaceStateV3>[0]; restored?: RestoredOpenEnaCloudWorkspace; worker?: WorkspaceWorkerV3 } = {}) {
+  const [state, reactDispatch] = useReducer(workspaceReducerV3, options, (initial) => initial.restored
+    ? createWorkspaceStateFromCloud(initial.restored) : createWorkspaceStateV3(initial.initial));
   const importGeneration = useRef(0);
   const [importPending, setImportPending] = useState(false);
   const dispatch = useCallback((action: WorkspaceActionV3) => {

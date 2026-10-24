@@ -27,6 +27,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Make PostgreSQL binaries available to cloud-project verification
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
       - name: Verify the ECS authentication runtime operator
         run: python3 -B -m unittest discover -s tests -p 'test_ecs_auth_operator.py' -v
       - name: Verify vendored j-3dENA custody before dependency installation
@@ -40,6 +45,34 @@ jobs:
         run: npm audit --audit-level=high
       - name: Verify prompt governance and complete application
         run: npm run verify
+      - name: Verify registered accounts and private projects through the built application
+        run: |
+          set -euo pipefail
+          mkdir -p output/cloud-projects-20261024
+          node tests/support/open-ena-cloud-local-server.mjs > output/cloud-projects-20261024/fixture-start.log 2>&1 &
+          cloud_fixture_pid=$!
+          trap 'kill -TERM "$cloud_fixture_pid" 2>/dev/null || true; wait "$cloud_fixture_pid" || true' EXIT
+          for attempt in $(seq 1 120); do
+            test -f output/cloud-projects-20261024/local-fixture.json && break
+            kill -0 "$cloud_fixture_pid"
+            sleep 1
+          done
+          test -f output/cloud-projects-20261024/local-fixture.json
+          node --import tsx tests/open-ena-cloud-http-integration.mts
+          kill -TERM "$cloud_fixture_pid"
+          wait "$cloud_fixture_pid"
+          trap - EXIT
+      - name: Upload cloud-project verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: open-ena-cloud-projects-${{ github.sha }}
+          path: |
+            output/cloud-projects-20261024/http-integration-receipt.json
+            output/cloud-projects-20261024/local-cleanup.json
+            output/cloud-projects-20261024/fixture-start.log
+          if-no-files-found: warn
+          retention-days: 14
       - name: Package and verify the standalone Linux release
         if: github.event_name != 'pull_request'
         run: |

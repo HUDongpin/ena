@@ -1,6 +1,7 @@
 import { scrypt, timingSafeEqual } from "node:crypto";
 import {
   openEnaV2AuthConfigurationReady,
+  isOpenEnaRegisteredPrincipal,
   verifyOpenEnaSessionTokenAny,
   verifyOpenEnaSessionTokenV2WithRevocation,
   type OpenEnaAuthEnvironment,
@@ -27,7 +28,7 @@ export type OpenEnaLoginBlockingScope = "pair" | "source" | "both";
 export type OpenEnaLoginCredentialDecision =
   | {
       outcome: "authenticated";
-      kind: "owner" | "disposable";
+      kind: "owner" | "disposable" | "user";
       principalRef: string | null;
       sessionToken: string;
     }
@@ -135,7 +136,7 @@ function authenticatedDecision(
   value: OpenEnaLoginCredentialDecision,
 ): value is Extract<OpenEnaLoginCredentialDecision, { outcome: "authenticated" }> {
   return value.outcome === "authenticated"
-    && (value.kind === "owner" || value.kind === "disposable")
+    && (value.kind === "owner" || value.kind === "disposable" || value.kind === "user")
     && typeof value.sessionToken === "string"
     && value.sessionToken.length > 0
     && (value.principalRef === null || typeof value.principalRef === "string");
@@ -211,6 +212,15 @@ export function createPostgresOpenEnaAuthSecurityStore(
   options: OpenEnaAuthSecurityStoreOptions = {},
 ): OpenEnaAuthSecurityStore {
   return {
+    async isRegisteredSessionCurrent(userId, sessionVersion) {
+      const result = await query(
+        `SELECT EXISTS(SELECT 1 FROM open_ena_users
+          WHERE id = $1::uuid AND session_version = $2 AND disabled_at IS NULL) AS current`,
+        [userId, sessionVersion],
+      );
+      if (typeof result.rows[0]?.current !== "boolean") throw new TypeError("Invalid registered session lookup.");
+      return result.rows[0].current;
+    },
     async consumeLoginAttempt(input) {
       if (
         !input.sourceRef
@@ -633,6 +643,10 @@ export async function classifyProductionOpenEnaSessionTokenAny(
   if (!principal) return { outcome: "unauthenticated" };
   try {
     if (await store.isSessionRevoked(principal.jti)) return { outcome: "unauthenticated" };
+    if (isOpenEnaRegisteredPrincipal(principal)
+      && !await store.isRegisteredSessionCurrent?.(principal.userId, principal.sessionVersion)) {
+      return { outcome: "unauthenticated" };
+    }
   } catch {
     return { outcome: "store-error" };
   }

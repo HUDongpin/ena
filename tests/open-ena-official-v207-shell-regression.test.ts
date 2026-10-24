@@ -409,7 +409,7 @@ test("official plot papers, model download, and group-label settings keep the ob
     "Download Model must use the filled Baby Blue action with readable dark text",
   );
   assert.match(workspace, /className="ena-download-model-button-icon"/);
-  assert.match(workspace, /const \[showGroupLabels,\s*setShowGroupLabels\]\s*=\s*useState\(true\)/);
+  assert.match(workspace, /const \[showGroupLabels,\s*setShowGroupLabels\]\s*=\s*useState\(restoredView\?\.showGroupLabels\s*\?\?\s*true\)/);
   assert.match(workspace, /showGroupLabels=\{showGroupLabels\}/);
   assert.match(groupContrast, /showGroupLabels:\s*boolean/);
   assert.match(groupContrast, /className="ena-set-group-label"/);

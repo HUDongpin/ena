@@ -2184,6 +2184,72 @@ body:has(.open-ena-login-page) .back-to-top {
   background: #edf2f2;
 }
 
+/* Private account and project controls use the existing Open ENA workbench palette. */
+.open-ena-account-page { min-height: 80dvh; padding: clamp(24px, 5vw, 64px) 16px; background: #edf5f8; }
+.open-ena-account-card { max-width: 520px; margin: 0 auto; padding: clamp(24px, 5vw, 44px); border: 1px solid #cadde4; border-radius: 20px; background: #fff; box-shadow: 0 14px 40px #1736490d; }
+.open-ena-account-card h1 { margin: 30px 0 12px; font-size: clamp(25px, 4vw, 34px); line-height: 1.2; }
+.open-ena-account-card > p { color: #4c626c; line-height: 1.65; margin-bottom: 28px; }
+.open-ena-account-hint { margin: 0 0 10px; font-size: 13px; color: #4c626c; line-height: 1.5; }
+.open-ena-account-links { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 24px; }
+.open-ena-account-links a, .open-ena-account-links button { color: #165c7c; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.open-ena-account-links button { padding: 0; border: 0; background: transparent; cursor: pointer; font: inherit; }
+.open-ena-account-success { padding: 18px; border: 1px solid #abd8bb; border-radius: 10px; background: #f0faf4; color: #175e35; line-height: 1.6; }
+.open-ena-page:has(> .open-ena-cloud-controls) { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.open-ena-page:has(> .open-ena-cloud-controls):has(> .open-ena-fallback-notice) { grid-template-rows: auto auto minmax(0, 1fr); }
+.open-ena-page:has(> .open-ena-cloud-controls) > .open-ena-workbench { height: 100%; min-height: 0; }
+.open-ena-cloud-controls { min-width: 0; background: #f8fcfd; border-bottom: 1px solid #bfd4dc; color: #153c50; }
+.open-ena-cloud-bar { display: flex; align-items: center; gap: 14px; padding: 8px 16px; min-height: 56px; }
+.open-ena-cloud-controls button { border: 1px solid #b9d0db; border-radius: 7px; padding: 8px 12px; background: #fff; color: #154b66; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.open-ena-cloud-controls button:disabled { cursor: not-allowed; opacity: .55; }
+.open-ena-cloud-controls .open-ena-project-delete { color: #9a342d; border-color: #e3c4c1; }
+.open-ena-cloud-status .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.open-ena-cloud-controls button:focus-visible, .open-ena-cloud-controls input:focus-visible, .open-ena-account-card :focus-visible { outline: 3px solid #2786af; outline-offset: 3px; }
+.open-ena-cloud-controls .open-ena-cloud-save { background: #68bee2; border-color: #68bee2; color: #123b50; }
+.open-ena-cloud-current { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.open-ena-cloud-current strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.open-ena-cloud-current span { color: #55717e; font-size: 11px; }
+.open-ena-cloud-status > p { margin: 0; padding: 7px 16px; background: #fff4e9; color: #7c351b; font-size: 13px; line-height: 1.5; }
+.open-ena-project-dialog { position: fixed; inset: 0; box-sizing: border-box; width: min(800px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; overflow: auto; border: 1px solid #bed4de; border-radius: 16px; background: #fff; color: #163d4c; box-shadow: 0 24px 90px #0b2b4160; }
+.open-ena-project-dialog::backdrop { background: #14314380; }
+.open-ena-project-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px; border-bottom: 1px solid #e0ebef; }
+.open-ena-project-dialog h2 { margin: 0; font-size: 24px; }
+.open-ena-project-dialog header p { margin: 7px 0 0; color: #56707b; font-size: 13px; overflow-wrap: anywhere; }
+.open-ena-project-save-form { padding: 22px 24px; background: #f3f9fb; }
+.open-ena-project-save-form label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 650; }
+.open-ena-project-save-form input { box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid #afc9d7; border-radius: 7px; background: #fff; color: #173b4d; font: inherit; }
+.open-ena-project-save-form p { margin: 12px 0; color: #4f6975; font-size: 13px; line-height: 1.6; }
+.open-ena-project-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.open-ena-project-dialog > p { margin: 16px 24px; }
+.open-ena-project-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 24px 10px; }
+.open-ena-project-tabs { display: flex; gap: 5px; }
+.open-ena-project-tabs button[aria-pressed="true"] { background: #d9edf6; border-color: #92bfce; }
+.open-ena-project-list { list-style: none; margin: 0; padding: 0 24px; }
+.open-ena-project-list > li { display: flex; justify-content: space-between; gap: 18px; padding: 16px 0; border-bottom: 1px solid #e1ebef; }
+.open-ena-project-list > li > div:first-child { min-width: 0; }
+.open-ena-project-list strong { display: block; overflow-wrap: anywhere; font-size: 14px; }
+.open-ena-project-list small { display: block; margin-top: 6px; color: #56707b; font-size: 11px; }
+.open-ena-project-list .open-ena-project-empty { color: #617984; font-size: 14px; line-height: 1.6; }
+.open-ena-project-dialog footer { padding: 16px 24px; color: #617984; font-size: 12px; line-height: 1.6; }
+.open-ena-project-dialog footer p { margin: 3px 0; }
+@media (min-width: 1400px) {
+  .open-ena-page:has(> .open-ena-cloud-controls) .open-ena-group-contrast .ena-set-main-plot {
+    height: calc(100dvh - 90px - var(--ena-cloud-toolbar-height, 57px));
+  }
+}
+@media (max-width: 900px) {
+  .open-ena-page:has(> .open-ena-cloud-controls), .open-ena-page:has(> .open-ena-cloud-controls):has(> .open-ena-fallback-notice) { height: auto; grid-template-rows: auto; }
+  .open-ena-page:has(> .open-ena-cloud-controls) > .open-ena-workbench { height: auto; }
+}
+@media (max-width: 520px) {
+  .open-ena-cloud-bar { flex-wrap: wrap; gap: 7px; padding: 8px; }
+  .open-ena-cloud-current { min-width: 110px; }
+  .open-ena-cloud-current span { white-space: normal; }
+  .open-ena-project-dialog > header, .open-ena-project-save-form, .open-ena-project-dialog footer { padding: 18px; }
+  .open-ena-project-list { padding: 0 18px; }
+  .open-ena-project-list > li { flex-direction: column; gap: 12px; }
+  .open-ena-project-list-heading { padding-inline: 18px; flex-wrap: wrap; }
+}
+
 .open-ena-page:has(> .open-ena-fallback-notice) {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

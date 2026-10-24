@@ -11,11 +11,14 @@ import {
 import { isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
+import { getOpenEnaCloudCopy } from "@/lib/open-ena/cloud-copy";
 
 interface OpenEnaLoginProps {
   locale: Locale;
   notice: OpenEnaLoginNotice;
   configurationReady: boolean;
+  cloudEnabled?: boolean;
+  registrationAvailable?: boolean;
 }
 
 export function OpenEnaLoginFrame({ locale, children }: { locale: Locale; children: ReactNode }) {
@@ -47,8 +50,9 @@ export function OpenEnaAuthRecoveryNotice({
   );
 }
 
-export default function OpenEnaLogin({ locale, notice, configurationReady }: OpenEnaLoginProps) {
+export default function OpenEnaLogin({ locale, notice, configurationReady, cloudEnabled = false, registrationAvailable = false }: OpenEnaLoginProps) {
   const copy = getOpenEnaAuthCopy(locale);
+  const cloudCopy = getOpenEnaCloudCopy(locale);
   const invalidCredentials = notice.kind === "invalid";
   const alertText = openEnaLoginNoticeText(copy, notice);
   const pluginCopy = getPluginLabCopy(locale);
@@ -97,21 +101,21 @@ export default function OpenEnaLogin({ locale, notice, configurationReady }: Ope
 
         <div className="open-ena-login-panel">
           <div className="open-ena-login-heading">
-            <p className="eyebrow">{copy.eyebrow}</p>
+            <p className="eyebrow">{cloudEnabled ? cloudCopy.cloudReady : copy.eyebrow}</p>
             <h1 id="open-ena-login-title">{copy.title}</h1>
-            <p>{copy.intro}</p>
+            <p>{cloudEnabled ? cloudCopy.cloudLoginIntro : copy.intro}</p>
           </div>
 
           {configurationReady ? (
             <form action="/api/open-ena/login" method="post" className="open-ena-login-form">
             <input type="hidden" name="locale" value={locale} />
-            <label htmlFor="open-ena-username">{copy.username}</label>
+            <label htmlFor="open-ena-username">{cloudEnabled ? cloudCopy.cloudLoginLabel : copy.username}</label>
             <input
               id="open-ena-username"
               name="username"
               type="text"
               autoComplete="username"
-              placeholder={copy.usernamePlaceholder}
+              placeholder={cloudEnabled ? cloudCopy.cloudLoginHint : copy.usernamePlaceholder}
               aria-invalid={invalidCredentials}
               aria-describedby={alertText ? "open-ena-login-error" : undefined}
               required
@@ -148,18 +152,21 @@ export default function OpenEnaLogin({ locale, notice, configurationReady }: Ope
           )}
 
           <div className="open-ena-login-notes">
-            <p className="open-ena-login-collaboration">
+            {cloudEnabled ? <p className="open-ena-account-links">
+              {registrationAvailable ? <Link href={`/${locale}/open-ena/account`} prefetch={false}>{cloudCopy.register}</Link> : null}
+              <Link href={`/${locale}/open-ena/account?mode=reset`} prefetch={false}>{cloudCopy.recover}</Link>
+            </p> : <p className="open-ena-login-collaboration">
               {noticeBeforeEmail}
               <a href="mailto:sandy0692@gmail.com">{OPEN_ENA_CONTACT_EMAIL}</a>
               {noticeAfterEmail}
-            </p>
+            </p>}
             <p className="open-ena-login-collaboration" lang={pluginCopy.contentFallback ? "en" : undefined}>
               {pluginCopy.loginInvitation}{" "}
               <Link href={`/${locale}/plugins/propose`} prefetch={false}>{pluginCopy.loginProposalLink}</Link>.
             </p>
             <p className="open-ena-login-privacy">
               <span aria-hidden="true">●</span>
-              {copy.privacyNote}
+              {cloudEnabled ? cloudCopy.cloudPrivacy : copy.privacyNote}
             </p>
           </div>
         </div>
