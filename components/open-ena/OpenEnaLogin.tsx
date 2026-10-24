@@ -104,6 +104,12 @@ export default function OpenEnaLogin({ locale, notice, configurationReady, cloud
             <p className="eyebrow">{cloudEnabled ? cloudCopy.cloudReady : copy.eyebrow}</p>
             <h1 id="open-ena-login-title">{copy.title}</h1>
             <p>{cloudEnabled ? cloudCopy.cloudLoginIntro : copy.intro}</p>
+            {cloudEnabled ? <>
+              <p data-ena-first-visit={registrationAvailable ? "registration" : "registration-unavailable"}>
+                {registrationAvailable ? cloudCopy.registrationSteps : cloudCopy.registrationClosed}
+              </p>
+              <p>{cloudCopy.sharedAccountNotice}</p>
+            </> : null}
           </div>
 
           {configurationReady ? (
@@ -155,6 +161,7 @@ export default function OpenEnaLogin({ locale, notice, configurationReady, cloud
             {cloudEnabled ? <p className="open-ena-account-links">
               {registrationAvailable ? <Link href={`/${locale}/open-ena/account`} prefetch={false}>{cloudCopy.register}</Link> : null}
               <Link href={`/${locale}/open-ena/account?mode=reset`} prefetch={false}>{cloudCopy.recover}</Link>
+              {!registrationAvailable ? <a href={`mailto:${OPEN_ENA_CONTACT_EMAIL}`}>{cloudCopy.contactSupport}</a> : null}
             </p> : <p className="open-ena-login-collaboration">
               {noticeBeforeEmail}
               <a href="mailto:sandy0692@gmail.com">{OPEN_ENA_CONTACT_EMAIL}</a>

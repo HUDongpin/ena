@@ -195,6 +195,20 @@ jobs:
         run: npm run test:browser:open-ena-ai-presentation-retention
       - name: Run the AI interpretation retention workspace browser gate
         run: npm run test:browser:open-ena-ai-interpretation-retention
+      - name: Verify in-workspace language changes preserve local and cloud work
+        run: node tests/open-ena-session-language-browser.mjs
+      - name: Verify completed AI lifecycle and recovery in all three languages
+        run: node tests/open-ena-ai-record-lifecycle-browser.mjs
+      - name: Verify registration entry and unavailable states in all three languages
+        run: node tests/open-ena-first-visit-browser.mjs
+      - name: Upload first-visit browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: open-ena-first-visit-${{ github.sha }}
+          path: output/ai-closeout-20261024/first-visit-browser
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify complete cloud workspace restoration across browser origins
         run: node tests/open-ena-cloud-complete-state-browser.mjs
       - name: Upload complete cloud workspace evidence

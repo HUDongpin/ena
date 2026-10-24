@@ -148,8 +148,9 @@ test("the only AI network request is a POST inside the explicit Generate handler
 
 test("AI generation requires the exact current native review and full local scientific identity", () => {
 
-  assert.match(v3, /disabled=\{!activeAiReview \|\| !current\}/);
+  assert.match(v3, /disabled=\{!activeAiReview \|\| activeAiReview.request.locale !== locale \|\| !current\}/);
   assert.match(v3, /localScientificIdentity=\{openEnaAiLocalScientificIdentityV3\(activeAiReview\)\}/);
+  assert.match(v3, /aiReview\.inference === activeInference/, "an earlier AI preview must not authorize a newly confirmed statistics object");
   assert.match(aiComponent, /openEnaAiReviewedRequestIdentityV3/);
   assert.match(aiComponent, /localScientificIdentity/);
   assert.match(aiComponent, /disabled=\{[^}]*(?:disabled|!request)[^}]*\}/);
@@ -213,7 +214,7 @@ test("the UI supports cancellation, a visible error, and an explicit retry", () 
   );
 });
 
-test("changing the evidence binding aborts work, revokes consent, and makes old output unrenderable", () => {
+test("changing the evidence binding aborts work and revokes consent while retaining labeled completed output", () => {
   assert.match(aiComponent, /const requestIdentity = owner && reviewedIdentity/);
   assert.match(aiComponent, /\[OPEN_ENA_AI_OWNER_HEADER\]: owner/);
   assert.match(
@@ -231,7 +232,7 @@ test("changing the evidence binding aborts work, revokes consent, and makes old 
   );
   assert.ok(invalidationEffect, "a complete request-identity change must have one explicit invalidation effect");
   assert.match(invalidationEffect[1], /\.abort\(\)/, "changing evidence must cancel an in-flight request");
-  assert.match(invalidationEffect[1], /set[A-Za-z]*Response\(null\)/, "changing evidence must clear the old response");
+  assert.doesNotMatch(invalidationEffect[1], /setCompletedRecord\(null\)/, "changing evidence must retain the latest completed record");
   assert.match(invalidationEffect[1], /setConsentedRequestIdentity\(null\)/, "consent must be renewed for the new preview");
   assert.doesNotMatch(invalidationEffect[1], /fetch\s*\(/, "the invalidation effect must never start a replacement request");
   assert.match(
@@ -239,11 +240,7 @@ test("changing the evidence binding aborts work, revokes consent, and makes old 
     /const\s+consentGranted\s*=\s*requestIdentity\s*!==\s*null\s*&&\s*consentedRequestIdentity\s*===\s*requestIdentity/,
     "consent must synchronously belong to the exact request being generated",
   );
-  assert.match(
-    aiComponent,
-    /const\s+currentResponse\s*=\s*aiResponse\s*&&\s*aiResponseRequestIdentity\s*===\s*requestIdentity\s*\?\s*aiResponse\s*:\s*null/,
-    "even before effects flush, a response bound to old evidence must not render",
-  );
+  assert.match(aiComponent, /openEnaAiCompletedRecordStatus/, "retained output must derive its current, stale or historical status");
   assert.match(
     aiComponent,
     /currentRequestIdentityRef\.current\s*!==\s*requestedIdentity/,

@@ -168,7 +168,7 @@ test("DeepSeek network failures redact upstream details", async () => {
   );
 });
 
-test("DeepSeek production diagnostics log only a fixed failure stage", async () => {
+test("DeepSeek production diagnostics omit exception text and credentials", async () => {
   const mutableEnvironment = process.env as Record<string, string | undefined>;
   const priorEnv = mutableEnvironment.NODE_ENV;
   const priorError = console.error;
@@ -188,7 +188,15 @@ test("DeepSeek production diagnostics log only a fixed failure stage", async () 
     if (priorEnv === undefined) delete mutableEnvironment.NODE_ENV;
     else mutableEnvironment.NODE_ENV = priorEnv;
   }
-  assert.deepEqual(entries, ["open-ena-deepseek-failure:balance-network"]);
+  assert.equal(entries.length, 1);
+  const prefix = "open-ena-deepseek-failure:balance-network ";
+  assert.ok(entries[0].startsWith(prefix));
+  const diagnostic = JSON.parse(entries[0].slice(prefix.length));
+  assert.equal(diagnostic.stage, "balance-network");
+  assert.equal(diagnostic.locale, "en");
+  assert.equal(diagnostic.httpStatus, null);
+  assert.equal(diagnostic.responseBytes, null);
+  assert.ok(!entries[0].includes("private provider body") && !entries[0].includes("synthetic-deepseek-key"));
 });
 
 test("DeepSeek oversized response fails closed before schema parsing", async () => {
@@ -271,7 +279,17 @@ test("DeepSeek contract diagnostics classify unknown evidence refs without loggi
     if (priorEnv === undefined) delete mutableEnvironment.NODE_ENV;
     else mutableEnvironment.NODE_ENV = priorEnv;
   }
-  assert.deepEqual(entries, ["open-ena-deepseek-failure:responses-contract-evidence-ref"]);
+  assert.equal(entries.length, 1);
+  const prefix = "open-ena-deepseek-failure:responses-contract-evidence-ref ";
+  assert.ok(entries[0].startsWith(prefix));
+  const diagnostic = JSON.parse(entries[0].slice(prefix.length));
+  assert.equal(diagnostic.stage, "responses-contract-evidence-ref");
+  assert.equal(diagnostic.rule, "evidence-reference");
+  assert.equal(diagnostic.field, "interpretation.observedPatterns[].evidenceRefs");
+  assert.equal(diagnostic.locale, "en");
+  assert.equal(diagnostic.httpStatus, 200);
+  assert.equal(diagnostic.responseStatus, "completed");
+  assert.ok(!entries[0].includes("PRIVATE_MODEL_TEXT") && !entries[0].includes("unknown-evidence-id"));
 });
 
 test("DeepSeek unknown request schema fails before balance or dispatch", async () => {

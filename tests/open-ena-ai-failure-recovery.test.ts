@@ -258,7 +258,7 @@ test("the failure alert states the evidence boundary and retries only retryable 
   assert.match(aiComponent, /cause:\s*["']invalid-output["']/);
   assert.match(
     aiComponent,
-    /showsRetainedInterpretation \? \([\s\S]*?data-ena-ai-evidence-boundary=["']previous-interpretation-retained["'][\s\S]*?\{copy\.evidenceBoundaryRetained\}/,
+    /showsRetainedInterpretation \? \([\s\S]*?data-ena-ai-evidence-boundary=["']previous-interpretation-retained["'][\s\S]*?completedStatus\?\.scienceChanged \? copy\.recordScienceChanged : completedRecord\?\.historical \? copy\.recordHistorical : copy\.evidenceBoundaryRetained/,
   );
   assert.match(aiComponent, /data-ena-ai-retained-interpretation=["']previous["'][\s\S]*?\{copy\.previousInterpretation\}/);
 });
@@ -338,7 +338,7 @@ test("removing a focused result restores focus before the idle panel can drop it
 
 test("a retry started for older evidence is not applied after the current request changes", async () => {
   assert.match(workspace, /request=\{activeAiReview\?\.request \?\? null\}/);
-  assert.match(workspace, /disabled=\{!activeAiReview \|\| !current\}/);
+  assert.match(workspace, /disabled=\{!activeAiReview \|\| activeAiReview.request.locale !== locale \|\| !current\}/);
   assert.match(
     aiComponent,
     /currentRequestIdentityRef\.current\s*!==\s*requestedIdentity/,

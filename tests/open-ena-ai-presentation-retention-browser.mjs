@@ -93,7 +93,7 @@ const bundle = await build({
           base: spec(base, 'en'),
           equal: spec(structuredClone(base), 'en'),
           locale: spec(localeRequest, 'zh-hant'),
-          evidence: spec(evidence, 'en'),
+          evidence: { ...spec(evidence, 'en'), localScientificIdentity: LOCAL + '-changed-comparison' },
         };
       })().catch((error) => {
         window.__aiError = error instanceof Error ? error.stack || error.message : String(error);
@@ -116,6 +116,7 @@ const bundle = await build({
           <div data-render-serial={serial}>
             <Ai
               operationOwnerKey={operationOwnerKey}
+              locale={current.locale}
               request={current.request}
               localScientificIdentity={current.localScientificIdentity}
               copy={getOpenEnaCopy(current.locale).aiInterpretation}
@@ -228,17 +229,18 @@ try {
   assert.equal(success.fetchCount(), 1, "a structurally equal re-render must not request another interpretation");
 
   await success.page.evaluate(() => window.renderAi("locale"));
-  await success.page.waitForFunction(() => !document.querySelector(".ena-ai-result") && document.querySelector(".ena-ai-consent input")?.checked === false);
-  assert.equal(success.fetchCount(), 1, "a locale change clears the interpretation without a new request");
+  await success.page.waitForFunction(() => document.querySelector("[data-ena-ai-language-mismatch]") && document.querySelector(".ena-ai-consent input")?.checked === false);
+  assert.equal(success.fetchCount(), 1, "a locale change retains the original interpretation without a new request");
   const localeCleared = await snapshot(success.page);
-  assert.equal(localeCleared.text, "");
-  assert.equal(localeCleared.evidenceKey, "");
+  assert.match(localeCleared.text, /Synthetic aggregate pattern for retention/);
+  assert.equal(localeCleared.evidenceKey, retained.evidenceKey);
   assert.equal(localeCleared.consent, false);
 
   await success.page.evaluate(() => window.renderAi("evidence"));
   await success.page.waitForFunction(() => document.querySelector("[data-render-serial]")?.getAttribute("data-render-serial") === "4");
   const evidenceCleared = await snapshot(success.page);
-  assert.equal(evidenceCleared.text, "");
+  assert.match(evidenceCleared.text, /Synthetic aggregate pattern for retention/);
+  assert.equal(await success.page.locator("[data-ena-ai-record-state=stale]").count(), 1);
   assert.equal(evidenceCleared.consent, false);
   assert.equal(evidenceCleared.generateDisabled, true);
   assert.equal(success.fetchCount(), 1, "an evidence change clears consent and does not fetch");
@@ -280,7 +282,7 @@ try {
   assert.equal(recovery.fetchCount(), 2);
   assert.deepEqual(recovery.errors, []);
   await recovery.page.close();
-  console.log("AI presentation retention: equal re-render keeps result and consent; locale and evidence clear them; failure then retry recovers PASS");
+  console.log("AI presentation retention: equal re-render keeps result and consent; locale and evidence retain text and revoke consent; failure then retry recovers PASS");
 } finally {
   await browser.close();
 }

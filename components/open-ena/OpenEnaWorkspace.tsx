@@ -79,7 +79,7 @@ import OpenEnaGroupContrast from "./OpenEnaGroupContrast";
 import OpenEna3DGroupContrast from "./OpenEna3DGroupContrast";
 import OpenEnaOrderedResultLayout from "./OpenEnaOrderedResultLayout";
 import OpenEna3DOrderedResultLayout from "./OpenEna3DOrderedResultLayout";
-import OpenEnaAiInterpretation from "./OpenEnaAiInterpretation";
+import OpenEnaAiInterpretation, { openEnaAiSavedWorkspaceEvidenceChanged } from "./OpenEnaAiInterpretation";
 import OpenEnaCodeColorPicker from "./OpenEnaCodeColorPicker";
 import { OpenEnaTrajectoryAnalysisPanelV3, trajectoryAnalysisCopyV3 } from "./model-v3/OpenEnaTrajectoryAnalysisPanelV3";
 import type { OpenEnaTrajectoryPathControlsV3 } from "@/lib/open-ena/trajectory-path-inference-v3";
@@ -106,6 +106,7 @@ import { openEnaRuntimePluginAvailability, openEnaHistorical3dDisplayAvailabilit
 
 interface OpenEnaWorkspaceProps {
   locale: Locale;
+  onLocaleChange?: (locale: Locale) => void;
   providerDescriptor?: { provider: string; model: string };
   operationOwnerKey?: string | null;
   runtimeDisabledPluginIds?: readonly string[];
@@ -429,7 +430,7 @@ function ResearchTableV3({ rows, label, unavailable, boundedRows, columnLabels }
     })}</tr>)}</tbody></table>{rows.length > 100 && <p>{boundedRows(100, rows.length)}</p>}</div>;
 }
 
-export default function OpenEnaWorkspace({ locale, providerDescriptor, operationOwnerKey = null, initialSource, worker, runtimeDisabledPluginIds = NO_RUNTIME_DISABLED_PLUGIN_IDS,
+export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescriptor, operationOwnerKey = null, initialSource, worker, runtimeDisabledPluginIds = NO_RUNTIME_DISABLED_PLUGIN_IDS,
   initialCloudWorkspace, cloudBridge, cloudControls, onCloudChange, onLocalOnlyWorkChange }: OpenEnaWorkspaceProps) {
   const workspaceId = useId();
   const rebuildBlockingChecklistId = `${workspaceId}-rebuild-blocking-checklist`;
@@ -528,7 +529,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
   const [inference, setInference] = useState<{ key: string; value: NativeInferenceV3 } | null>(null);
   const [inferenceBusy, setInferenceBusy] = useState(false);
   const [trajectoryRanks, setTrajectoryRanks] = useState<{ frameKey: string; items: NonNullable<OpenEnaTrajectoryExportOptionsV3["ranks"]> }>({ frameKey: "", items: [] });
-  const [aiReview, setAiReview] = useState<{ key: string; value: Awaited<ReturnType<typeof buildAiInterpretationReviewV3>> } | null>(null);
+  const [aiReview, setAiReview] = useState<{ key: string; inference: NativeInferenceV3; value: Awaited<ReturnType<typeof buildAiInterpretationReviewV3>> } | null>(null);
   const [aiLimitation, setAiLimitation] = useState("");
   const [sets, setSets] = useState<OpenEnaAnalysisSetV3[]>(initialCloudWorkspace?.analysisSets ?? []);
   const [setsBusy, setSetsBusy] = useState(false);
@@ -611,11 +612,17 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
   const endpointControls: OpenEnaEndpointControlsV3 | null = primary && secondary && primary.token !== secondary.token && twoDAxes.length === 2
     ? { primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, axes: [twoDAxes[0], twoDAxes[1]] } : null;
   const isTrajectory = result?.configuration.analysisFamily === "standard" && result.configuration.analysis.model.type !== "EndPoint";
-  const trajectoryControls: OpenEnaTrajectoryControlsV3 | null = isTrajectory && twoDAxes.length === 2 && (inferenceDesign === "independent" ? endpointControls && periods[0] && periods.length === 1 : identityConfirmed && (inferenceDesign === "paired" ? periods.length === 2 : periods.length >= 3))
-    ? { axes: [twoDAxes[0], twoDAxes[1]], identityConfirmed, request: inferenceDesign === "independent"
+  // A comparison selection remains inspectable after restore even though the
+  // confirmation required for running paired/repeated inference is never restored.
+  const trajectorySelection: OpenEnaTrajectoryControlsV3["request"] | null = isTrajectory && twoDAxes.length === 2
+    && (inferenceDesign === "independent" ? endpointControls && periods[0] && periods.length === 1 : inferenceDesign === "paired" ? periods.length === 2 : periods.length >= 3)
+    ? inferenceDesign === "independent"
       ? { kind: "trajectory-independent-period", period: periods[0], primaryGroup: endpointControls!.primaryGroup, secondaryGroup: endpointControls!.secondaryGroup }
       : inferenceDesign === "paired" ? { kind: "trajectory-paired-periods", group: primary?.fields[0].value ?? null, earlierPeriod: periods[0], laterPeriod: periods[1], cohortPolicy: "pairwise-complete" }
-        : { kind: "trajectory-repeated-periods", group: primary?.fields[0].value ?? null, periods, cohortPolicy: "all-period-complete", posthocContrasts: "all-period-pairs" } } : null;
+        : { kind: "trajectory-repeated-periods", group: primary?.fields[0].value ?? null, periods, cohortPolicy: "all-period-complete", posthocContrasts: "all-period-pairs" }
+    : null;
+  const trajectoryControls: OpenEnaTrajectoryControlsV3 | null = trajectorySelection && (inferenceDesign === "independent" || identityConfirmed)
+    ? { axes: [twoDAxes[0], twoDAxes[1]], identityConfirmed, request: trajectorySelection } : null;
   const controls = isTrajectory ? trajectoryControls : endpointControls;
   const consumerKey = openEnaConsumerAuthorityKeyV3({
     binding: result?.binding ?? null,
@@ -626,6 +633,12 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
   });
   const consumerKeyRef = useRef(consumerKey); consumerKeyRef.current = consumerKey;
   const activeInference = inference?.key === consumerKey && current ? inference.value : null;
+  const historicalComparisonContext = isTrajectory ? { axes: twoDAxes, request: trajectorySelection } : endpointControls;
+  const historicalComparisonKey = canonicalJsonV3(historicalComparisonContext);
+  const historicalSavedEvidenceChanged = useMemo(() => openEnaAiSavedWorkspaceEvidenceChanged({
+    record: savedAiInterpretation, result, comparisonContext: historicalComparisonContext,
+  }), [savedAiInterpretation, result, historicalComparisonKey]);
+  const historicalEvidenceInvalidated = modelState.resultStatus === "stale" || historicalSavedEvidenceChanged || activeInference !== null;
   const trajectoryFrameKey = canonicalJsonV3({ context, binding: result?.binding ?? null, plan: currentPlan?.header.executionPlanSha256 ?? null, current });
   const pathControls: Omit<OpenEnaTrajectoryPathControlsV3, "independentGroupsConfirmed"> | null = isTrajectory && threeDDimensions && primary && secondary && primary.token !== secondary.token
     ? { axes: [threeDDimensions[0], threeDDimensions[1], threeDDimensions[2]], identityConfirmed, primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, horizons: periods, cohortPolicy: "all-period-complete", repetitions: 500, seed: 2026 } : null;
@@ -661,7 +674,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
       pendingSetFocusCancelRef.current = () => {};
     };
   }, [sets]);
-  const activeAiReview = aiReview?.key === consumerKey && current ? aiReview.value : null;
+  const activeAiReview = aiReview?.key === consumerKey && aiReview.inference === activeInference && current ? aiReview.value : null;
   const activeContrast = nativeContrast?.key === consumerKey && current ? nativeContrast.value : null;
   const retainedPlotContrast = useMemo(() => result
     ? presentRetainedEndpointContrastV3(result, primaryGroupName, secondaryGroupName, twoDAxes)
@@ -734,7 +747,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
     const selection = activeInference.kind === "open-ena-endpoint-inference"
       ? { locale, inference: activeInference, controls: controls as OpenEnaEndpointControlsV3 }
       : { locale, inference: activeInference, controls: controls as OpenEnaTrajectoryControlsV3 };
-    void buildAiInterpretationReviewV3(result, currentPlan, selection).then((value) => { if (active) { setAiReview({ key: consumerKey, value }); setAiLimitation(""); } }).catch((error: unknown) => { if (active) setAiLimitation(error instanceof Error ? error.message : String(error)); });
+    void buildAiInterpretationReviewV3(result, currentPlan, selection).then((value) => { if (active) { setAiReview({ key: consumerKey, inference: activeInference, value }); setAiLimitation(""); } }).catch((error: unknown) => { if (active) setAiLimitation(error instanceof Error ? error.message : String(error)); });
     return () => { active = false; };
   }, [activeInference, consumerKey, locale]);
   useEffect(() => {
@@ -1613,11 +1626,11 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
       </details>
 </div>;
   const aiPanel = <div className="ena-control-content ena-ai-mode-panel ena-workspace-controls-v3 ena-restored-workbench" data-ena-ai-source="stats-results"><header className="ena-panel-heading"><p className="ena-panel-kicker">{restoredCopy.aiKicker}</p><h2>{copy.aiInterpretation.title}</h2><p>{savedAiInterpretation && cloudBridge && !activeAiReview ? cloudCopy.savedAiAvailable : activeInference ? workspaceCopy.ai.ready : workspaceCopy.ai.unavailable}</p></header><button type="button" onClick={() => setMode("stats")}>{workspaceCopy.ai.openStats}</button>
-      <div hidden={mode !== "ai"}><OpenEnaAiInterpretation operationOwnerKey={operationOwnerKey} request={activeAiReview?.request ?? null}
+      <div hidden={mode !== "ai"}><OpenEnaAiInterpretation locale={locale} operationOwnerKey={operationOwnerKey} request={activeAiReview?.request ?? null}
         onLocalWorkChange={setAiBusy} onInterpretationChange={setSavedAiInterpretation}
-        savedInterpretation={cloudBridge ? savedAiInterpretation : null} savedInterpretationNote={cloudCopy.savedAiNote}
-        localScientificIdentity={openEnaAiLocalScientificIdentityV3(activeAiReview)}
-        copy={copy.aiInterpretation} disabled={!activeAiReview || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
+        savedInterpretation={savedAiInterpretation} savedInterpretationNote={copy.aiInterpretation.recordHistorical}
+        localScientificIdentity={openEnaAiLocalScientificIdentityV3(activeAiReview)} historicalEvidenceInvalidated={historicalEvidenceInvalidated}
+        copy={copy.aiInterpretation} disabled={!activeAiReview || activeAiReview.request.locale !== locale || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
         {activeAiReview && <details className="ena-panel-details"><summary>{restoredCopy.aiEvidenceScope}</summary><p>{workspaceCopy.ai.wireLimitations}</p></details>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
 </div>;
   const nativeDataView = dataViewPresentation && <>
@@ -1628,7 +1641,7 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
               onExportCsv={() => void attempt(async () => { if (!result || !currentPlan || !current) return; await buildDataViewV3(result, currentPlan); if (mounted.current && latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) downloadCsv("bound-data-view.csv", rowsToCsv(dataViewPresentation.rows.map((row) => Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, value ?? null]))))); })} />
             <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           </>;
-  return <div className="open-ena-page" data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
+  return <div className="open-ena-page" lang={locale} data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
     <OpenEnaFallbackNotice locale={locale} />
     {cloudControls}
     <section id="open-ena-workspace" tabIndex={-1} className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} data-skip-label={workspaceCopy.landmarks.skipToWorkspace} aria-busy={sourceBusy || modelState.runStatus === "running"}>
@@ -1644,7 +1657,13 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post" onSubmit={submitOpenEnaLogoutAsDocumentRequest}><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-11 4 4-4 4m-5-4h9" /></svg><span>{authCopy.signOut}</span></button></form>
           <span className="sr-only">{cloudBridge ? cloudCopy.runtimePrivacy.replace("{version}", JENA_RUNTIME_VERSION) : workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span>
         </nav>
-        <aside className="ena-control-panel" data-ena-workbench-region="controls" data-ena-rail-panel={mode} role="region" aria-label={workspaceCopy.landmarks[mode]} onKeyDown={onRailPanelKeyDown}><OpenEnaPersistentRailPanels mode={mode} analysisPanel={analysisPanel} aiPanel={aiPanel} /></aside>
+        <aside className="ena-control-panel" data-ena-workbench-region="controls" data-ena-rail-panel={mode} role="region" aria-label={workspaceCopy.landmarks[mode]} onKeyDown={onRailPanelKeyDown}>
+          {onLocaleChange && <label className="ena-workspace-language"><span>{locale === "zh-hans" ? "语言" : locale === "zh-hant" ? "語言" : "Language"}</span>
+            <select data-testid="open-ena-workspace-language" value={locale} onChange={(event) => onLocaleChange(event.currentTarget.value as Locale)}>
+              <option value="en">English</option><option value="zh-hans">简体中文</option><option value="zh-hant">繁體中文</option>
+            </select>
+          </label>}
+          <OpenEnaPersistentRailPanels mode={mode} analysisPanel={analysisPanel} aiPanel={aiPanel} /></aside>
         <div className="ena-visual-workspace" data-ena-view={view} data-testid="open-ena-center-surface">
           <div className={`ena-visual-toolbar${view === "2d" && contrast ? " ena-visual-toolbar-group-contrast" : ""}`}><div><p>{copy.workspace.comparison}</p><span>{dataset?.name ?? workspaceCopy.toolbar.researchSpace}</span></div>
           <div className="ena-visual-toolbar-actions"><button type="button" data-testid="open-ena-data-view-toggle" disabled={!result} aria-pressed={centerSurface === "data"} aria-label={centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnAriaLabel : workspaceCopy.dataView.returnAriaLabel) : workspaceCopy.toolbar.dataView} onClick={() => setCenterSurface((value) => value === "plot" ? "data" : "plot")}>{centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnLabel : workspaceCopy.dataView.returnLabel) : workspaceCopy.toolbar.dataView}</button>

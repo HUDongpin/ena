@@ -542,9 +542,10 @@ try {
       const consent = document.querySelector(".ena-ai-consent input");
       return consent instanceof HTMLInputElement
         && !consent.disabled
-        && document.activeElement === consent
+        && !consent.checked
+        && document.activeElement === document.querySelector(".ena-ai-result h4")
         && panel?.contains(document.activeElement)
-        && !document.querySelector(".ena-ai-result");
+        && document.querySelector("[data-ena-ai-record-state=stale]");
     });
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(await focusDiagnostic(replacedFocus.page))}`);
@@ -555,9 +556,9 @@ try {
     "invalidating a focused result must not drop focus on the document body",
   );
   assert.equal(
-    await replacedFocus.page.evaluate(() => document.activeElement === document.querySelector(".ena-ai-consent input")),
+    await replacedFocus.page.evaluate(() => document.activeElement === document.querySelector(".ena-ai-result h4")),
     true,
-    "a replaced request must move focus to the consent control when Generate is disabled",
+    "a changed request keeps focus on the retained interpretation while consent is revoked",
   );
   assert.deepEqual(replacedFocus.errors, []);
   await replacedFocus.page.close();
@@ -567,9 +568,9 @@ try {
   try {
     await removedFocus.page.waitForFunction(() => {
       const panel = document.querySelector(".ena-ai-interpretation");
-      return document.activeElement === panel
-        && panel?.getAttribute("tabindex") === "-1"
-        && !document.querySelector(".ena-ai-result");
+      return document.activeElement === document.querySelector(".ena-ai-result h4")
+        && panel?.contains(document.activeElement)
+        && document.querySelector("[data-ena-ai-record-state=stale]");
     });
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : String(error)}\n${JSON.stringify(await focusDiagnostic(removedFocus.page))}`);
@@ -590,7 +591,7 @@ try {
   const outsideIdentity = await openKeyboardSuccessPage();
   await outsideIdentity.page.locator("#outside-panel").focus();
   await outsideIdentity.page.evaluate(() => { window.__setAiRequest(); });
-  await outsideIdentity.page.waitForFunction(() => !document.querySelector(".ena-ai-result"));
+  await outsideIdentity.page.waitForFunction(() => document.querySelector("[data-ena-ai-record-state=stale]"));
   assert.equal(
     await outsideIdentity.page.evaluate(() => document.activeElement?.id),
     "outside-panel",

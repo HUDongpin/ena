@@ -11,19 +11,22 @@ import {
   OPEN_ENA_AI_SETTLED_RETRY_HEADER,
   parseOpenEnaAiInterpretationResponse,
   type OpenEnaAiInterpretationRequest,
-  type OpenEnaAiInterpretationResponse,
 } from "@/lib/open-ena/ai-interpretation";
 import { openEnaAiOperationScope, openEnaAiOperationStore } from "@/lib/open-ena/ai-operation-storage";
 import { OPEN_ENA_AI_OWNER_HEADER, OPEN_ENA_AI_OWNER_KEY } from "@/lib/open-ena/ai-operation-owner";
 import { openEnaAiReviewedRequestIdentityV3 } from "@/lib/open-ena/workspace-consumer-authority-v3";
 import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
-import type { SavedOpenEnaAiInterpretation, OpenEnaAiAuditReceipt } from "@/lib/open-ena/cloud-workspace-extras";
-import OpenEnaSavedAiInterpretation from "./OpenEnaSavedAiInterpretation";
+import type { SavedOpenEnaAiInterpretation } from "@/lib/open-ena/cloud-workspace-extras";
+import { getLocaleMeta, type Locale } from "@/lib/i18n";
+import { canonicalJsonV3 } from "@/lib/open-ena/model-v3/canonical-json";
 
 interface OpenEnaAiInterpretationProps {
+  locale?: Locale;
   /** Full native binding/context remains local and participates in consent,
    * cancellation and response adoption. It is never sent to the provider. */
   localScientificIdentity?: string | null;
+  /** An edit since restoration is known even when that edit removes the current review. */
+  historicalEvidenceInvalidated?: boolean;
   operationOwnerKey?: string | null;
   request: OpenEnaAiInterpretationRequest | null;
   copy: OpenEnaAiInterpretationCopy;
@@ -32,12 +35,10 @@ interface OpenEnaAiInterpretationProps {
   providerDescriptor?: { provider: string; model: string };
   showHeading?: boolean;
   onLocalWorkChange?: (hasWork: boolean) => void;
-  onInterpretationChange?: (value: SavedOpenEnaAiInterpretation) => void;
+  onInterpretationChange?: (value: SavedOpenEnaAiInterpretation | null) => void;
   savedInterpretation?: SavedOpenEnaAiInterpretation | null;
   savedInterpretationNote?: string;
 }
-
-type AiAuditReceiptView = OpenEnaAiAuditReceipt;
 
 type GenerationStatus = "idle" | "loading";
 
@@ -171,14 +172,79 @@ export async function executeOpenEnaAiGeneration<T>({
   }
 }
 
+/** Compare readable native provenance only; this never reconstructs inference,
+ * consent or retry authority from a saved record. Opaque legacy identities remain unknown. */
+export function openEnaAiSavedWorkspaceEvidenceChanged({ record, result, comparisonContext }: {
+  record: SavedOpenEnaAiInterpretation | null;
+  result: { binding: unknown; configuration: unknown; createdAt: string } | null;
+  comparisonContext: unknown;
+}): boolean {
+  if (!record) return false;
+  const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
+  const selection = (value: unknown) => {
+    if (!object(value) || !Array.isArray(value.axes)) return null;
+    if (Object.hasOwn(value, "request")) return { axes: value.axes, request: value.request };
+    if (Object.hasOwn(value, "primaryGroup") && Object.hasOwn(value, "secondaryGroup")) {
+      return { axes: value.axes, primaryGroup: value.primaryGroup, secondaryGroup: value.secondaryGroup };
+    }
+    return null;
+  };
+  try {
+    const original: unknown = JSON.parse(record.localScientificIdentity);
+    if (!object(original) || !object(original.binding) || !object(original.configuration)) return false;
+    const originalSelection = selection(original.context);
+    if (!originalSelection) return false;
+    const originalBindingKey = canonicalJsonV3(original.binding);
+    const originalConfigurationKey = canonicalJsonV3(original.configuration);
+    const originalSelectionKey = canonicalJsonV3(originalSelection);
+    if (!result || originalBindingKey !== canonicalJsonV3(result.binding)
+      || originalConfigurationKey !== canonicalJsonV3(result.configuration)
+      || record.request.binding.analyzedAt !== result.createdAt) return true;
+    // Identity confirmation is intentionally not restored. Typed groups, periods,
+    // design and axes still describe the saved comparison without granting authority.
+    return originalSelectionKey !== canonicalJsonV3(selection(comparisonContext));
+  } catch {
+    // The historical reader also admits opaque/noncanonical source identities.
+    // They remain readable history and cannot establish either mismatch or authority.
+    return false;
+  }
+}
+
+/** Readability is independent from the authority to send a new request. */
+export function openEnaAiCompletedRecordStatus({ record, historical, request, localScientificIdentity, locale, historicalEvidenceInvalidated = false }: {
+  record: SavedOpenEnaAiInterpretation;
+  historical: boolean;
+  historicalEvidenceInvalidated?: boolean;
+  request: OpenEnaAiInterpretationRequest | null;
+  localScientificIdentity: string | null;
+  locale: Locale;
+}) {
+  const originalIdentity = openEnaAiReviewedRequestIdentityV3({ localScientificIdentity: record.localScientificIdentity || null, request: record.request });
+  const currentIdentity = openEnaAiReviewedRequestIdentityV3({ localScientificIdentity,
+    request: request ? { ...request, locale: record.request.locale } : null });
+  // A cloud restore may not have a fresh review yet; missing evidence cannot prove a change.
+  const scienceChanged = (historical && historicalEvidenceInvalidated)
+    || (request === null ? !historical : originalIdentity !== currentIdentity);
+  return { state: historical ? "historical" as const : scienceChanged ? "stale" as const : "current" as const,
+    scienceChanged, languageMismatch: record.request.locale !== locale };
+}
+
+export function openEnaAiRetryAfter(value: string | null, now = Date.now()): number {
+  if (!value || /^-/.test(value.trim())) return 0;
+  const seconds = /^\d+$/.test(value.trim()) ? Number(value) : null;
+  const deadline = seconds === null ? Date.parse(value) : now + seconds * 1000;
+  return Number.isFinite(deadline) && deadline > now ? deadline : 0;
+}
+
 export default function OpenEnaAiInterpretation({
+  locale: selectedLocale,
   localScientificIdentity = null,
+  historicalEvidenceInvalidated = false,
   operationOwnerKey = null,
   request,
   copy,
   disabled,
   disabledReason,
-  providerDescriptor = { provider: "DeepSeek", model: "server-configured model" },
   showHeading = true,
   onLocalWorkChange,
   onInterpretationChange,
@@ -187,12 +253,16 @@ export default function OpenEnaAiInterpretation({
 }: OpenEnaAiInterpretationProps) {
   const [consentedRequestIdentity, setConsentedRequestIdentity] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>("idle");
-  const [aiResponse, setAiResponse] = useState<OpenEnaAiInterpretationResponse | null>(null);
-  const [aiResponseRequestIdentity, setAiResponseRequestIdentity] = useState<string | null>(null);
+  // A restored record is readable history; it carries no consent or operation authority.
+  const [completedRecord, setCompletedRecord] = useState<{ value: SavedOpenEnaAiInterpretation; historical: boolean } | null>(
+    () => savedInterpretation ? { value: savedInterpretation, historical: true } : null,
+  );
+  const [retryAfter, setRetryAfter] = useState(0);
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  const locale = selectedLocale ?? request?.locale ?? "en";
   const [aiError, setAiError] = useState("");
   const [aiRecovery, setAiRecovery] = useState<OpenEnaAiFailureRecovery>("retry");
   const [aiFailureClass, setAiFailureClass] = useState<OpenEnaAiFailureClass | null>(null);
-  const [auditReceipt, setAuditReceipt] = useState<AiAuditReceiptView | null>(null);
   const newGenerationNoticeId = useId();
   const abortControllerRef = useRef<AbortController | null>(null);
   const generationGateRef = useRef({ inFlight: false });
@@ -215,24 +285,42 @@ export default function OpenEnaAiInterpretation({
     request,
   });
   const owner = operationOwnerKey && OPEN_ENA_AI_OWNER_KEY.test(operationOwnerKey) ? operationOwnerKey : null;
-  const requestIdentity = owner && reviewedIdentity ? `${owner}:${reviewedIdentity}` : null;
+  const requestIdentity = owner && reviewedIdentity ? `${owner}:${locale}:${reviewedIdentity}` : null;
   const currentRequestIdentityRef = useRef(requestIdentity);
   currentRequestIdentityRef.current = requestIdentity;
   const operationScope = useMemo(() => request && owner ? openEnaAiOperationScope(request, owner) : null, [request, owner, requestIdentity]);
   const operationStorageKey = operationScope?.key ?? null;
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
-  const currentResponse = aiResponse && aiResponseRequestIdentity === requestIdentity ? aiResponse : null;
+  const currentResponse = completedRecord?.value.response ?? null;
+  const auditReceipt = completedRecord?.value.auditReceipt ?? null;
+  const completedStatus = useMemo(() => completedRecord ? openEnaAiCompletedRecordStatus({ record: completedRecord.value,
+    historical: completedRecord.historical, request, localScientificIdentity, locale, historicalEvidenceInvalidated }) : null,
+  [completedRecord, request, localScientificIdentity, locale, historicalEvidenceInvalidated]);
+  const requestLanguageReady = Boolean(request && request.locale === locale);
   useLayoutEffect(() => { onLocalWorkChange?.(generationStatus === "loading"); }, [generationStatus, onLocalWorkChange]);
   const showsRetainedInterpretation = currentResponse !== null;
-  // Sample while the previous result is still mounted. currentResponse drops
-  // during render, so the focused heading is gone before an effect can see it.
+  // Sample panel focus before controls change so restoration stays local.
   if (typeof document !== "undefined" && panelRef.current) {
     focusInsideBeforeCommitRef.current = focusInsidePanel(panelRef.current);
   }
 
   useEffect(() => {
-    setSignInHref(`${window.location.pathname}${window.location.search}`);
-  }, []);
+    const pathname = window.location.pathname.replace(/^\/(en|zh-hans|zh-hant)(?=\/open-ena(?:\/|$))/, `/${locale}`);
+    setSignInHref(`${pathname}${window.location.search}`);
+  }, [locale]);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((retryAfter - Date.now()) / 1000));
+      setRetrySeconds(remaining);
+      if (remaining === 0 && timer !== undefined) window.clearInterval(timer);
+    };
+    update();
+    if (retryAfter <= Date.now()) return;
+    timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [retryAfter]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -282,12 +370,9 @@ export default function OpenEnaAiInterpretation({
     const restoredOperation = operationScope ? openEnaAiOperationStore.read(operationScope) : null;
     const restoredSettlement = Boolean(operationScope && restoredOperation
       && openEnaAiOperationStore.hasSettledRetry(operationScope, restoredOperation));
-    setAiResponse(null);
-    setAiResponseRequestIdentity(null);
     setAiError(restoredSettlement ? copy.operationAlreadyProcessed : "");
     setAiRecovery(restoredSettlement ? "new-generation" : "retry");
     setAiFailureClass(null);
-    setAuditReceipt(null);
     setGenerationStatus("idle");
     setConsentedRequestIdentity(null);
   }, [operationStorageKey, requestIdentity, copy.operationAlreadyProcessed]);
@@ -339,8 +424,8 @@ export default function OpenEnaAiInterpretation({
   }, [generationStatus, aiError, aiRecovery]);
 
   async function handleGenerateInterpretation(mode: "current" | "new-generation" = "current") {
-    if (!request || !owner || !operationScope || disabled || !consentGranted || generationStatus === "loading") return;
-    if (mode === "current" && aiError && (aiRecovery === "new-generation" || aiRecovery === "local-only")) return;
+    if (!request || !owner || !operationScope || !requestLanguageReady || disabled || !consentGranted || generationStatus === "loading" || Date.now() < retryAfter) return;
+    if (mode === "current" && aiError && aiRecovery !== "retry") return;
     const requestedIdentity = requestIdentity;
     const requestedOperationScope = operationScope;
     if (!requestedIdentity || consentedRequestIdentity !== requestedIdentity) return;
@@ -436,6 +521,7 @@ export default function OpenEnaAiInterpretation({
             const visibleMessage = openEnaAiVisibleServerMessage(response.status, payloadMessage, copy.operationAlreadyProcessed);
             const safeMessage = recovery === "sign-in" ? copy.sessionRecovery : openEnaAiFailureClassMessage(copy, failureClass, visibleMessage);
             if (!isStaleGeneration()) {
+              if (response.status === 429) setRetryAfter(openEnaAiRetryAfter(response.headers.get("Retry-After")));
               setAiRecovery(recovery);
               setAiFailureClass(failureClass);
             }
@@ -478,10 +564,9 @@ export default function OpenEnaAiInterpretation({
         onSuccess: ({ parsed, receipt }) => {
           if (restoreFocusRef.current) focusRestoreTargetRef.current = "result";
           clearOperation();
-          setAiResponse(parsed);
-          setAiResponseRequestIdentity(requestedIdentity);
-          setAuditReceipt(receipt);
-          if (localScientificIdentity) onInterpretationChange?.({ request, response: parsed, localScientificIdentity, auditReceipt: receipt });
+          const value = { request, response: parsed, localScientificIdentity: localScientificIdentity ?? "", auditReceipt: receipt };
+          setCompletedRecord({ value, historical: false });
+          if (localScientificIdentity) onInterpretationChange?.(value);
         },
         onError: setAiError,
         onSettled: releaseThisGeneration,
@@ -527,8 +612,7 @@ export default function OpenEnaAiInterpretation({
         <span>{copy.notStatisticalInference}</span>
       </aside>
 
-      {!currentResponse && savedInterpretation ? <OpenEnaSavedAiInterpretation value={savedInterpretation} copy={copy} note={savedInterpretationNote} /> : null}
-      {request ? (
+      {requestLanguageReady ? (
         <details className="ena-ai-payload-preview" data-ena-ai-payload-preview="reviewed-aggregate">
           <summary>{copy.previewTitle}</summary>
           <p>{copy.previewHint}</p>
@@ -543,7 +627,7 @@ export default function OpenEnaAiInterpretation({
           ref={consentControlRef}
           type="checkbox"
           checked={consentGranted}
-          disabled={disabled || !request || !owner || generationStatus === "loading"}
+          disabled={disabled || !requestLanguageReady || !owner || generationStatus === "loading"}
           onChange={(event) => setConsentedRequestIdentity(
             event.currentTarget.checked ? requestIdentity : null,
           )}
@@ -556,8 +640,8 @@ export default function OpenEnaAiInterpretation({
           ref={generateButtonRef}
           type="button"
           className="ena-action-button ena-action-primary"
-          disabled={disabled || !request || !consentGranted || generationStatus === "loading"
-            || Boolean(aiError && (aiRecovery === "new-generation" || aiRecovery === "local-only"))}
+          disabled={disabled || !requestLanguageReady || !consentGranted || generationStatus === "loading" || retrySeconds > 0
+            || Boolean(aiError && aiRecovery !== "retry")}
           onClick={() => { void handleGenerateInterpretation(); }}
         >
           {generationStatus === "loading" ? copy.generating : copy.generate}
@@ -574,6 +658,8 @@ export default function OpenEnaAiInterpretation({
         ) : null}
       </div>
 
+      {retrySeconds > 0 && <p role="status" data-ena-ai-retry-after>{copy.retryAfter.replace("{seconds}", String(retrySeconds))}</p>}
+
       {aiError ? (
         <div
           className="ena-ai-error"
@@ -584,7 +670,7 @@ export default function OpenEnaAiInterpretation({
           <strong>{copy.errorTitle}</strong>
           <p>{aiError}</p>
           {showsRetainedInterpretation ? (
-            <p data-ena-ai-evidence-boundary="previous-interpretation-retained">{copy.evidenceBoundaryRetained}</p>
+            <p data-ena-ai-evidence-boundary="previous-interpretation-retained">{completedStatus?.scienceChanged ? copy.recordScienceChanged : completedRecord?.historical ? copy.recordHistorical : copy.evidenceBoundaryRetained}</p>
           ) : (
             <p data-ena-ai-evidence-boundary="results-remain-valid">{copy.evidenceBoundary}</p>
           )}
@@ -611,7 +697,7 @@ export default function OpenEnaAiInterpretation({
                 className="ena-inline-link"
                 data-ena-ai-recovery="new-generation"
                 aria-describedby={newGenerationNoticeId}
-                disabled={disabled || !request || !consentGranted || generationStatus === "loading"}
+                disabled={disabled || !requestLanguageReady || !consentGranted || generationStatus === "loading" || retrySeconds > 0}
                 onClick={() => { void handleGenerateInterpretation("new-generation"); }}
               >
                 {copy.generateNew}
@@ -625,7 +711,7 @@ export default function OpenEnaAiInterpretation({
               type="button"
               className="ena-inline-link"
               data-ena-ai-recovery="retry"
-              disabled={generationStatus === "loading"}
+              disabled={disabled || !requestLanguageReady || !consentGranted || generationStatus === "loading" || retrySeconds > 0}
               onClick={() => { void handleGenerateInterpretation(); }}
             >
               {copy.retry}
@@ -634,14 +720,22 @@ export default function OpenEnaAiInterpretation({
         </div>
       ) : null}
 
-      {currentResponse ? (
-        <article className="ena-ai-result" aria-live="polite">
+      {currentResponse && completedRecord && completedStatus ? (
+        <article className="ena-ai-result" aria-live="polite" data-ena-ai-record-state={completedStatus.state}
+          data-testid={completedRecord.historical ? "open-ena-saved-ai-interpretation" : undefined}>
+          <div className="ena-ai-record-status">
+            <p>{completedRecord.historical ? savedInterpretationNote || copy.recordHistorical : completedStatus.scienceChanged ? copy.recordScienceChanged : copy.recordCurrent}</p>
+            {completedRecord.historical && completedStatus.scienceChanged && <p>{copy.recordScienceChanged}</p>}
+            {completedStatus.languageMismatch && <p data-ena-ai-language-mismatch>{copy.recordLanguageMismatch}</p>}
+            <button type="button" className="ena-inline-link" data-ena-ai-clear disabled={generationStatus === "loading"}
+              onClick={() => { setCompletedRecord(null); onInterpretationChange?.(null); }}>{copy.clear}</button>
+          </div>
           {aiError ? (
             <p data-ena-ai-retained-interpretation="previous">{copy.previousInterpretation}</p>
           ) : null}
           <section>
             <h4 ref={interpretationHeadingRef} tabIndex={-1}>{copy.observedPatterns}</h4>
-            <ol>
+            <ol lang={getLocaleMeta(completedRecord.value.request.locale).htmlLang}>
               {currentResponse.interpretation.observedPatterns.map((observation) => (
                 <li key={`${observation.statement}-${observation.evidenceRefs.join("-")}`}>
                   <p>{observation.statement}</p>
@@ -652,7 +746,7 @@ export default function OpenEnaAiInterpretation({
           </section>
           <section>
             <h4>{copy.contextualQuestions}</h4>
-            <ul>
+            <ul lang={getLocaleMeta(completedRecord.value.request.locale).htmlLang}>
               {currentResponse.interpretation.contextualQuestions.map((question) => (
                 <li key={question}>{question}</li>
               ))}
@@ -660,13 +754,14 @@ export default function OpenEnaAiInterpretation({
           </section>
           <section>
             <h4>{copy.limitations}</h4>
-            <ul>
+            <ul lang={getLocaleMeta(completedRecord.value.request.locale).htmlLang}>
               {currentResponse.interpretation.limitations.map((limitation) => (
                 <li key={limitation}>{limitation}</li>
               ))}
             </ul>
           </section>
           <dl className="ena-ai-provenance" data-ena-ai-provenance="true">
+            <div><dt>{copy.originalLanguage}</dt><dd>{getLocaleMeta(completedRecord.value.request.locale).label}</dd></div>
             <div><dt>{copy.provider}</dt><dd>{currentResponse.provider}</dd></div>
             <div><dt>{copy.model}</dt><dd>{currentResponse.model}</dd></div>
             <div><dt>{copy.generatedAt}</dt><dd>{currentResponse.generatedAt}</dd></div>
@@ -681,11 +776,14 @@ export default function OpenEnaAiInterpretation({
                   <span>{copy.consentPolicyVersion}: {auditReceipt.consentPolicyVersion}</span>
                   <span>{copy.recordedAt}: {auditReceipt.recordedAt}</span>
                   <span>{copy.durable}: {auditReceipt.durable}</span>
-                  <span>{copy.provider}: {auditReceipt.provider || providerDescriptor.provider}; {copy.model}: {auditReceipt.model || providerDescriptor.model}</span>
+                  <span>{copy.provider}: {auditReceipt.provider || currentResponse.provider}; {copy.model}: {auditReceipt.model || currentResponse.model}</span>
                 </dd>
               </div>
             ) : null}
           </dl>
+          <details className="ena-ai-payload-preview" data-ena-ai-payload-preview="saved-aggregate">
+            <summary>{copy.previewTitle}</summary><pre>{JSON.stringify(completedRecord.value.request, null, 2)}</pre>
+          </details>
         </article>
       ) : null}
     </section>
