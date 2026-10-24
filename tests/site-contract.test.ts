@@ -77,7 +77,7 @@ const expectedLocalizedHomeCopy = {
 
 test("the canonical ENA identity is consistent", () => {
   assert.equal(siteConfig.name, "ENA");
-  assert.equal(siteConfig.brandName, "ENA.HK");
+  assert.equal(siteConfig.brandName, "Open ENA");
   assert.equal(siteConfig.longName, "Epistemic Network Analysis");
   assert.equal(siteConfig.tagline, "Epistemic Network Analysis Hub of Knowledge");
   assert.equal(siteConfig.url, "https://www.ena.hk");

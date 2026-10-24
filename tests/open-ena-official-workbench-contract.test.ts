@@ -25,11 +25,11 @@ function workspaceSegment(startMarker: string, endMarker: string) {
   return workspace.slice(start, end);
 }
 
-test("compact rail retains the ENA mark, Open ENA identity and runtime", () => {
+test("compact rail retains the Open ENA mark, identity and runtime", () => {
 
   const markup = shell();
   assert.equal((markup.match(/data-ena-rail-brand="true"/g) ?? []).length, 1);
-  assert.match(markup, /src="\/ena-mark.svg"/);
+  assert.match(markup, /src="\/unified-home\/logo-open-ena-mark\.svg"/);
   assert.match(markup, />OPEN ENA</);
   assert.match(markup, /data-ena-rail-version="true"/);
 

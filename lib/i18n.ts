@@ -241,7 +241,7 @@ const en: Dictionary = {
     eyebrow: "Mission and method",
     title: "Make relational thinking easier to learn, apply, and discuss.",
     intro:
-      "ENA.HK is designed as a clear public entry point to Epistemic Network Analysis, with accurate concepts, transparent scope, and direct paths to primary resources.",
+      "Open ENA is designed as a clear public entry point to Epistemic Network Analysis, with accurate concepts, transparent scope, and direct paths to primary resources.",
     definitionTitle: "What ENA makes visible",
     definitionText:
       "Epistemic Network Analysis is a method for identifying, quantifying, and visualizing connections among elements in coded data. It supports comparison while keeping interpretation tied to qualitative context.",
@@ -406,7 +406,7 @@ const zhHant: Dictionary = {
   mission: {
     eyebrow: "使命與方法",
     title: "讓關聯思考更容易學習、應用和討論。",
-    intro: "ENA.HK 旨在成為清晰的認知網絡分析公共入口，提供準確概念、透明範圍，以及通往第一手資源的直接路徑。",
+    intro: "Open ENA 旨在成為清晰的認知網絡分析公共入口，提供準確概念、透明範圍，以及通往第一手資源的直接路徑。",
     definitionTitle: "ENA 讓甚麼變得可見",
     definitionText: "認知網絡分析是一種用於識別、量化和視覺化編碼資料中各元素連結的方法。它支援比較，同時讓詮釋與質性脈絡保持連結。",
     modelTitle: "模型始於研究設計",
@@ -533,7 +533,7 @@ const zhHans: Dictionary = {
   mission: {
     eyebrow: "使命与方法",
     title: "让关联思考更容易学习、应用和讨论。",
-    intro: "ENA.HK 旨在成为清晰的认知网络分析公共入口，提供准确概念、透明范围，以及通往第一手资源的直接路径。",
+    intro: "Open ENA 旨在成为清晰的认知网络分析公共入口，提供准确概念、透明范围，以及通往第一手资源的直接路径。",
     definitionTitle: "ENA 让什么变得可见",
     definitionText: "认知网络分析是一种用于识别、量化和可视化编码数据中各元素连接的方法。它支持比较，同时让诠释与质性情境保持连接。",
     modelTitle: "模型始于研究设计",

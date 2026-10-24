@@ -1634,15 +1634,15 @@ export default function OpenEnaWorkspace({ locale, providerDescriptor, operation
     <section id="open-ena-workspace" tabIndex={-1} className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} data-skip-label={workspaceCopy.landmarks.skipToWorkspace} aria-busy={sourceBusy || modelState.runStatus === "running"}>
       <div className="ena-workbench-grid">
         <nav className="ena-tool-rail" aria-label={workspaceCopy.shell.modesAria} data-ena-workbench-region="rail">
-          <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="ENA.HK Open ENA">
-            <span className="ena-mini-mark" aria-hidden="true"><img src="/ena-mark.svg" alt="" /></span><span className="ena-rail-product">OPEN ENA</span>
+          <div className="ena-rail-brand" data-ena-rail-brand="true" aria-label="Open ENA">
+            <span className="ena-mini-mark" aria-hidden="true"><img src="/unified-home/logo-open-ena-mark.svg" alt="" /></span><span className="ena-rail-product">OPEN ENA</span>
             <a className="ena-rail-version" data-ena-rail-version="true" href={JENA_SOURCE_URL} target="_blank" rel="noopener noreferrer"
               aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}>jENA {JENA_RUNTIME_VERSION.split("-", 1)[0]}</a>
           </div>
           <div ref={railToolbarRef} className="ena-rail-modes" role="toolbar" aria-label={workspaceCopy.landmarks.railToolbar} aria-orientation={railOrientation} onKeyDown={onRailToolbarKeyDown}>{OPEN_ENA_RAIL_MODES.map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" tabIndex={railTabStop === entry ? 0 : -1} aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onFocus={() => cancelScheduledRailFocusRestore()} onClick={() => { cancelScheduledRailFocusRestore(); setRailTabStop(entry); setMode(entry); }}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
           <OpenEnaSiteNavigation locale={locale} />
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post" onSubmit={submitOpenEnaLogoutAsDocumentRequest}><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-11 4 4-4 4m-5-4h9" /></svg><span>{authCopy.signOut}</span></button></form>
-          <div className="ena-rail-meta"><span className="ena-rail-privacy">{workspaceCopy.shell.local}</span><span className="sr-only">{cloudBridge ? cloudCopy.runtimePrivacy.replace("{version}", JENA_RUNTIME_VERSION) : workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span></div>
+          <span className="sr-only">{cloudBridge ? cloudCopy.runtimePrivacy.replace("{version}", JENA_RUNTIME_VERSION) : workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span>
         </nav>
         <aside className="ena-control-panel" data-ena-workbench-region="controls" data-ena-rail-panel={mode} role="region" aria-label={workspaceCopy.landmarks[mode]} onKeyDown={onRailPanelKeyDown}><OpenEnaPersistentRailPanels mode={mode} analysisPanel={analysisPanel} aiPanel={aiPanel} /></aside>
         <div className="ena-visual-workspace" data-ena-view={view} data-testid="open-ena-center-surface">

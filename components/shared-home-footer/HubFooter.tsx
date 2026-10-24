@@ -47,7 +47,7 @@ export default function HubFooter({ copy, homeHref, aboutHref, featureBase, comf
         </div>
         <div>
           <h2>{copy.navigation}</h2>
-          <div className="footer-links">
+          <div className="footer-links footer-navigation-links">
             {navItems.map(item => <Link key={item.href} href={item.href} prefetch={false}>{item.label}</Link>)}
           </div>
         </div>
