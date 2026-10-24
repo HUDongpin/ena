@@ -245,6 +245,7 @@ try {
   await operatorPage.goto(`${fixture.origin}/en/plugins/operator`);
   let card = operatorPage.locator(".plugin-operator-card").filter({ hasText: proposalId });
   await card.waitFor();
+  assert.equal(await card.getByRole("button", { name: copy.rotateCode, exact: true }).count(), 0, "Email-based proposals must not offer a legacy code that was never issued");
   async function operatorTransition(to, message = "") {
     await card.locator("select[name=to]").selectOption(to);
     await card.locator("[name=reason]").fill("Synthetic internal reviewer note not visible to researchers.");
@@ -354,6 +355,9 @@ try {
   assert.equal((await http(legacyContext, "/api/plugin-lab/proposals", { method: "POST", data: { schemaVersion: 2 }, headers: { "idempotency-key": randomUUID() } })).status(), 401);
   assert.equal(new URL(legacyPage.url()).search, "");
   await legacyPage.screenshot({ path: join(evidence, "legacy-scoped-status.png"), fullPage: true });
+  await operatorPage.reload();
+  await operatorPage.getByLabel(copy.awaitingOnly, { exact: true }).uncheck();
+  await operatorPage.locator(".plugin-operator-card").filter({ hasText: legacyId }).getByRole("button", { name: copy.rotateCode, exact: true }).waitFor();
   pass("An older ID/access code opens only its proposal without verifying email or exposing credentials in URLs");
 
   for (const locale of ["zh-hans", "zh-hant"]) {
