@@ -4,15 +4,23 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { isLocale } from "@/lib/i18n";
 import { OPEN_ENA_SESSION_COOKIE } from "@/lib/open-ena-auth";
-import { readPluginLabOperatorInbox } from "@/lib/server/plugin-lab-read";
+import { readPluginLabWorkflowOperatorInbox } from "@/lib/server/plugin-lab-workflow-operator";
+import { getPluginWorkflowCopy } from "@/lib/plugin-lab/workflow-i18n";
 import PluginOperatorInbox from "@/components/plugin-lab/PluginOperatorInbox";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "ENA Plugin Lab Operator", robots: { index: false, follow: false } }; // noindex private workflow
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const { locale } = await params;
+  return { title: getPluginWorkflowCopy(isLocale(locale) ? locale : "en").operatorTitle, robots: { index: false, follow: false } };
+}
 
 export default async function PluginOperatorPage({ params }: { params: Promise<{ locale: string }> }) {
-  const { locale } = await params; if (!isLocale(locale)) notFound();
+  const { locale } = await params; if (!isLocale(locale)) notFound(); const copy = getPluginWorkflowCopy(locale);
   const session = (await cookies()).get(OPEN_ENA_SESSION_COOKIE)?.value;
-  const inbox = await readPluginLabOperatorInbox(session);
-  return <div className="container plugin-workflow-page plugin-operator-page"><header><p className="eyebrow">Restricted operator surface</p><h1>Plugin proposal inbox</h1><p>This surface requires Dr. Peter Hu's static Open ENA operator session. Disposable test accounts cannot administer proposals.</p></header>{inbox ? <PluginOperatorInbox records={inbox.records} csrf={inbox.csrf} locale={locale} /> : <aside className="plugin-boundary-note"><strong>Operator access unavailable</strong><p>Sign in to Open ENA with the static operator account, then return here. Invalid, revoked, disposable, or unconfigured sessions fail closed.</p><Link className="button button-secondary" href={`/${locale}/open-ena`}>Open ENA sign in</Link></aside>}</div>;
+  const inbox = await readPluginLabWorkflowOperatorInbox(session, {});
+  return <div className="container plugin-workflow-page plugin-operator-page" lang={copy.fallback ? "en" : undefined} dir={copy.fallback ? "ltr" : undefined}>
+    <header><p className="eyebrow">{copy.operatorEyebrow}</p><h1>{copy.operatorTitle}</h1><p>{copy.operatorIntro}</p></header>
+    {copy.fallback ? <p className="plugin-language-note">{copy.fallbackNotice}</p> : null}
+    {inbox ? <PluginOperatorInbox records={inbox.records} csrf={inbox.csrf} locale={locale} /> : <aside className="plugin-boundary-note"><strong>{copy.operatorUnavailable}</strong><p>{copy.operatorAccessHint}</p><Link className="button button-secondary" href={`/${locale}/open-ena`}>{copy.openSignIn}</Link></aside>}
+  </div>;
 }

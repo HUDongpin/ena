@@ -10,6 +10,7 @@ export type PluginProposalTrack = "academic" | "commissioned" | "unsure";
 export type PluginProposalVisibility = "private" | "public-after-review";
 
 export interface PluginProposalSubmission {
+  schemaVersion?: 2;
   email: string;
   name: string | null;
   affiliation: string | null;
@@ -102,9 +103,12 @@ function assertNoCredentialLikeContent(values: readonly string[]) {
 
 function parseProposalSubmission(value: unknown, representation: "form" | "stored"): PluginProposalSubmission {
   const record = plainRecord(value);
-  const unknown = Object.keys(record).filter((key) => !(SUBMISSION_KEYS as readonly string[]).includes(key));
+  const version2 = record.schemaVersion === 2;
+  if (Object.hasOwn(record, "schemaVersion") && !version2) fail("schemaVersion is unsupported.");
+  const unknown = Object.keys(record).filter((key) => !(SUBMISSION_KEYS as readonly string[]).includes(key) && !(version2 && key === "schemaVersion"));
   if (unknown.length > 0) fail(`submission contains unknown field ${unknown[0]}.`);
-  const missing = SUBMISSION_KEYS.filter((key) => !Object.hasOwn(record, key));
+  const required = version2 ? ["email", "title", "researchQuestion", "proposedChange", "dataSafetyConfirmed", "privacyConsent"] : SUBMISSION_KEYS;
+  const missing = required.filter((key) => !Object.hasOwn(record, key));
   if (missing.length > 0) fail(`submission is missing ${missing[0]}.`);
 
   if (typeof record.email !== "string") fail("email is invalid.");
@@ -114,24 +118,27 @@ function parseProposalSubmission(value: unknown, representation: "form" | "store
   const affiliation = boundedText(record.affiliation, "affiliation", true);
   const title = boundedText(record.title, "title")!;
   const researchQuestion = boundedText(record.researchQuestion, "researchQuestion")!;
-  const currentGap = boundedText(record.currentGap, "currentGap")!;
+  const currentGap = boundedText(record.currentGap, "currentGap", version2) ?? "";
   const proposedChange = boundedText(record.proposedChange, "proposedChange")!;
-  const unchangedBoundary = boundedText(record.unchangedBoundary, "unchangedBoundary")!;
-  const publicSummary = boundedText(record.publicSummary, "publicSummary")!;
-  const privateDetails = boundedText(record.privateDetails, "privateDetails")!;
-  const referenceLinks = safeHttpsLinks(record.referenceLinks, representation);
-  if (record.visibility !== "private" && record.visibility !== "public-after-review") fail("visibility is unsupported.");
-  if (record.track !== "academic" && record.track !== "commissioned" && record.track !== "unsure") fail("track is unsupported.");
+  const unchangedBoundary = boundedText(record.unchangedBoundary, "unchangedBoundary", version2) ?? "";
+  const visibility = version2 && record.visibility === undefined ? "private" : record.visibility;
+  const track = version2 && record.track === undefined ? "unsure" : record.track;
+  const publicSummary = boundedText(record.publicSummary, "publicSummary", version2 && visibility === "private") ?? "";
+  const privateDetails = boundedText(record.privateDetails, "privateDetails", version2) ?? "";
+  const referenceLinks = safeHttpsLinks(version2 && record.referenceLinks === undefined ? (representation === "stored" ? [] : "") : record.referenceLinks, representation);
+  if (visibility !== "private" && visibility !== "public-after-review") fail("visibility is unsupported.");
+  if (track !== "academic" && track !== "commissioned" && track !== "unsure") fail("track is unsupported.");
   const confirmed = representation === "stored" ? true : "yes";
   if (record.dataSafetyConfirmed !== confirmed) fail("the data-safety confirmation is required.");
   if (record.privacyConsent !== confirmed) fail("privacy consent is required.");
   assertNoCredentialLikeContent([title, researchQuestion, currentGap, proposedChange, unchangedBoundary, publicSummary, privateDetails, ...referenceLinks]);
 
   return Object.freeze({
+    ...(version2 ? { schemaVersion: 2 as const } : {}),
     email, name, affiliation, title, researchQuestion, currentGap, proposedChange,
     unchangedBoundary, publicSummary, privateDetails, referenceLinks: Object.freeze(referenceLinks),
-    visibility: record.visibility,
-    track: record.track,
+    visibility,
+    track,
     dataSafetyConfirmed: true as const,
     privacyConsent: true as const,
   });
