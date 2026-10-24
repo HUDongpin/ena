@@ -627,6 +627,14 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   });
   const consumerKeyRef = useRef(consumerKey); consumerKeyRef.current = consumerKey;
   const activeInference = inference?.key === consumerKey && current ? inference.value : null;
+  // A restored AI record has no live review. Compare session science with the
+  // restoration baseline so a real edit is distinguishable from missing review.
+  // Locale, presentation controls and execution-only epochs are deliberately absent.
+  const historicalEvidenceContext = canonicalJsonV3({ datasetSha256: context.datasetSha256, family: context.family,
+    scientificRevision: context.scientificRevision, draftFingerprint: context.draftFingerprint, consumerKey });
+  const restoredAiEvidenceContext = useRef(historicalEvidenceContext);
+  const historicalEvidenceInvalidated = modelState.resultStatus === "stale"
+    || restoredAiEvidenceContext.current !== historicalEvidenceContext || activeInference !== null;
   const trajectoryFrameKey = canonicalJsonV3({ context, binding: result?.binding ?? null, plan: currentPlan?.header.executionPlanSha256 ?? null, current });
   const pathControls: Omit<OpenEnaTrajectoryPathControlsV3, "independentGroupsConfirmed"> | null = isTrajectory && threeDDimensions && primary && secondary && primary.token !== secondary.token
     ? { axes: [threeDDimensions[0], threeDDimensions[1], threeDDimensions[2]], identityConfirmed, primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, horizons: periods, cohortPolicy: "all-period-complete", repetitions: 500, seed: 2026 } : null;
@@ -1617,7 +1625,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
       <div hidden={mode !== "ai"}><OpenEnaAiInterpretation locale={locale} operationOwnerKey={operationOwnerKey} request={activeAiReview?.request ?? null}
         onLocalWorkChange={setAiBusy} onInterpretationChange={setSavedAiInterpretation}
         savedInterpretation={savedAiInterpretation} savedInterpretationNote={copy.aiInterpretation.recordHistorical}
-        localScientificIdentity={openEnaAiLocalScientificIdentityV3(activeAiReview)}
+        localScientificIdentity={openEnaAiLocalScientificIdentityV3(activeAiReview)} historicalEvidenceInvalidated={historicalEvidenceInvalidated}
         copy={copy.aiInterpretation} disabled={!activeAiReview || activeAiReview.request.locale !== locale || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
         {activeAiReview && <details className="ena-panel-details"><summary>{restoredCopy.aiEvidenceScope}</summary><p>{workspaceCopy.ai.wireLimitations}</p></details>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
 </div>;

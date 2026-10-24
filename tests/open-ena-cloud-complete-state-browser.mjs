@@ -147,6 +147,8 @@ try {
   assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false, "saved records do not restore consent");
   assert.equal(await second.getByRole("button", { name: "Generate AI interpretation", exact: true }).isDisabled(), true);
   assert.equal(aiRequests, 1, "opening the other origin must not dispatch AI");
+  const changedEvidenceText = "The source, model, comparison, or statistical evidence has changed. This earlier interpretation is retained for reference and does not describe the current analysis.";
+  assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 0, "restoration without a fresh review does not prove that evidence changed");
   await mkdir(evidenceDir, { recursive: true });
   await second.screenshot({ path: `${evidenceDir}/restored-ai.png`, fullPage: true });
   await second.getByRole("button", { name: "Plot Tools", exact: true }).click();
@@ -190,6 +192,63 @@ try {
   assert.ok(languageBox && languageBox.x >= 0 && languageBox.x + languageBox.width <= 390, "language control fits the narrow viewport");
   await second.screenshot({ path: `${evidenceDir}/retained-ai-mobile.png`, fullPage: true });
   await second.setViewportSize({ width: 1440, height: 1100 });
+  const historicalBaselineText = JSON.stringify(beforeLanguage);
+  await second.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  const plotControls = second.locator(".ena-workspace-plot-v3");
+  await plotControls.getByRole("checkbox", { name: "Points", exact: true }).uncheck();
+  await second.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+  assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 0,
+    "a presentation edit must not label historical scientific evidence changed");
+  await second.getByRole("button", { name: "Plot Tools", exact: true }).click();
+  const primaryGroup = plotControls.getByRole("combobox", { name: "Primary group", exact: true });
+  const currentPrimary = await primaryGroup.inputValue();
+  const otherGroup = await primaryGroup.locator("option").evaluateAll((nodes, current) => nodes.find((node) => node.value && node.value !== current).value, currentPrimary);
+  await primaryGroup.selectOption(otherGroup);
+  await second.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+  assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,
+    "changing the scientific comparison must label the restored AI evidence changed");
+  assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
+  await second.evaluate((text) => window.cloudOpen(text), historicalBaselineText);
+  await second.getByRole("button", { name: "Stats & Export", exact: true }).click();
+  await second.getByRole("button", { name: "Run confirmed inference", exact: true }).click();
+  await second.waitForFunction(() => !document.querySelector(".ena-ai-consent input").disabled);
+  await second.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+  assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,
+    "newly confirmed statistics must label the restored evidence changed without restoring consent");
+  assert.equal(await second.locator("[data-ena-ai-record-state=historical]").count(), 1);
+  assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
+  assert.equal(aiRequests, 1);
+  await second.evaluate((text) => window.cloudOpen(text), historicalBaselineText);
+  // Regression: a restored record must gain a changed-evidence explanation after a real model edit.
+  await second.getByRole("button", { name: "Model", exact: true }).click();
+  await second.getByRole("tab", { name: /Codes,/ }).click();
+  await second.getByRole("button", { name: "Exclude all selected Codes", exact: true }).click();
+  await second.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]').dataset.resultStatus === "stale");
+  await second.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
+  assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,
+    "a real model edit must add the stale-evidence explanation to a historical record");
+  assert.equal(await second.locator("[data-ena-ai-record-state=historical]").count(), 1);
+  assert.equal(await second.getByText("Cloud-restored synthetic AI interpretation.", { exact: true }).count(), 1);
+  assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
+  assert.equal(await second.getByRole("button", { name: "Generate AI interpretation", exact: true }).isDisabled(), true);
+  assert.equal(aiRequests, 1, "model editing must not generate AI automatically");
+  const changedEvidenceByLocale = {
+    "zh-hans": "数据来源、模型、比较或统计证据已改变。此先前解读保留供参考，不代表当前分析。",
+    "zh-hant": "資料來源、模型、比較或統計證據已改變。此先前解讀保留供參考，不代表目前分析。",
+    en: changedEvidenceText,
+  };
+  for (const locale of ["zh-hans", "zh-hant", "en"]) {
+    await second.getByTestId("open-ena-workspace-language").selectOption(locale);
+    assert.equal(await second.getByText(changedEvidenceByLocale[locale], { exact: true }).count(), 1);
+    assert.equal(await second.getByText("Cloud-restored synthetic AI interpretation.", { exact: true }).count(), 1);
+    assert.equal(await second.locator(".ena-ai-consent input").isChecked(), false);
+  }
+  await second.screenshot({ path: `${evidenceDir}/historical-ai-after-model-edit.png`, fullPage: true });
+  const staleHistoricalText = await second.evaluate(() => window.cloudSave());
+  await second.evaluate((text) => window.cloudOpen(text), staleHistoricalText);
+  await second.getByText("Cloud-restored synthetic AI interpretation.", { exact: true }).waitFor();
+  assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,
+    "the saved workspace's explicit stale result must preserve the explanation after reopening");
   const changesBeforeClear = await second.evaluate(() => window.cloudChanges);
   const beforeClear = JSON.parse(await second.evaluate(() => window.cloudSave()));
   await second.locator("[data-ena-ai-clear]").click();
@@ -212,7 +271,7 @@ try {
     syntheticAiRequests: aiRequests, restoredAnalysisRuns: await second.evaluate(() => window.jobs.length),
     comparisonSets: resaved.analysisSets.length, historicalImports: resaved.historicalImports.length,
     aiRoundTrip: true, comparisonRoundTrip: true, originalImportBytesRoundTrip: true, resave: true,
-    consentRestored: false, browserOnlyWarningAfterCompletedSave: false, pendingAiSaveBlocked: true, pendingSetSaveBlocked: true, removalPersisted: true, aiClearPersisted: true, localeRetainsAllSavedState: true };
+    consentRestored: false, browserOnlyWarningAfterCompletedSave: false, pendingAiSaveBlocked: true, pendingSetSaveBlocked: true, removalPersisted: true, aiClearPersisted: true, localeRetainsAllSavedState: true, historicalModelEditExplained: true, historicalComparisonEditExplained: true, historicalStatisticsEditExplained: true, historicalPresentationUnchanged: true, historicalStaleReopenExplained: true };
   await writeFile(`${evidenceDir}/receipt.json`, JSON.stringify(receipt, null, 2) + "\n");
   console.log(JSON.stringify(receipt));
 } finally { releaseAi?.(); await browser.close(); }

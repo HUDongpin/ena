@@ -24,6 +24,8 @@ interface OpenEnaAiInterpretationProps {
   /** Full native binding/context remains local and participates in consent,
    * cancellation and response adoption. It is never sent to the provider. */
   localScientificIdentity?: string | null;
+  /** An edit since restoration is known even when that edit removes the current review. */
+  historicalEvidenceInvalidated?: boolean;
   operationOwnerKey?: string | null;
   request: OpenEnaAiInterpretationRequest | null;
   copy: OpenEnaAiInterpretationCopy;
@@ -170,9 +172,10 @@ export async function executeOpenEnaAiGeneration<T>({
 }
 
 /** Readability is independent from the authority to send a new request. */
-export function openEnaAiCompletedRecordStatus({ record, historical, request, localScientificIdentity, locale }: {
+export function openEnaAiCompletedRecordStatus({ record, historical, request, localScientificIdentity, locale, historicalEvidenceInvalidated = false }: {
   record: SavedOpenEnaAiInterpretation;
   historical: boolean;
+  historicalEvidenceInvalidated?: boolean;
   request: OpenEnaAiInterpretationRequest | null;
   localScientificIdentity: string | null;
   locale: Locale;
@@ -181,7 +184,8 @@ export function openEnaAiCompletedRecordStatus({ record, historical, request, lo
   const currentIdentity = openEnaAiReviewedRequestIdentityV3({ localScientificIdentity,
     request: request ? { ...request, locale: record.request.locale } : null });
   // A cloud restore may not have a fresh review yet; missing evidence cannot prove a change.
-  const scienceChanged = request === null ? !historical : originalIdentity !== currentIdentity;
+  const scienceChanged = (historical && historicalEvidenceInvalidated)
+    || (request === null ? !historical : originalIdentity !== currentIdentity);
   return { state: historical ? "historical" as const : scienceChanged ? "stale" as const : "current" as const,
     scienceChanged, languageMismatch: record.request.locale !== locale };
 }
@@ -196,6 +200,7 @@ export function openEnaAiRetryAfter(value: string | null, now = Date.now()): num
 export default function OpenEnaAiInterpretation({
   locale: selectedLocale,
   localScientificIdentity = null,
+  historicalEvidenceInvalidated = false,
   operationOwnerKey = null,
   request,
   copy,
@@ -250,8 +255,8 @@ export default function OpenEnaAiInterpretation({
   const currentResponse = completedRecord?.value.response ?? null;
   const auditReceipt = completedRecord?.value.auditReceipt ?? null;
   const completedStatus = useMemo(() => completedRecord ? openEnaAiCompletedRecordStatus({ record: completedRecord.value,
-    historical: completedRecord.historical, request, localScientificIdentity, locale }) : null,
-  [completedRecord, request, localScientificIdentity, locale]);
+    historical: completedRecord.historical, request, localScientificIdentity, locale, historicalEvidenceInvalidated }) : null,
+  [completedRecord, request, localScientificIdentity, locale, historicalEvidenceInvalidated]);
   const requestLanguageReady = Boolean(request && request.locale === locale);
   useLayoutEffect(() => { onLocalWorkChange?.(generationStatus === "loading"); }, [generationStatus, onLocalWorkChange]);
   const showsRetainedInterpretation = currentResponse !== null;

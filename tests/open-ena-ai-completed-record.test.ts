@@ -45,6 +45,15 @@ test("restored records remain historical even with exactly matching evidence", (
   assert.equal(status({ historical: true, request: null, localScientificIdentity: null }).scienceChanged, false, "absence of current review does not prove the restored science changed");
   assert.equal(status({ historical: true, localScientificIdentity: "changed" }).state, "historical");
 });
+test("known workspace invalidation labels a restored record without granting current authority", () => {
+  assert.deepEqual(status({ historical: true, request: null, localScientificIdentity: null, historicalEvidenceInvalidated: true }), {
+    state: "historical", scienceChanged: true, languageMismatch: false,
+  });
+  assert.equal(status({ historical: true, historicalEvidenceInvalidated: true }).scienceChanged, true,
+    "known edits remain visible while a matching old preview is still present");
+  assert.equal(status({ historicalEvidenceInvalidated: true }).scienceChanged, false,
+    "a new successful live record is judged against its own evidence, not the restoration baseline");
+});
 test("completed record status, clearing and rate-limit wait have localized text", () => {
   for (const locale of ["en", "zh-hans", "zh-hant"] as const) {
     const copy = getOpenEnaCopy(locale).aiInterpretation as unknown as Record<string, string>;
