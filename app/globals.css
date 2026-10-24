@@ -14739,16 +14739,16 @@ html:has(.open-ena-page) {
   flex: 0 0 auto;
   gap: 8px;
   padding: 8px 18px;
-  border-bottom: 1px solid #d5dfde;
+  border-bottom: 1px solid var(--line-strong);
   font-size: 12px;
 }
 .ena-workspace-language select {
   max-width: 160px;
   min-height: 30px;
-  border: 1px solid #829692;
+  border: 1px solid var(--faint);
   border-radius: 3px;
   background: #fff;
-  color: #243d37;
+  color: var(--ink);
   font: inherit;
 }
 .ena-control-panel:has(> .ena-workspace-language) > .ena-persistent-analysis-panel,
@@ -14759,8 +14759,8 @@ html:has(.open-ena-page) {
 }
 .ena-ai-record-status {
   padding: 10px 12px;
-  border-inline-start: 3px solid #418476;
-  background: #f0f6f4;
+  border-inline-start: 3px solid var(--accent-strong);
+  background: var(--accent-soft);
 }
 .ena-ai-result[data-ena-ai-record-state="stale"] .ena-ai-record-status,
 .ena-ai-result[data-ena-ai-record-state="historical"] .ena-ai-record-status {
