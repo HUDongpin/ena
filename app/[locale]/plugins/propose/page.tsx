@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import PluginProposalForm from "@/components/plugin-lab/PluginProposalForm";
-import { isLocale, type Locale } from "@/lib/i18n";
-import { getPluginLabCopy, getPluginProposalFormCopy } from "@/lib/plugin-lab/i18n";
-import { pluginLabProposalIntakeEnabled } from "@/lib/plugin-lab/config";
+import { isLocale } from "@/lib/i18n";
+import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
+import { getPluginWorkflowCopy } from "@/lib/plugin-lab/workflow-i18n";
+import { pluginLabWorkflowIntakeEnabled } from "@/lib/plugin-lab/mail";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
@@ -12,8 +13,12 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
 }
 
 export default async function ProposePluginPage({ params }: { params: Promise<{ locale: string }> }) {
-  const { locale } = await params; if (!isLocale(locale)) notFound(); const typed = locale as Locale; const copy = getPluginLabCopy(typed);
-  const formCopy = getPluginProposalFormCopy(typed);
-  const enabled = pluginLabProposalIntakeEnabled();
-  return <div className="container plugin-workflow-page"><header><p className="eyebrow">{copy.coCreateEyebrow}</p><h1>{copy.propose}</h1><p>{copy.coCreateText}</p></header><div lang={formCopy.fallback ? "en" : undefined}>{formCopy.fallback ? <p className="plugin-language-note">{formCopy.fallbackNotice}</p> : null}<aside className="plugin-boundary-note"><strong>{formCopy.beforeSubmitTitle}</strong><p>{formCopy.beforeSubmitText}</p></aside>{enabled ? <PluginProposalForm locale={typed} /> : <aside className="plugin-boundary-note" role="status"><strong>{formCopy.intakeClosedTitle}</strong><p>{formCopy.intakeClosedText}</p></aside>}</div></div>;
+  const { locale } = await params; if (!isLocale(locale)) notFound();
+  const copy = getPluginWorkflowCopy(locale);
+  const enabled = pluginLabWorkflowIntakeEnabled();
+  return <div className="container plugin-workflow-page" lang={copy.fallback ? "en" : undefined} dir={copy.fallback ? "ltr" : undefined}>
+    <header><p className="eyebrow">ENA Plugin Lab</p><h1>{getPluginLabCopy(locale).propose}</h1><p>{copy.formIntro}</p></header>
+    {copy.fallback ? <p className="plugin-language-note">{copy.fallbackNotice}</p> : null}
+    {enabled ? <PluginProposalForm locale={locale} /> : <aside className="plugin-boundary-note" role="status"><h2>{copy.closedTitle}</h2><p>{copy.closedText}</p><div className="button-row"><a className="button button-secondary" href={`/${locale}/plugins/status`}>{copy.myProposals}</a><a href={`/${locale}/plugins`}>{copy.backCatalog}</a></div></aside>}
+  </div>;
 }

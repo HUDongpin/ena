@@ -45,6 +45,8 @@ jobs:
         run: npm audit --audit-level=high
       - name: Verify prompt governance and complete application
         run: npm run verify
+      - name: Verify Plugin Lab transactions with an isolated PostgreSQL cluster
+        run: node --import tsx --test tests/ena-plugin-workflow-store.integration.ts
       - name: Verify registered accounts and private projects through the built application
         run: |
           set -euo pipefail
@@ -82,6 +84,8 @@ jobs:
           cp -a public/. .next/standalone/public/
           cp -a .next/static/. .next/standalone/.next/static/
           cp -a migrations/. .next/standalone/migrations/
+          mkdir -p .next/standalone/scripts
+          cp scripts/plugin-lab-notifications.mjs .next/standalone/scripts/
           if find .next/standalone -name '.env*' -print -quit | grep -q .; then
             echo 'Refusing to package environment files.' >&2
             exit 1
@@ -324,6 +328,23 @@ jobs:
         with:
           name: open-ena-a11y-perf-evidence-${{ github.sha }}-chromium
           path: output/playwright/open-ena-a11y-perf-${{ github.sha }}-chromium
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Build Plugin Lab browser acceptance target
+        run: npm run build:app
+      - name: Verify proposal submission, private review and localized Plugin Lab screens
+        run: npm run test:browser:plugin-workflow
+      - name: Upload Plugin Lab browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ena-plugin-workflow-${{ github.sha }}
+          path: |
+            output/plugin-lab-workflow/browser-report.json
+            output/plugin-lab-workflow/fixture.json
+            output/plugin-lab-workflow/cleanup.json
+            output/plugin-lab-workflow/*.png
           if-no-files-found: warn
           retention-days: 14
 
