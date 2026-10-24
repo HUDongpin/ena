@@ -55,6 +55,13 @@ export interface ReferenceCandidateImportV3 extends ImportBaseV3 {
 }
 
 export type OpenEnaImportResultV3 = DraftImportV3 | HistoricalImportV3 | ReferenceCandidateImportV3;
+const originalImports = new WeakMap<OpenEnaImportResultV3, string>();
+
+export function originalOpenEnaImportTextV3(value: OpenEnaImportResultV3): string {
+  const text = originalImports.get(value);
+  if (text === undefined) throw new TypeError("Original admitted import text is unavailable.");
+  return text;
+}
 
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -194,6 +201,12 @@ function legacyDraft(value: unknown) {
 
 /** Pure admission and preview. No workspace, registry, source plan, or worker is accepted. */
 export async function importOpenEnaArtifactV3(text: string): Promise<OpenEnaImportResultV3> {
+  const result = await decodeImportedArtifactV3(text);
+  originalImports.set(result, text);
+  return result;
+}
+
+async function decodeImportedArtifactV3(text: string): Promise<OpenEnaImportResultV3> {
   const value = record(parseBundleJsonV3(text));
   const receivedArtifactSha256 = await sha256TextV3(text);
   if (value.schemaVersion === 3 && value.kind === "open-ena-draft") {

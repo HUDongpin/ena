@@ -590,7 +590,7 @@ test("trajectory analysis-set and whole-path controls keep scientific gates and 
   assert.match(v3, /data-testid="open-ena-capture-analysis-set"/);
   assert.match(v3, /open-ena-capture-analysis-set-prerequisites/);
   assert.match(v3, /open-ena-compare-analysis-sets-prerequisites/);
-  assert.match(v3, /disabled=\{!captureEligibility\.eligible\}/);
+  assert.match(v3, /disabled=\{!captureEligibility\.eligible \|\| setsBusy\}/);
   assert.match(v3, /disabled=\{!compareEligibility\.eligible\}/);
   assert.doesNotMatch(v3, /disabled=\{!current \|\| completedResultKind === "ona" \|\| isTrajectory \|\| sets\.length >= 6\}/);
   const artifacts = getOpenEnaCopy("en").modelV3.workspace.artifacts;

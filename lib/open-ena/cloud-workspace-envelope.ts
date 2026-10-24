@@ -4,18 +4,19 @@ import { canonicalJsonV3, sha256CanonicalJsonV3 } from "./model-v3/canonical-jso
 import type { ModelWorkspaceDraftsV3, OpenEnaAnalysisBundleV3, OpenEnaStandardReferenceV2 } from "./model-v3/types";
 import { datasetHashKindFor, type ParsedDataset, type DatasetHashKind } from "./types";
 import { decodeOpenEnaCloudDisplay, validateOpenEnaCloudPresentation, type OpenEnaCloudDisplay, type OpenEnaCloudPresentation } from "./cloud-workspace-presentation";
+import { validateOpenEnaCloudExtras, type OpenEnaCloudExtras } from "./cloud-workspace-extras";
 
 type Cell = string | number | boolean | null;
 export type OpenEnaCloudDataset = { name: string; headers: string[]; cells: Cell[][]; sizeBytes: number;
   source: "sample" | "upload"; hashKind: DatasetHashKind; tableSha256: string };
 export type OpenEnaCloudSnapshot = {
-  schemaVersion: 1; kind: "open-ena-cloud-project"; dataset: OpenEnaCloudDataset | null; datasetSha256: string;
+  kind: "open-ena-cloud-project"; dataset: OpenEnaCloudDataset | null; datasetSha256: string;
   drafts: ModelWorkspaceDraftsV3; onaDraftInitialized: boolean; display: OpenEnaCloudDisplay;
   references: OpenEnaStandardReferenceV2[]; analysis: OpenEnaAnalysisBundleV3 | null; resultStatus: "none" | "current" | "stale";
   presentation: OpenEnaCloudPresentation; sourceReference: OpenEnaStandardReferenceV2 | null;
   originalSource: { name: string; text: string } | null; statisticsReport: Record<string, unknown> | null;
   integritySha256: string;
-};
+} & ({ schemaVersion: 1 } | ({ schemaVersion: 2 } & OpenEnaCloudExtras));
 const SHA = /^[a-f0-9]{64}$/u;
 const rootKeys = ["schemaVersion", "kind", "dataset", "datasetSha256", "drafts", "onaDraftInitialized", "display", "references", "analysis",
   "resultStatus", "presentation", "sourceReference", "originalSource", "statisticsReport", "integritySha256"];
@@ -53,12 +54,14 @@ export function validateOpenEnaCloudDrafts(value: ModelWorkspaceDraftsV3) {
 /** Server admission is bounded and structural. Scientific/source authority is rebuilt by the restore validator. */
 export async function validateOpenEnaCloudSnapshotEnvelope(input: unknown): Promise<OpenEnaCloudSnapshot> {
   const value = captureBundleJsonV3(input) as OpenEnaCloudSnapshot;
-  if (!value || typeof value !== "object" || Object.keys(value).length !== rootKeys.length || rootKeys.some((key) => !Object.hasOwn(value, key))
-    || value.schemaVersion !== 1 || value.kind !== "open-ena-cloud-project" || !SHA.test(value.datasetSha256)
+  const keys = value?.schemaVersion === 2 ? [...rootKeys, "aiInterpretation", "analysisSets", "setComparison", "historicalImports"] : rootKeys;
+  if (!value || typeof value !== "object" || Object.keys(value).length !== keys.length || keys.some((key) => !Object.hasOwn(value, key))
+    || ![1, 2].includes(value.schemaVersion) || value.kind !== "open-ena-cloud-project" || !SHA.test(value.datasetSha256)
     || !SHA.test(value.integritySha256) || typeof value.onaDraftInitialized !== "boolean"
     || !["none", "current", "stale"].includes(value.resultStatus)) throw new TypeError("Invalid cloud project envelope.");
   const { integritySha256, ...payload } = value;
   if (await sha256CanonicalJsonV3(payload) !== integritySha256) throw new TypeError("Cloud project integrity hash mismatch.");
+  if (value.schemaVersion === 2) validateOpenEnaCloudExtras(value);
   validateOpenEnaCloudDrafts(value.drafts);
   validateOpenEnaCloudPresentation(value.presentation);
   // Validate display grammar without recreating an undo/result ownership binding yet.

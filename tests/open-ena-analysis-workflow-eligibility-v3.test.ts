@@ -168,7 +168,7 @@ test("Workspace wires capture/compare and whole-path eligibility to visible chec
   assert.match(v3, /admission=\{pathAdmission\}/);
   assert.match(v3, /open-ena-capture-analysis-set-prerequisites/);
   assert.match(v3, /open-ena-compare-analysis-sets-prerequisites/);
-  assert.match(v3, /disabled=\{!captureEligibility\.eligible\}/);
+  assert.match(v3, /disabled=\{!captureEligibility\.eligible \|\| setsBusy\}/);
   assert.match(v3, /disabled=\{!compareEligibility\.eligible\}/);
   assert.match(moduleSourceV3("lib/open-ena/analysis-workflow-eligibility-v3.ts"), /endpoint-model/);
   assert.match(moduleSourceV3("lib/open-ena/sets-bound-v3.ts"), /Analysis sets require EndPoint results/);

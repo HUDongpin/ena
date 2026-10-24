@@ -9,17 +9,31 @@ disposable accounts retain their existing behavior.
 
 Save is explicit. A project contains the normalized source table, optional
 original CSV, both ENA and ONA model drafts, validated references, the last
-analysis result, its saved statistical report when available, and plot/display
+analysis result, its saved statistical report when available, completed AI
+interpretation with its reviewed evidence and audit receipt, captured comparison
+sets and comparison selection, original historical imports, and plot/display
 settings. Restoring checks integrity and reconstructs the execution plan before
 granting a result current status. It does not run an analysis or AI request.
 Saved statistics remain a readable/downloadable report; new statistical
 inference or AI requests require recomputation in the current session.
 
-AI narratives, captured comparison sets, historical imports, pending actions,
-and undo history are not part of the snapshot. The save dialog states this
-scope; browser-only artifacts and pending work keep a separate discard warning
-even after a successful save. Unfinished raw model input blocks cloud saving
-rather than silently saving its previous typed value.
+The saved AI record remains readable when the current model changes, labelled
+with its generation-time evidence. It never grants consent or restores a retry
+operation. Each comparison set reconstructs its historical geometry from a
+validated portable analysis bundle; comparison does not acquire current-result
+or Reference authority. Historical imports keep the exact original text and
+received-file hash, and are re-admitted through the existing read-only importer.
+They retain their explicit configuration-review action and do not rerun models.
+
+Pending requests, imports awaiting confirmation and undo history are not part
+of the snapshot. Running analysis, statistics, AI and import work blocks saving;
+unconfirmed previews keep the separate discard warning. Unfinished raw model
+input blocks saving rather than silently saving its previous typed value.
+New saves use payload schema 2; schema 1 projects remain readable with empty
+additional state. No database migration or encryption-key change is needed for
+this payload upgrade. A rollback to application versions before schema 2 keeps
+the stored data but cannot open schema 2 projects; deploy a compatible version
+to restore their availability.
 
 There are at most 50 projects and 200 MiB of retained content per account, with
 a 16 MiB snapshot limit. Archive is reversible and retains storage. Permanent
@@ -113,6 +127,7 @@ recorder into production configuration.
 npm run build
 npm run test:app
 npm run typecheck:app
+node tests/open-ena-cloud-complete-state-browser.mjs
 node tests/support/open-ena-cloud-local-server.mjs
 ```
 
@@ -124,7 +139,7 @@ node --import tsx tests/open-ena-cloud-http-integration.mts \
 ```
 
 The HTTP receipt covers two accounts, single-use verification, both origins,
-source/model/result restoration, ownership, stale-account tabs, conflicting
+source/model/result/AI/comparison/history restoration, ownership, stale-account tabs, conflicting
 saves, password reset, archive/restore/delete, and logout. Open the two local
 origins in a browser for visual and keyboard checks. Send `stop` to the fixture
 process on stdin to stop the owned application and remove its temporary data.
