@@ -321,6 +321,10 @@ async function uploadAndBuildStandard(page, fixtureCsv) {
   await prepareNativeFixtureV3(page);
   await runNativeFixtureV3(page);
   await page.getByTestId("open-ena-group-comparison-plot").waitFor({ timeout: 60_000 });
+  // A fresh Means result prepares its 2D display frame asynchronously. Capture
+  // the drag baseline only after that frame has reached its final geometry.
+  await page.locator('[data-ena-2d-frame-status="pending"]').waitFor({ state: "detached" });
+  assertBrowser(await page.locator('[data-ena-2d-frame-status="unavailable"]').count() === 0, "native Means 2D frame must complete before measuring drag geometry");
 }
 
 function readAudit(page) {
