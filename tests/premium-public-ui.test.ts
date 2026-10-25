@@ -38,9 +38,8 @@ function ruleBodyForSelector(css: string, selector: string) {
   return bodies[0];
 }
 
-test("knowledge pages retain the premium design and merged Home keeps its isolated design", () => {
+test("knowledge collections retain the premium design and standalone pages keep isolated designs", () => {
   const premiumRoutes = [
-    ["app", "[locale]", "mission", "page.tsx"],
     ["app", "[locale]", "news", "page.tsx"],
     ["app", "[locale]", "news", "[slug]", "page.tsx"],
     ["app", "[locale]", "news", "topic", "[slug]", "page.tsx"],
@@ -59,6 +58,7 @@ test("knowledge pages retain the premium design and merged Home keeps its isolat
   assert.match(home, /className=\{styles\.home\}/);
   assert.doesNotMatch(home, /premium-public-page/);
   assert.doesNotMatch(source("app", "[locale]", "about", "page.tsx"), /premium-public-page/);
+  assert.doesNotMatch(source("app", "[locale]", "mission", "page.tsx"), /premium-public-page/);
   assert.doesNotMatch(source("app", "[locale]", "open-ena", "page.tsx"), /premium-public-page/);
   assert.doesNotMatch(source("components", "open-ena", "OpenEnaWorkspace.tsx"), /premium-public-page/);
 });
@@ -93,14 +93,14 @@ test("the Home page uses a plain paper background without removing purposeful li
   assert.match(globalCss, /data-track="page-progress-arc"/u);
 });
 
-test("Home and Mission primary titles use only the About responsive font-size scale", () => {
+test("the legacy Home title retains the About scale while Mission owns its compact layout", () => {
   const globalCss = source("app", "globals.css");
   const premiumCss = source("app", "premium-public.css");
   const aboutScale = "clamp(2.65rem, 5.3vw, 4.7rem)";
 
   assert.deepEqual(fontSizesForSelector(globalCss, ".about-profile-hero h1"), [aboutScale]);
   assert.deepEqual(fontSizesForSelector(premiumCss, ".premium-home .hero-copy h1"), [aboutScale]);
-  assert.deepEqual(fontSizesForSelector(premiumCss, ".premium-mission .page-hero h1"), [aboutScale]);
+  assert.deepEqual(fontSizesForSelector(premiumCss, ".premium-mission .page-hero h1"), []);
 });
 
 test("the screenshot-selected public sections are absent", () => {
