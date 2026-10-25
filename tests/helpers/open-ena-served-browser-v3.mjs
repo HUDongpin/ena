@@ -224,7 +224,16 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
       const servedFromCache = event => receipt.browser.cdpCacheEvents.push({ requestId: event.requestId, at: new Date().toISOString() });
       cdp.on("Network.responseReceived", responseReceived); cdp.on("Network.requestServedFromCache", servedFromCache);
       lifecycle.addCleanup("owned page cache observer", async () => { cdp.off("Network.responseReceived", responseReceived); cdp.off("Network.requestServedFromCache", servedFromCache); await cdp.detach(); });
-      await lifecycle.stage("disable owned browser cache before navigation", async () => { await cdp.send("Network.enable"); await cdp.send("Network.setCacheDisabled", { cacheDisabled: true }); receipt.browser.cachePolicyAppliedAt = new Date().toISOString(); }, 15000);
+      await lifecycle.stage("disable owned browser cache before navigation", async () => {
+        await cdp.send("Network.enable");
+        // Native sign-in can replace the renderer. Retain its exact response bytes
+        // so asset custody can finish after that navigation without refetching.
+        const retention = { maxTotalBufferSize: 64 * 1024 * 1024, maxResourceBufferSize: 16 * 1024 * 1024 };
+        await cdp.send("Network.configureDurableMessages", retention);
+        receipt.browser.assetBodyRetention = retention;
+        await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
+        receipt.browser.cachePolicyAppliedAt = new Date().toISOString();
+      }, 15000);
     }
     return { baseUrl, browser, page, lifecycle, receipt, close, observePage, drainAssetReads, async stage(label, action, timeout = 300000) { const entry = { label, status: "running" }; receipt.stages.push(entry); try { const value = await lifecycle.stage(label, action, timeout); entry.status = "pass"; return value; } catch (error) { entry.status = "fail"; entry.error = safe(error.message); throw error; } finally { json("receipt.json", receipt); } } };
   } catch (error) { await close(error); throw error; }
