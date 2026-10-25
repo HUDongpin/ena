@@ -1,0 +1,298 @@
+{
+  "codeRevision": "98ff9e9ce9fb08e917c74a0df5d0b7990b631b73",
+  "baseRevision": "d919fc46fa6f83a9c6ab33c34308a6810c5c6929",
+  "validationEnvironment": "local optimized build in Chrome with an isolated loopback database; no deployment",
+  "sourceWorkbookSha256": "22f01f2b2fbc95cc1316083af86a82364e9f64470fae4f9a86310342abfef6ee",
+  "typedCellSha256": "1bebd33de14571e13c029ba6803f59906394b01ae1d1bdca41c78444fe2ad5ec",
+  "cases": [
+    {
+      "case": "A",
+      "createdAt": "2026-10-25T10:07:05.872Z",
+      "sourceDatasetSha256": "1bebd33de14571e13c029ba6803f59906394b01ae1d1bdca41c78444fe2ad5ec",
+      "configurationSha256": "0d1d140d2b5cc44019b1ff49fb8b9d9f0f4529ffec750f2c3b2ae657fc4b8f48",
+      "scientificResultSha256": "56a74ee3f40f72dd0ee0481b65aed9d3e221718e05b6587e3a8df53a7dff537d",
+      "unitCount": 87,
+      "axisSigns": {
+        "MR1": 1,
+        "SVD2": -1
+      },
+      "goodness": [
+        {
+          "axis": "MR1",
+          "pearson": 0.9251436367748257,
+          "spearman": 0.9059242917395305,
+          "status": "available"
+        },
+        {
+          "axis": "SVD2",
+          "pearson": 0.877015612689052,
+          "spearman": 0.8896436974021493,
+          "status": "available"
+        }
+      ],
+      "welch": [
+        {
+          "axis": "MR1",
+          "nPrimary": 45,
+          "nSecondary": 42,
+          "meanPrimary": -0.08983333333333335,
+          "meanSecondary": 0.09624523809523809,
+          "sdPrimary": 0.30304126781677776,
+          "sdSecondary": 0.22614294659317666,
+          "status": "available",
+          "t": -3.259829150861854,
+          "df": 81.16203097671688,
+          "p": 0.001630089477723018,
+          "cohensD": 0.6924866495939431
+        },
+        {
+          "axis": "SVD2",
+          "nPrimary": 45,
+          "nSecondary": 42,
+          "meanPrimary": 2.222222222223098e-06,
+          "meanSecondary": 2.380952380954638e-06,
+          "sdPrimary": 0.3141977587218893,
+          "sdSecondary": 0.33495860937464017,
+          "status": "available",
+          "t": -2.2756815556887227e-06,
+          "df": 83.5107366560528,
+          "p": 0.9999981906051555,
+          "cohensD": 4.893373905717875e-07
+        }
+      ],
+      "nonparametric": [
+        {
+          "test": "mann-whitney-u",
+          "effectDirection": "positive-primary-higher-ranks",
+          "axisIndex": 0,
+          "axis": "MR1",
+          "status": "available",
+          "reason": null,
+          "familySizePlanned": 2,
+          "pRaw": 0.002070084792088124,
+          "pHolm": 0.004140169584176248,
+          "holmRank": 1,
+          "holmMultiplier": 2,
+          "resolvedPMethod": "normal-approximation-tie-corrected",
+          "continuityCorrectionApplied": true,
+          "tieGroupCount": 7,
+          "tiedObservationCount": 23,
+          "tieCorrectionSum": 372,
+          "warnings": [
+            "ties-present",
+            "independent-entity-assumption",
+            "cluster-independence-unverified",
+            "arbitrary-axis-sign",
+            "mr1-circularity"
+          ],
+          "nPrimary": 45,
+          "nSecondary": 42,
+          "medianPrimary": -0.0388695280866,
+          "medianSecondary": 0.138286569479,
+          "uPrimary": 582,
+          "uSecondary": 1308,
+          "z": -3.0799886562086907,
+          "rankBiserialPrimaryVsSecondary": -0.3841269841269841,
+          "exactTail": null
+        },
+        {
+          "test": "mann-whitney-u",
+          "effectDirection": "positive-primary-higher-ranks",
+          "axisIndex": 1,
+          "axis": "SVD2",
+          "status": "available",
+          "reason": null,
+          "familySizePlanned": 2,
+          "pRaw": 0.8750985547168736,
+          "pHolm": 0.8750985547168736,
+          "holmRank": 2,
+          "holmMultiplier": 1,
+          "resolvedPMethod": "normal-approximation-tie-corrected",
+          "continuityCorrectionApplied": true,
+          "tieGroupCount": 7,
+          "tiedObservationCount": 23,
+          "tieCorrectionSum": 372,
+          "warnings": [
+            "ties-present",
+            "independent-entity-assumption",
+            "cluster-independence-unverified",
+            "arbitrary-axis-sign"
+          ],
+          "nPrimary": 45,
+          "nSecondary": 42,
+          "medianPrimary": 0.000565713258148,
+          "medianSecondary": 0,
+          "uPrimary": 964,
+          "uSecondary": 926,
+          "z": 0.15718562797202973,
+          "rankBiserialPrimaryVsSecondary": 0.020105820105820182,
+          "exactTail": null
+        }
+      ],
+      "displayFrame": {
+        "profile": "rena-one-contrast-means-lapack-3.12",
+        "basisSigns": [
+          1,
+          -1
+        ],
+        "pointScaleFactor": 1.7829567213168525,
+        "maxPosition": 1.5555,
+        "extremePosition": 1.8666,
+        "frameAxes": 21,
+        "transportDecimalPlaces": 4,
+        "source": "webena-points-rotated-scaled"
+      }
+    },
+    {
+      "case": "B",
+      "createdAt": "2026-10-25T10:07:36.853Z",
+      "sourceDatasetSha256": "1bebd33de14571e13c029ba6803f59906394b01ae1d1bdca41c78444fe2ad5ec",
+      "configurationSha256": "ed3d6816c2e2800e5289c8b0baa6410cfc80cf2c4c96e49a6a6fc1dc7b805536",
+      "scientificResultSha256": "c79290d217677fa61aeef0a65136d2298c5e77b8700a23559ff770bf717415a8",
+      "unitCount": 87,
+      "axisSigns": {
+        "MR1": 1,
+        "SVD2": -1
+      },
+      "goodness": [
+        {
+          "axis": "MR1",
+          "pearson": 0.9251436367748257,
+          "spearman": 0.9059242917395305,
+          "status": "available"
+        },
+        {
+          "axis": "SVD2",
+          "pearson": 0.877015612689052,
+          "spearman": 0.8896436974021493,
+          "status": "available"
+        }
+      ],
+      "welch": [
+        {
+          "axis": "MR1",
+          "nPrimary": 45,
+          "nSecondary": 42,
+          "meanPrimary": -0.08983333333333335,
+          "meanSecondary": 0.09624523809523809,
+          "sdPrimary": 0.30304126781677776,
+          "sdSecondary": 0.22614294659317666,
+          "status": "available",
+          "t": -3.259829150861854,
+          "df": 81.16203097671688,
+          "p": 0.001630089477723018,
+          "cohensD": 0.6924866495939431
+        },
+        {
+          "axis": "SVD2",
+          "nPrimary": 45,
+          "nSecondary": 42,
+          "meanPrimary": 2.222222222223098e-06,
+          "meanSecondary": 2.380952380954638e-06,
+          "sdPrimary": 0.3141977587218893,
+          "sdSecondary": 0.33495860937464017,
+          "status": "available",
+          "t": -2.2756815556887227e-06,
+          "df": 83.5107366560528,
+          "p": 0.9999981906051555,
+          "cohensD": 4.893373905717875e-07
+        }
+      ],
+      "nonparametric": [
+        {
+          "test": "mann-whitney-u",
+          "effectDirection": "positive-primary-higher-ranks",
+          "axisIndex": 0,
+          "axis": "MR1",
+          "status": "available",
+          "reason": null,
+          "familySizePlanned": 2,
+          "pRaw": 0.002070084792088124,
+          "pHolm": 0.004140169584176248,
+          "holmRank": 1,
+          "holmMultiplier": 2,
+          "resolvedPMethod": "normal-approximation-tie-corrected",
+          "continuityCorrectionApplied": true,
+          "tieGroupCount": 7,
+          "tiedObservationCount": 23,
+          "tieCorrectionSum": 372,
+          "warnings": [
+            "ties-present",
+            "independent-entity-assumption",
+            "cluster-independence-unverified",
+            "arbitrary-axis-sign",
+            "mr1-circularity"
+          ],
+          "nPrimary": 45,
+          "nSecondary": 42,
+          "medianPrimary": -0.0388695280866,
+          "medianSecondary": 0.138286569479,
+          "uPrimary": 582,
+          "uSecondary": 1308,
+          "z": -3.0799886562086907,
+          "rankBiserialPrimaryVsSecondary": -0.3841269841269841,
+          "exactTail": null
+        },
+        {
+          "test": "mann-whitney-u",
+          "effectDirection": "positive-primary-higher-ranks",
+          "axisIndex": 1,
+          "axis": "SVD2",
+          "status": "available",
+          "reason": null,
+          "familySizePlanned": 2,
+          "pRaw": 0.8750985547168736,
+          "pHolm": 0.8750985547168736,
+          "holmRank": 2,
+          "holmMultiplier": 1,
+          "resolvedPMethod": "normal-approximation-tie-corrected",
+          "continuityCorrectionApplied": true,
+          "tieGroupCount": 7,
+          "tiedObservationCount": 23,
+          "tieCorrectionSum": 372,
+          "warnings": [
+            "ties-present",
+            "independent-entity-assumption",
+            "cluster-independence-unverified",
+            "arbitrary-axis-sign"
+          ],
+          "nPrimary": 45,
+          "nSecondary": 42,
+          "medianPrimary": 0.000565713258148,
+          "medianSecondary": 0,
+          "uPrimary": 964,
+          "uSecondary": 926,
+          "z": 0.15718562797202973,
+          "rankBiserialPrimaryVsSecondary": 0.020105820105820182,
+          "exactTail": null
+        }
+      ],
+      "displayFrame": {
+        "profile": "rena-one-contrast-means-lapack-3.12",
+        "basisSigns": [
+          1,
+          -1
+        ],
+        "pointScaleFactor": 1.7829567213168525,
+        "maxPosition": 1.5555,
+        "extremePosition": 1.8666,
+        "frameAxes": 21,
+        "transportDecimalPlaces": 4,
+        "source": "webena-points-rotated-scaled"
+      }
+    }
+  ],
+  "engineering": {
+    "command": "npm run verify",
+    "passed": true,
+    "applicationTests": {
+      "tests": 3532,
+      "pass": 3530,
+      "fail": 0,
+      "skipped": 2
+    },
+    "signedROracles": 120,
+    "branchAutoDeploymentDisabled": true
+  },
+  "precision": "Official values are rounded to 4 decimals; counts and minimum U exact; numeric interval 0.000050001. Render tolerance is the same bound normalized by visible axis endpoints."
+}

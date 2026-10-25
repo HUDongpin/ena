@@ -1,0 +1,426 @@
+{
+  "A": [
+    {
+      "scenario": "default",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 12.5,
+              "width": 65.6953125,
+              "x": 793.1973876953125,
+              "y": 532.423095703125
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 12.5,
+              "width": 37.03900146484375,
+              "x": 1008.8733520507812,
+              "y": 416.2209167480469
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "text-size-20",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 19,
+              "width": 100.51568603515624,
+              "x": 758.3770751953125,
+              "y": 381.423095703125
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 19,
+              "width": 56.66400146484375,
+              "x": 1008.8733520507812,
+              "y": 258.72088623046875
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "text-size-20-zoom-in",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1.2"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 22.5,
+              "width": 120.625,
+              "x": 725.0728759765625,
+              "y": 540.107666015625
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 22.5,
+              "width": 68,
+              "x": 1025.6683349609375,
+              "y": 392.8650817871094
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "text-size-20-zoom-in-flip-x",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1.2"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 22.5,
+              "width": 120.62493896484376,
+              "x": 1003.5341186523438,
+              "y": 389.1076965332031
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 22.5,
+              "width": 68.00006103515625,
+              "x": 769.2686767578125,
+              "y": 255.57321166992188
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "unflipped-y",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 12.499969482421877,
+              "width": 65.6953125,
+              "x": 793.1973876953125,
+              "y": 291.1730041503906
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 12.5,
+              "width": 37.03900146484375,
+              "x": 1008.8733520507812,
+              "y": 407.3751831054687
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "restored",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 12.5,
+              "width": 65.6953125,
+              "x": 793.1973876953125,
+              "y": 381.423095703125
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 12.5,
+              "width": 37.03900146484375,
+              "x": 1008.8733520507812,
+              "y": 265.2209167480469
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    }
+  ],
+  "B": [
+    {
+      "scenario": "default",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 12.5,
+              "width": 65.6953125,
+              "x": 793.1973876953125,
+              "y": 504.423095703125
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 12.5,
+              "width": 37.03900146484375,
+              "x": 1008.8733520507812,
+              "y": 388.2209167480469
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "text-size-20",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 19,
+              "width": 100.51568603515624,
+              "x": 758.3770751953125,
+              "y": 353.423095703125
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 19,
+              "width": 56.66400146484375,
+              "x": 1008.8733520507812,
+              "y": 230.72088623046875
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "text-size-20-zoom-in",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1.2"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 22.5,
+              "width": 120.625,
+              "x": 725.0728759765625,
+              "y": 512.107666015625
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 22.5,
+              "width": 68,
+              "x": 1025.6683349609375,
+              "y": 364.8650817871094
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "text-size-20-zoom-in-flip-x",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1.2"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 22.5,
+              "width": 120.62493896484376,
+              "x": 1003.5341186523438,
+              "y": 361.1076965332031
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 22.5,
+              "width": 68.00006103515625,
+              "x": 769.2686767578125,
+              "y": 227.57321166992188
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "unflipped-y",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 12.499969482421877,
+              "width": 65.6953125,
+              "x": 793.1973876953125,
+              "y": 263.1730041503906
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 12.5,
+              "width": 37.03900146484375,
+              "x": 1008.8733520507812,
+              "y": 379.3751831054687
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    },
+    {
+      "scenario": "restored",
+      "audit": {
+        "collisions": [],
+        "frame": {
+          "max": "1.5555",
+          "scale": "1.7829567213168525",
+          "zoom": "1"
+        },
+        "labels": [
+          {
+            "box": {
+              "height": 12.5,
+              "width": 65.6953125,
+              "x": 793.1973876953125,
+              "y": 353.423095703125
+            },
+            "name": "Experimental",
+            "role": "primary"
+          },
+          {
+            "box": {
+              "height": 12.5,
+              "width": 37.03900146484375,
+              "x": 1008.8733520507812,
+              "y": 237.22091674804688
+            },
+            "name": "Control",
+            "role": "secondary"
+          }
+        ],
+        "obstacleCount": 107,
+        "outside": []
+      }
+    }
+  ]
+}

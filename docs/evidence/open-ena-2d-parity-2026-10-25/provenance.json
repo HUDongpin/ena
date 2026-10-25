@@ -1,0 +1,41 @@
+{
+  "localEvidence": [
+    {
+      "artifact": "A/model",
+      "bytes": 472213,
+      "sha256": "b78e735bb05ceb2120840e60417bd39c8a2c3c18acd48878a18817f09787d6dc",
+      "custody": "owner-local; not published because the full file can contain unit identities or source metadata"
+    },
+    {
+      "artifact": "A/statistics",
+      "bytes": 10150,
+      "sha256": "b3d06fe818293f3a8a542dd3c73435a9b8a61ea29b672885c94e7f7ae344a350",
+      "custody": "owner-local; not published because the full file can contain unit identities or source metadata"
+    },
+    {
+      "artifact": "A/numeric-checks",
+      "bytes": 855691,
+      "sha256": "1942d848c982e751fd8a3ebbd7dbbfc7932112e569ae41a7066844bd22640e6e",
+      "custody": "owner-local; not published because the full file can contain unit identities or source metadata"
+    },
+    {
+      "artifact": "B/model",
+      "bytes": 472213,
+      "sha256": "87db78798dcc733fff175488f56dcfe469179335adc2612d41c0001ef67af6f3",
+      "custody": "owner-local; not published because the full file can contain unit identities or source metadata"
+    },
+    {
+      "artifact": "B/statistics",
+      "bytes": 10150,
+      "sha256": "f80c28f6b8038456987a9a1e3455353b2be40b18d23ba9d929eb486f0cdae8a9",
+      "custody": "owner-local; not published because the full file can contain unit identities or source metadata"
+    },
+    {
+      "artifact": "B/numeric-checks",
+      "bytes": 855691,
+      "sha256": "374740ed019525afba276ccc4a47074202ca6af138202ba2e23ac1229f25834b",
+      "custody": "owner-local; not published because the full file can contain unit identities or source metadata"
+    }
+  ],
+  "validationLogSha256": "832165ec9e294967cf4410758d678cd40398953b5e15ff53b97cb2c639acfe59"
+}
