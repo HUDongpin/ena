@@ -105,13 +105,14 @@ export const J3DENA_VENDOR_CONTRACT = Object.freeze({
 // finite-anchor normalization, centered intercept regression and rejection of
 // zero or nonfinite custom rotation directions.
 // Development dependency manifests were refreshed on 2026-10-19 to patch the
-// Vitest and esbuild advisories; all local numerical repairs remain included.
+// Vitest and esbuild advisories, and on 2026-10-23 to Vitest 4.1.12; all local
+// numerical repairs remain included.
 // Pin that distinct local source tree without rewriting the artifact's identity.
 export const J3DENA_VERIFICATION_CONTRACT = Object.freeze({
   ...J3DENA_VENDOR_CONTRACT,
-  jenaSourceTreeSha256: "36b50d692450d3a886e3bdb3d1f55b8269c9f5a3b84f1de1f1471c57c3aea108",
+  jenaSourceTreeSha256: "e133d216c118d5aa92a82b21dcf5d5ba4bea35c5729dcf0a8e871158504ca493",
   jenaSourceTreeFileCount: 36,
-  jenaSourceTreeByteLength: 496_577,
+  jenaSourceTreeByteLength: 496_578,
 });
 
 const DEFAULT_PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
