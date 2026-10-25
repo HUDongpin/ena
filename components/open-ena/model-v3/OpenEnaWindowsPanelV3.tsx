@@ -576,10 +576,11 @@ export function OpenEnaWindowsPanelV3({
     blockersCallback.current(family, { ...blockers, rowOrder });
   }, [family, blockers.backward, blockers.forward, blockers.rowOrder]);
 
-  function replaceStandardDraft(patch: Partial<ModelStateV3["drafts"]["standard"]>): void {
+  function replaceStandardDraft(patch: Partial<ModelStateV3["drafts"]["standard"]>, intent?: "rotation"): void {
     dispatch({
       type: "replace-standard-draft",
       draft: { ...state.drafts.standard, ...patch },
+      ...(intent ? { intent } : {}),
     });
   }
 
@@ -629,7 +630,7 @@ export function OpenEnaWindowsPanelV3({
       ? true
       : rotation.centerAlignToOrigin;
     if (type === "svd") {
-      replaceStandardDraft({ rotation: { type, centerAlignToOrigin } });
+      replaceStandardDraft({ rotation: { type, centerAlignToOrigin } }, "rotation");
     } else if (type === "means") {
       replaceStandardDraft({
         rotation: {
@@ -638,7 +639,7 @@ export function OpenEnaWindowsPanelV3({
           negativeLevel: rotation.type === "means" ? rotation.negativeLevel : null,
           positiveLevel: rotation.type === "means" ? rotation.positiveLevel : null,
         },
-      });
+      }, "rotation");
     } else {
       replaceStandardDraft({
         rotation: {
@@ -648,7 +649,7 @@ export function OpenEnaWindowsPanelV3({
             ? rotation.expectedContentSha256
             : null,
         },
-      });
+      }, "rotation");
     }
   }
 

@@ -286,7 +286,7 @@ for (const center of [true, false]) {
   });
 }
 
-test("rank-zero and zero-observation runtime targets fail closed; sphere normalization keeps zero at origin", async () => {
+test("rank-zero targets fail closed while mixed zero-network endpoints retain their population", async () => {
   assert.deepEqual(sphereNorm([[0, 0, 0], [3, 4, 0]]), [[0, 0, 0], [0.6, 0.8, 0]]);
   for (const means of [false, true]) for (const center of [true, false]) {
     const plan = await planFor(draft("EndPoint", means, center));
@@ -296,12 +296,16 @@ test("rank-zero and zero-observation runtime targets fail closed; sphere normali
     const zeroUnit = tokenFor(plan, "m-other");
     const zero = Object.fromEntries(plan.codeDictionary.codes.map((code) => [code.token, 0]));
     const zeroObservation = { ...plan, rows: plan.rows.map((row) => row.unitToken === zeroUnit ? { ...row, codeValues: zero } : row) };
-    assert.throws(() => run(zeroObservation), /zero.*observation|observation.*zero|zero network/i);
+    const withZero = run(zeroObservation);
+    assert.equal(withZero.set.points.length, plan.identityDictionary.units.length);
+    if (center) for (const axis of withZero.projection.fullAxes.slice(0, 2)) {
+      assert.equal(Number(withZero.set.points.find(row => row.ENA_UNIT === zeroUnit)![axis]), 0);
+    }
     const source = endpointSource();
     source.rows = source.rows.map((row) => row.unit === "m-other" ? { ...row, A: 0, B: 0, C: 0 } : row);
     const compiled = await compileStandardDraftV3(source, HASH, draft("EndPoint", means, center));
-    assert.equal(compiled.status, "invalid");
-    assert.ok(compiled.diagnostics.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"));
+    assert.equal(compiled.status, "ready");
+    assert.ok(!compiled.diagnostics.some((entry) => entry.id === "STANDARD_TARGET_RANK_ZERO"));
   }
 });
 

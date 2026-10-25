@@ -39,6 +39,7 @@ import {
 } from "@/lib/open-ena/uncertainty";
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
 import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
+import { groupFigureName2D, paddedLabelBox2D, placeGroupLabels2D, type LabelBox2D } from "@/lib/open-ena/group-label-layout-2d";
 
 export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation {
   contrast: OpenEnaContrastPresentation;
@@ -48,6 +49,7 @@ export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation 
   showNetworks: boolean;
   showLabels: boolean;
   showGroupLabels: boolean;
+  groupLabels?: Readonly<Record<string, string>>;
   showUnitLabels: boolean;
   unitCircle?: boolean;
   showVariance: boolean;
@@ -714,6 +716,7 @@ interface GroupMeanMarkerProps {
   role: GroupRole;
   color: string;
   showLabel: boolean;
+  labelPlacement?: LabelBox2D & { ascent: number; text: string; fontSize: number };
   restoreLabel?: string | null;
   restoreSlot?: GroupRole;
   restoreHitTargetScale?: number;
@@ -727,6 +730,7 @@ function GroupMeanMarker({
   role,
   color,
   showLabel,
+  labelPlacement,
   restoreLabel,
   restoreSlot,
   restoreHitTargetScale = 1,
@@ -736,6 +740,11 @@ function GroupMeanMarker({
   const roleLabel = role === "primary" ? "Primary" : "Secondary";
   const label = restoreLabel ?? `${roleLabel} group mean for ${groupName}, square marker`;
   const interactive = Boolean(restoreLabel && onRestore);
+  const leaderEnd = labelPlacement ? {
+    x: Math.max(labelPlacement.x, Math.min(point.x, labelPlacement.x + labelPlacement.width)) - point.x,
+    y: Math.max(labelPlacement.y, Math.min(point.y, labelPlacement.y + labelPlacement.height)) - point.y,
+  } : { x: 0, y: 0 };
+  const leaderLength = Math.max(Math.abs(leaderEnd.x), Math.abs(leaderEnd.y), 1);
   return (
     <g
       transform={`translate(${point.x} ${point.y})`}
@@ -779,17 +788,29 @@ function GroupMeanMarker({
         rx="1"
         fill={color}
       />
-      {showLabel ? (
+      {showLabel && labelPlacement ? <>
+        <line
+          x1={leaderEnd.x * (halfSize + 2) / leaderLength}
+          y1={leaderEnd.y * (halfSize + 2) / leaderLength}
+          x2={leaderEnd.x}
+          y2={leaderEnd.y}
+          stroke="#6b7280" strokeWidth="0.75" opacity="0.65" pointerEvents="none"
+          data-ena-group-label-leader={role}
+        />
         <text
-          x={halfSize + 3}
-          y="3"
+          x={labelPlacement.x - point.x}
+          y={labelPlacement.y + labelPlacement.ascent - point.y}
           textAnchor="start"
           className="ena-set-group-label"
           aria-hidden="true"
+          pointerEvents="none"
+          data-ena-group-label-text={role}
+          data-ena-label-measure={`group:${role}`}
+          style={{ fontSize: labelPlacement.fontSize, fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif', fontWeight: 600, paintOrder: "stroke", stroke: "#fff", strokeWidth: 3, strokeLinejoin: "round" }}
         >
-          {safeFigureLabel(groupName, 72)}
+          {labelPlacement.text}
         </text>
-      ) : null}
+      </> : null}
     </g>
   );
 }
@@ -1177,6 +1198,7 @@ function ContrastSvg({
   codeVisibility,
   codeSourceByRenderedCode, codeLabelByRenderedCode,
   showGroupLabels,
+  groupLabels,
   showUnitLabels,
   unitCircle = false,
   showVariance,
@@ -1208,6 +1230,7 @@ function ContrastSvg({
   const edgeCopy = uiCopy ?? DEFAULT_GROUP_CONTRAST_UI_COPY;
   const comparisonSvgRef = useRef<SVGSVGElement | null>(null);
   const [svgScreenScale, setSvgScreenScale] = useState(1);
+  const [textMetrics, setTextMetrics] = useState<Record<string, { width: number; height: number; ascent: number }>>({});
   const bindSvgRef = useCallback((node: SVGSVGElement | null) => {
     comparisonSvgRef.current = node;
     if (kind !== "comparison" || !svgRef) return;
@@ -1365,7 +1388,7 @@ function ContrastSvg({
     const fitted = projector.invert(unzoomed);
     return new Map([[xAxis, fitted.x], [yAxis, fitted.y]]);
   };
-  const activeNames = plottedGroups.map(({ side }) => side.name);
+  const activeNames = plottedGroups.map(({ side }) => groupFigureName2D(side.name, groupLabels));
   const shownConfidenceGroups = comparisonGroups.filter(({ side, display }) => (
     display.settings.showMean
       && display.settings.showConfidenceIntervals
@@ -1447,6 +1470,77 @@ function ContrastSvg({
     20,
     1,
   );
+
+  const groupFontSize = 10 * labelScale + 1;
+  const labelBounds = {
+    x: width / 2 + (12 - width / 2) / zoom,
+    y: height / 2 + (24 - height / 2) / zoom,
+    width: (width - 24) / zoom,
+    height: (height - 48) / zoom,
+  };
+  const metrics = (key: string, text: string, fontSize: number) => textMetrics[key] ?? {
+    width: Array.from(text).reduce((sum, char) => sum + (char.codePointAt(0)! > 255 ? 1 : 0.68) * fontSize, 0),
+    height: fontSize * 1.2, ascent: fontSize,
+  };
+  const visibleNodes = contrast.nodes.filter(node => openEnaRenderedCodeIsVisible(codePresentation, node.code)
+    && (!unitCircle || connectedCodes.has(node.code)) && nodePoints.has(node.code));
+  const labelObstacles: LabelBox2D[] = [];
+  const labelTexts = new Map<GroupRole, string>();
+  const labelRequests = comparisonGroups.filter(({ display }) => kind === "comparison" && showGroupLabels && display.settings.showMean).map(({ role, side, display }) => {
+    const anchor = role === "primary" ? primaryMean : secondaryMean;
+    let extent = { x: anchor.x - 7, y: anchor.y - 7, width: 14, height: 14 };
+    for (const interval of [display.settings.showConfidenceIntervals ? confidenceIntervals(side, contrast.axes) : null,
+      display.settings.showOutlierIntervals ? outlierIntervals(side, contrast.axes) : null]) {
+      if (interval?.x.status !== "estimable" || interval.y.status !== "estimable") continue;
+      const a = projectEvidence(interval.x.lower, interval.y.lower), b = projectEvidence(interval.x.upper, interval.y.upper);
+      const x = Math.min(a.x, b.x, extent.x), y = Math.min(a.y, b.y, extent.y);
+      extent = { x, y, width: Math.max(a.x, b.x, extent.x + extent.width) - x, height: Math.max(a.y, b.y, extent.y + extent.height) - y };
+    }
+    const text = safeFigureLabel(groupFigureName2D(side.name, groupLabels), Math.max(8, Math.min(40, Math.floor(labelBounds.width * 0.45 / groupFontSize))));
+    labelTexts.set(role, text);
+    const size = metrics(`group:${role}`, text, groupFontSize);
+    return { id: role, anchor, extent, width: size.width, height: size.height };
+  });
+  // Reserve means/intervals even when their text is hidden; include unit dots
+  // and code text so a label never solves one collision by creating another.
+  for (const { role, side, display } of comparisonGroups) {
+    if (!display.settings.showMean) continue;
+    const anchor = role === "primary" ? primaryMean : secondaryMean;
+    labelObstacles.push(paddedLabelBox2D({ x: anchor.x - 6, y: anchor.y - 6, width: 12, height: 12 }, 3));
+    for (const interval of [display.settings.showConfidenceIntervals ? confidenceIntervals(side, contrast.axes) : null,
+      display.settings.showOutlierIntervals ? outlierIntervals(side, contrast.axes) : null]) {
+      if (interval?.x.status !== "estimable" || interval.y.status !== "estimable") continue;
+      const a = projectEvidence(interval.x.lower, interval.y.lower), b = projectEvidence(interval.x.upper, interval.y.upper);
+      labelObstacles.push(paddedLabelBox2D({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(a.x - b.x), height: Math.abs(a.y - b.y) }, 3));
+    }
+  }
+  for (const node of visibleNodes) {
+    const point = nodePoints.get(node.code)!, radius = codeNodeSize(node.code);
+    labelObstacles.push(paddedLabelBox2D({ x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2 }, 3));
+    if (!showLabels) continue;
+    const label = safeFigureLabel(openEnaRenderedCodeLabel(codePresentation, node.code), 72) || (edgeCopy.unnamedCode ?? DEFAULT_GROUP_CONTRAST_UI_COPY.unnamedCode);
+    const fitted = baseModelNodePoints.get(node.code)!, override = nodeLayout?.get(node.code);
+    const pointLabel = project(override?.get(xAxis) ?? fitted.x, override?.get(yAxis) ?? fitted.y);
+    const size = metrics(`code:${node.code}`, label, Math.max(13, groupFontSize));
+    labelObstacles.push(paddedLabelBox2D({ x: pointLabel.x + radius + 3, y: pointLabel.y + 3 - size.ascent, width: size.width, height: size.height }, 3));
+  }
+  if (showPoints) for (const { sampled } of pointGroups) for (const { point } of sampled) {
+    const at = projectEvidence(point.x, point.y), radius = 3.85 * markerScale + 2;
+    labelObstacles.push({ x: at.x - radius, y: at.y - radius, width: radius * 2, height: radius * 2 });
+  }
+  labelObstacles.push({ x: Math.min(horizontalStart.x, horizontalEnd.x), y: origin.y - 1, width: Math.abs(horizontalEnd.x - horizontalStart.x), height: 2 });
+  labelObstacles.push({ x: origin.x - 1, y: Math.min(verticalStart.y, verticalEnd.y), width: 2, height: Math.abs(verticalEnd.y - verticalStart.y) });
+  const placedLabels = new Map(placeGroupLabels2D(labelRequests, labelObstacles, labelBounds).map(box => [box.id, box]));
+  const labelMetricKey = JSON.stringify([groupFontSize, [...labelTexts], showLabels, visibleNodes.map(node => [node.code, openEnaRenderedCodeLabel(codePresentation, node.code)])]);
+  useLayoutEffect(() => {
+    if (kind !== "comparison") return;
+    const next: typeof textMetrics = {};
+    comparisonSvgRef.current?.querySelectorAll<SVGTextElement>("[data-ena-label-measure]").forEach(text => {
+      const box = text.getBBox();
+      if (box.width > 0 && box.height > 0) next[text.dataset.enaLabelMeasure!] = { width: box.width, height: box.height, ascent: Number(text.getAttribute("y")) - box.y };
+    });
+    setTextMetrics(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+  }, [kind, labelMetricKey]);
 
   return (
     <svg
@@ -1760,7 +1854,7 @@ function ContrastSvg({
                   toDimensions={toNodeDimensions}
                   onNodeMove={onNodeMove ?? (() => {})}
                 >
-                  <text x={nodeSize + 3} y="3" textAnchor="start" className="ena-set-result-label">
+                  <text x={nodeSize + 3} y="3" textAnchor="start" className="ena-set-result-label" data-ena-label-measure={`code:${node.code}`}>
                     {codeLabel}
                   </text>
                 </OpenEnaSvgDraggableNode>
@@ -1778,10 +1872,12 @@ function ContrastSvg({
             key={`mean:${role}`}
             point={role === "primary" ? primaryMean : secondaryMean}
             compact={compact}
-            groupName={side.name}
+            groupName={groupFigureName2D(side.name, groupLabels)}
             role={role}
             color={groupColor(contrast, side, role)}
             showLabel={showGroupLabels}
+            labelPlacement={placedLabels.has(role) ? { ...placedLabels.get(role)!, text: labelTexts.get(role)!, fontSize: groupFontSize,
+              ascent: metrics(`group:${role}`, labelTexts.get(role)!, groupFontSize).ascent } : undefined}
             restoreLabel={restore?.label}
             restoreSlot={restore?.slot}
             restoreHitTargetScale={RESTORE_HIT_TARGET_CSS_SIZE / (RESTORE_HIT_TARGET_SVG_SIZE * zoom * svgScreenScale)}
@@ -1996,7 +2092,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
   const primaryPanelSide = sideForRole(panelRoles.primary);
   const secondaryPanelSide = sideForRole(panelRoles.secondary);
   const sidePlotCount = Number(panelStates.primary !== "removed") + Number(panelStates.secondary !== "removed");
-  const comparisonNames = activeNetworkRoles.map((role) => sideForRole(role)?.name).filter(Boolean) as string[];
+  const comparisonNames = activeNetworkRoles.map((role) => sideForRole(role)?.name).filter(Boolean).map(name => groupFigureName2D(name!, props.groupLabels));
   const comparisonAccessibleLabel = uiCopy.comparisonScaledDescription(comparisonNames, formatOfficialMultiplier(props.edgeScale));
   const primaryGroupDisplay = groupDisplaySide(props.groupDisplay, "primary", contrast.primary);
   const secondaryGroupDisplay = groupDisplaySide(props.groupDisplay, "secondary", contrast.secondary);
@@ -2075,7 +2171,7 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                           data-ena-series-color={groupColor(contrast, side, role)}
                           style={{ color: groupCaptionColor(contrast, side, role) }}
                         >
-                          {side.name}
+                          {groupFigureName2D(side.name, props.groupLabels)}
                         </span>,
                       ];
                     })}
@@ -2145,17 +2241,17 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                   <h3>{uiCopy.primaryPlot}</h3>
                   <p
                     className="ena-set-series-caption"
-                    aria-label={uiCopy.sideScaledDescription(primaryPanelSide.name, formatOfficialMultiplier(props.edgeScale))}
+                    aria-label={uiCopy.sideScaledDescription(groupFigureName2D(primaryPanelSide.name, props.groupLabels), formatOfficialMultiplier(props.edgeScale))}
                   >
                     <span
                       className="ena-set-series-primary"
                       data-ena-series-color={groupColor(contrast, primaryPanelSide, panelRoles.primary)}
                       style={{ color: groupCaptionColor(contrast, primaryPanelSide, panelRoles.primary) }}
                     >
-                      {primaryPanelSide.name}
+                      {groupFigureName2D(primaryPanelSide.name, props.groupLabels)}
                     </span>
                     <span className="ena-set-scale-caption"> {uiCopy.scaledCaption(formatOfficialMultiplier(props.edgeScale))}</span>
-                    <span className="sr-only">{primaryPanelSide.name} · {uiCopy.analyticUnits(primaryPanelSide.unitCount)}</span>
+                    <span className="sr-only">{groupFigureName2D(primaryPanelSide.name, props.groupLabels)} · {uiCopy.analyticUnits(primaryPanelSide.unitCount)}</span>
                   </p>
                 </div>
                 <div className="ena-set-plot-heading-tools">
@@ -2204,17 +2300,17 @@ export default function OpenEnaGroupContrast(props: OpenEnaGroupContrastProps) {
                   <h3>{uiCopy.secondaryPlot}</h3>
                   <p
                     className="ena-set-series-caption"
-                    aria-label={uiCopy.sideScaledDescription(secondaryPanelSide.name, formatOfficialMultiplier(props.edgeScale))}
+                    aria-label={uiCopy.sideScaledDescription(groupFigureName2D(secondaryPanelSide.name, props.groupLabels), formatOfficialMultiplier(props.edgeScale))}
                   >
                     <span
                       className="ena-set-series-secondary"
                       data-ena-series-color={groupColor(contrast, secondaryPanelSide, panelRoles.secondary)}
                       style={{ color: groupCaptionColor(contrast, secondaryPanelSide, panelRoles.secondary) }}
                     >
-                      {secondaryPanelSide.name}
+                      {groupFigureName2D(secondaryPanelSide.name, props.groupLabels)}
                     </span>
                     <span className="ena-set-scale-caption"> {uiCopy.scaledCaption(formatOfficialMultiplier(props.edgeScale))}</span>
-                    <span className="sr-only">{secondaryPanelSide.name} · {uiCopy.analyticUnits(secondaryPanelSide.unitCount)}</span>
+                    <span className="sr-only">{groupFigureName2D(secondaryPanelSide.name, props.groupLabels)} · {uiCopy.analyticUnits(secondaryPanelSide.unitCount)}</span>
                   </p>
                 </div>
                 <div className="ena-set-plot-heading-tools">

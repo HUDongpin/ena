@@ -7,7 +7,7 @@ test("inference browser gate uses the native production workflow and retains its
   const source = readFileSync(join(process.cwd(), "tests/open-ena-inference-browser-smoke.mjs"), "utf8");
   for (const marker of [
     "createServedBrowserV3", "prepareNativeFixtureV3", "runNativeFixtureV3", "nativeFixtureIdentitiesV3",
-    "Run confirmed inference", "open-ena-native-post-model-statistics", "pRaw", "pHolm",
+    "Non-parametric", "Run confirmed inference", "native table must preserve exact exported values", "open-ena-native-post-model-statistics", "pRaw", "pHolm",
     "statistics.available, false", "open-ena-ai-interpretation-request-v2", "assertAggregatePrivacy",
     "trajectory-independent-period", "trajectory-paired-periods", "trajectory-repeated-periods",
     "mann-whitney-u", "wilcoxon-signed-rank", "friedman", "path-comparison", "permutationCount",

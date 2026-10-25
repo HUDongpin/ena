@@ -1,0 +1,146 @@
+[
+  {
+    "case": "A",
+    "checks": 3874,
+    "passed": true,
+    "categories": {
+      "unit-coordinate": {
+        "checks": 174,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.999631442453856e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "node-coordinate": {
+        "checks": 14,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.885631714834915e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "edge-weight": {
+        "checks": 1827,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.990188738540624e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "connection-count": {
+        "checks": 1827,
+        "failures": 0,
+        "maxAbsoluteDifference": 0,
+        "tolerances": [
+          0
+        ]
+      },
+      "Welch": {
+        "checks": 16,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.5238095238098186e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "Mann-Whitney": {
+        "checks": 10,
+        "failures": 0,
+        "maxAbsoluteDifference": 3.4286741851999986e-05,
+        "tolerances": [
+          0,
+          5.0001e-05
+        ]
+      },
+      "Goodness": {
+        "checks": 4,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.369740214937856e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "Variance": {
+        "checks": 2,
+        "failures": 0,
+        "maxAbsoluteDifference": 2.8921425329425654e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      }
+    }
+  },
+  {
+    "case": "B",
+    "checks": 3874,
+    "passed": true,
+    "categories": {
+      "unit-coordinate": {
+        "checks": 174,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.999631442453856e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "node-coordinate": {
+        "checks": 14,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.885631714834915e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "edge-weight": {
+        "checks": 1827,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.990188738540624e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "connection-count": {
+        "checks": 1827,
+        "failures": 0,
+        "maxAbsoluteDifference": 0,
+        "tolerances": [
+          0
+        ]
+      },
+      "Welch": {
+        "checks": 16,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.5238095238098186e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "Mann-Whitney": {
+        "checks": 10,
+        "failures": 0,
+        "maxAbsoluteDifference": 3.4286741851999986e-05,
+        "tolerances": [
+          0,
+          5.0001e-05
+        ]
+      },
+      "Goodness": {
+        "checks": 4,
+        "failures": 0,
+        "maxAbsoluteDifference": 4.369740214937856e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      },
+      "Variance": {
+        "checks": 2,
+        "failures": 0,
+        "maxAbsoluteDifference": 2.8921425329425654e-05,
+        "tolerances": [
+          5.0001e-05
+        ]
+      }
+    }
+  }
+]

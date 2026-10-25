@@ -1,0 +1,26 @@
+[
+  {
+    "case": "A",
+    "checks": 236,
+    "failures": [],
+    "passed": true,
+    "maxPosition": 1.5555,
+    "extremePosition": 1.8666,
+    "pointScale": 1.7829567213168525,
+    "comparison": "Three actual SVG frames normalized by their visible axis endpoints; official live response provides 4-decimal scaled points, means and CIs. No fitted alignment or sample coefficient.",
+    "rounding_tolerance_in_axis_units": 2.6787206685953067e-05,
+    "max_absolute_difference": 2.646320836380278e-05
+  },
+  {
+    "case": "B",
+    "checks": 236,
+    "failures": [],
+    "passed": true,
+    "maxPosition": 1.5555,
+    "extremePosition": 1.8666,
+    "pointScale": 1.7829567213168525,
+    "comparison": "Three actual SVG frames normalized by their visible axis endpoints; official live response provides 4-decimal scaled points, means and CIs. No fitted alignment or sample coefficient.",
+    "rounding_tolerance_in_axis_units": 2.6787206685953067e-05,
+    "max_absolute_difference": 2.646320836380278e-05
+  }
+]

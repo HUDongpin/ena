@@ -2597,7 +2597,11 @@ export function prepareStandardDraftValidationV3(
         numericalPrerequisitesReady = !meansDiagnostics.some((entry) => entry.severity === "error");
       }
       if (modelDraft.rotation.type !== "reference" && numericalPrerequisitesReady) {
-        const zeroObservation = zeroObservationDiagnosticV3(networks.targetVectors);
+        // Standard endpoints retain zero networks in the population, matching
+        // webENA's sphere normalization. Rank of the complete fitting population
+        // is still checked below. Trajectory admission is unchanged.
+        const zeroObservation = modelDraft.model === "EndPoint"
+          ? null : zeroObservationDiagnosticV3(networks.targetVectors);
         if (zeroObservation !== null) {
           output.push(zeroObservation);
           numericalPrerequisitesReady = false;

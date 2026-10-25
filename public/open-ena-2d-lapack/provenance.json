@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "package": "webr",
+  "version": "0.6.0",
+  "R": "4.6.0",
+  "LAPACK": "3.12.1",
+  "source": "https://github.com/r-wasm/webr/tree/v0.6.0",
+  "npmArchive": "https://registry.npmjs.org/webr/-/webr-0.6.0.tgz",
+  "assets": {
+    "blas.wasm": {
+      "bytes": 198205,
+      "sha256": "d831496cc1d1e2748519439a0ea509ba966b56db10d13132db52331a270aac74",
+      "originalPath": "dist/libRblas.so"
+    },
+    "lapack.wasm": {
+      "bytes": 1769888,
+      "sha256": "df8ca333754f0dd95715df437f6e6d633e4ffbff0176bcb11c15fe3e5dd4e387",
+      "originalPath": "dist/libRlapack.so"
+    }
+  },
+  "scope": "Unmodified real double-precision LAPACK/BLAS component binaries. No R interpreter, network data service, or statistical engine substitution.",
+  "algorithmSources": {
+    "rENAPI": "https://gitlab.com/epistemic-analytics/qe-packages/rENAPI/-/blob/3c0d4654a27c146f38d75aa2feaf8d815275803e/R/ena.generate.R",
+    "algorithm": "One-contrast rENA Means: center, group-mean contrast, one-column LINPACK QR, deflate, center complement, LAPACK DGESDD; no arbitrary sign convention.",
+    "validation": "120 signed R 4.4.2 / LAPACK 3.12.0 synthetic oracles in tests/fixtures/open-ena-means-directions-r.json, including row/code permutations."
+  }
+}

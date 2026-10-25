@@ -23,6 +23,7 @@ pnpm-debug.log*
 # Local browser QA artifacts
 /.playwright-cli/
 /output/
+/public/open-ena-2d-lapack/worker.js
 /.worktrees/
 
 # Repo-root local scratch (Node compile cache, research dumps)

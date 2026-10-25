@@ -273,7 +273,8 @@ export function completeStandardPlanFromAccumulationV3(
   }
   for (const row of data.connectionMatrix) assertStandardFiniteVectorV3(row, width, "target network");
   if (data.connectionMatrix.length === 0) throw new Error("Standard execution requires a real analytical observation.");
-  if (rotation.type !== "reference" && data.connectionMatrix.some((row) => row.every((value) => value === 0))) {
+  if (plan.configuration.analysis.model.type !== "EndPoint" && rotation.type !== "reference"
+    && data.connectionMatrix.some((row) => row.every((value) => value === 0))) {
     throw new Error("STANDARD_TARGET_RANK_ZERO: a zero network analytical observation blocks target fitting.");
   }
   observer?.onResources?.({ numericCells: 2 * data.connectionCounts.length * width, temporaryNumericCellsBound: 2 * data.connectionCounts.length * width + 3 * width * width + 8 * width });

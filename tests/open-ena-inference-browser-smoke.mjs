@@ -43,6 +43,12 @@ async function downloadJson(page, button, name) {
   const item = await download(page, button, name);
   return { value: JSON.parse(item.bytes.toString("utf8")), sha256: item.sha256 };
 }
+async function nativeTableRows(page, label) {
+  return page.getByRole("region", { name: label, exact: true }).locator("table").evaluate(table => {
+    const headers = [...table.querySelectorAll("thead th")].map(cell => cell.textContent.trim());
+    return [...table.querySelectorAll("tbody tr")].map(row => Object.fromEntries([...row.querySelectorAll("td")].map((cell, index) => [headers[index], cell.textContent])));
+  });
+}
 function assertAggregatePrivacy(value) {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   for (const identity of [fixtureEntityPrefix, ...fixtureGroups, ...fixturePeriods]) assert.ok(!text.includes(identity), `aggregate consumer disclosed ${identity}`);
@@ -166,8 +172,14 @@ try {
     await rail.getByRole("button", { name: /^Stats/ }).click();
     assert.equal(await page.getByRole("button", { name: "Export native statistics", exact: true }).count(), 0, "inference must not run with model construction");
     await chooseGroups(page, await nativeFixtureIdentitiesV3(page));
-    const run = page.getByRole("button", { name: "Run confirmed inference", exact: true });
-    await run.focus(); await page.keyboard.press("Enter");
+    const run = page.getByRole("button", { name: "Non-parametric", exact: true });
+    // Unlike click(), focus() does not wait for a temporarily disabled action.
+    // A fresh Means model may still be preparing its bounded 2D display frame.
+    await page.waitForFunction(() => [...document.querySelectorAll(".ena-workspace-stats-v3 button")]
+      .some(button => button.textContent === "Non-parametric" && !button.disabled));
+    await run.focus();
+    assert.ok(await run.evaluate(node => document.activeElement === node), "the enabled inference action must own keyboard focus");
+    await page.keyboard.press("Enter");
     const exported = page.getByRole("button", { name: "Export native statistics", exact: true });
     await exported.waitFor();
     // Chromium may blur a button while it is disabled for async inference.
@@ -175,11 +187,15 @@ try {
     const { value, sha256: hash } = await downloadJson(page, exported, "endpoint-statistics.json");
     const rows = assertStatistics(value, endpointScience.binding, "endpoint-independent", "mann-whitney-u");
     assert.equal(rows.length, 2);
-    for (const key of ["pRaw", "pHolm"]) {
-      const exact = await page.locator(`[data-native-metric="${key}"] span[title]`).evaluateAll(nodes => nodes.map(node => Number(node.title)));
-      assert.deepEqual(exact, rows.filter(row => row.status === "available").map(row => row[key]), "comparison cards must preserve exact exported values");
-    }
     await page.locator("details > summary").filter({ hasText: /^Native comparison statistics$/ }).click();
+    // The 2D cards intentionally match webENA's rounded summaries. The native
+    // detail table still carries full precision, including adjusted p values.
+    const tableRows = await nativeTableRows(page, "Native comparison statistics");
+    assert.equal(tableRows.length, rows.length);
+    for (const key of ["pRaw", "pHolm"]) {
+      const exact = tableRows.filter(row => row.status === "available").map(row => Number(row[key]));
+      assert.deepEqual(exact, rows.filter(row => row.status === "available").map(row => row[key]), "native table must preserve exact exported values");
+    }
     await page.locator("details > summary").filter({ hasText: /^Researcher-requested post-model inference$/ }).click();
     assert.match(await page.locator('section[aria-label="Researcher-requested post-model inference"]').innerText(), /Mann|mann/u);
     const bundle = (await downloadJson(page, page.getByRole("button", { name: "Download Model", exact: true }), "endpoint-model.json")).value;
@@ -237,6 +253,9 @@ try {
   let orderedHorizons, trajectoryScience;
   await stage("configure missing-period native trajectories with explicit source order", async () => {
     await importFixture(page, ["Lesson"]);
+    // This follow-on fixture has always tested SVD trajectories. Declare that
+    // choice explicitly rather than inheriting the new two-group Means default.
+    await page.getByRole("combobox", { name: "Projection & Rotation", exact: true }).selectOption("svd");
     await page.getByRole("combobox", { name: "Model", exact: true }).selectOption("SeparateTrajectory");
     await page.getByRole("tab", { name: /^Horizons(,|$)/ }).click();
     const panel = page.getByRole("tabpanel");
@@ -246,6 +265,7 @@ try {
     await runNativeFixtureV3(page);
     const identity = await nativeFixtureIdentitiesV3(page);
     assert.equal(identity.configuration.analysis.model.type, "SeparateTrajectory");
+    assert.equal(identity.configuration.analysis.rotation.type, "svd");
     assert.equal(identity.dictionary.units.length, 17);
     const sequences = await page.evaluate(() => window.__openEnaNativeAudit.responses.at(-1).result.executionProvenance.ordering.resolvedHorizonOrder.unitSequences);
     const longest = [...sequences].sort((a, b) => b.steps.length - a.steps.length)[0];
@@ -320,8 +340,8 @@ try {
   });
   await stage("Traditional and Simplified Chinese native inference", async () => {
     const locales = [
-      { path: "zh-hant", sample: "載入樣本", stats: "統計與匯出", run: "執行已確認推論", export: "匯出原生統計" },
-      { path: "zh-hans", sample: "加载样本", stats: "统计与导出", run: "运行已确认推断", export: "导出原生统计" },
+      { path: "zh-hant", sample: "載入樣本", stats: "統計與匯出", run: "非參數檢驗", export: "匯出原生統計", rows: "原生比較統計", minimumU: "U（較小值）", effect: "秩二列相關 r（絕對值）" },
+      { path: "zh-hans", sample: "加载样本", stats: "统计与导出", run: "非参数检验", export: "导出原生统计", rows: "原生比较统计", minimumU: "U（较小值）", effect: "秩二列相关 r（绝对值）" },
     ];
     const results = [];
     for (const locale of locales) {
@@ -336,8 +356,12 @@ try {
       await page.getByRole("button", { name: locale.run, exact: true }).click();
       const exported = page.getByRole("button", { name: locale.export, exact: true }); await exported.waitFor();
       const { value, sha256: hash } = await downloadJson(page, exported, `${locale.path}-statistics.json`);
-      assertStatistics(value, (await science(page)).binding, "endpoint-independent", "mann-whitney-u");
-      for (const label of ["p（原始）", "p（Holm 校正）"]) assert.ok(await page.getByText(label, { exact: true }).count() > 0);
+      const rows = assertStatistics(value, (await science(page)).binding, "endpoint-independent", "mann-whitney-u");
+      for (const label of ["p（原始）", locale.minimumU, locale.effect]) assert.ok(await page.getByText(label, { exact: true }).count() > 0);
+      await page.locator("details > summary").filter({ hasText: new RegExp(`^${locale.rows}$`) }).click();
+      const tableRows = await nativeTableRows(page, locale.rows);
+      assert.equal(tableRows.length, rows.length);
+      for (const key of ["pRaw", "pHolm"]) assert.deepEqual(tableRows.filter(row => row.status === "available").map(row => Number(row[key])), rows.filter(row => row.status === "available").map(row => row[key]), "localized native tables retain full-precision raw and adjusted p values");
       await page.screenshot({ path: join(artifactDirectory, `${locale.path}-statistics.png`) });
       results.push({ locale: locale.path, rows: value.inference.rows.length, sha256: hash });
     }

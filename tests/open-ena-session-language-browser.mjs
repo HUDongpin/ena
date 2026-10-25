@@ -42,7 +42,7 @@ try {
     await page.evaluate(() => window.resolveRun(0));
     await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]').dataset.resultStatus === "current");
     await page.getByRole("button", { name: "Stats & Export", exact: true }).click();
-    await page.getByRole("button", { name: "Run confirmed inference", exact: true }).click();
+    await page.getByRole("button", { name: "Non-parametric", exact: true }).click();
     await page.waitForFunction(() => !document.querySelector(".ena-ai-consent input").disabled);
     const originalUrl = page.url();
     await page.evaluate(() => { window.workspaceNode = document.querySelector('[data-testid="open-ena-workspace-v3"]'); });

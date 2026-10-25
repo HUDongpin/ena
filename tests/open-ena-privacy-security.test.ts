@@ -165,10 +165,11 @@ test("actual toolbar image handlers require one confirmation before materializat
     const script = ts.transpileModule(`${[...functions.values()].join("\n")}\nconst captureImageExport = ${capture};\nglobalThis.execute = ${handler};`, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
     }).outputText;
-    for (const scenario of ["accepted", "declined", "stale", "unmounted"]) {
+    for (const scenario of ["accepted", "declined", "stale", "unmounted", "frame-pending"]) {
       let confirmations = 0, materializations = 0;
       const result = { binding: { scientificResultSha256: "synthetic-result" } };
       const context = {
+        endpointFrame2D: { status: scenario === "frame-pending" ? "pending" : "ready" },
         mounted: { current: scenario !== "unmounted" },
         latest: { current: { current: scenario !== "stale", currentPlan: {}, state: { model: { result } } } },
         copy: { stats: { identityExportConfirmation: "synthetic identity warning" } },

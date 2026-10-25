@@ -150,6 +150,17 @@ function studentTCdf(value: number, degreesFreedom: number): number {
   return value > 0 ? 1 - tail : tail;
 }
 
+/** Two-sided tail, including the fractional degrees of freedom used by Welch.
+ * Evaluate the tail directly rather than subtracting a nearly-one CDF. */
+export function studentTTwoSidedP(value: number, degreesFreedom: number): number {
+  if (!Number.isFinite(value) || !Number.isFinite(degreesFreedom) || degreesFreedom <= 0) {
+    throw new RangeError("Student t requires a finite statistic and positive finite degrees of freedom.");
+  }
+  if (value === 0) return 1;
+  const x = degreesFreedom / (degreesFreedom + value * value);
+  return Math.max(0, Math.min(1, regularizedIncompleteBeta(x, degreesFreedom / 2, 0.5)));
+}
+
 const criticalValueCache = new Map<number, number>();
 
 function quantileType7(sortedValues: readonly number[], probability: number) {

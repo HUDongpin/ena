@@ -487,12 +487,12 @@ test("plot papers use color-coded group captions and official scale notation", (
   assert.match(groupContrast, /className="ena-set-scale-caption"[\s\S]*?formatOfficialMultiplier\(props\.edgeScale\)/);
   assert.match(
     groupContrast,
-    /className="sr-only">\{primaryPanelSide\.name\} · \{uiCopy\.analyticUnits\(primaryPanelSide\.unitCount\)\}<\/span>/,
+    /className="sr-only">\{groupFigureName2D\(primaryPanelSide\.name, props\.groupLabels\)\} · \{uiCopy\.analyticUnits\(primaryPanelSide\.unitCount\)\}<\/span>/,
     "unit counts remain available to assistive technology while the visible title follows webENA",
   );
   assert.match(
     groupContrast,
-    /className="sr-only">\{secondaryPanelSide\.name\} · \{uiCopy\.analyticUnits\(secondaryPanelSide\.unitCount\)\}<\/span>/,
+    /className="sr-only">\{groupFigureName2D\(secondaryPanelSide\.name, props\.groupLabels\)\} · \{uiCopy\.analyticUnits\(secondaryPanelSide\.unitCount\)\}<\/span>/,
   );
   assert.doesNotMatch(
     styles,
