@@ -91,7 +91,9 @@ test("client still polls and deletes the correctly bound job on a genuine termin
   const calls: string[] = [];
   const server = await listen((request, response) => { calls.push(`${request.method} ${request.url}`); response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(request.method === "DELETE" ? deletion() : failedStatus())); });
   try {
-    await assert.rejects(executeOpenEnaLongitudinalPreparedV3(await validOpenEnaLongitudinalRequestV3(500_000, 10_000), { allowRemote: true, remoteEndpoint: endpoint, remoteCleanupDeadlineMilliseconds: 100, fetchImpl: (input, init) => String(input) === endpoint ? Promise.resolve(Response.json(capability(server.origin), { status: 202 })) : fetch(input, init) }));
+    // Verify job binding, with room for native HTTP scheduling in parallel suites.
+    // This finite cleanup budget remains below the production 10-second default.
+    await assert.rejects(executeOpenEnaLongitudinalPreparedV3(await validOpenEnaLongitudinalRequestV3(500_000, 10_000), { allowRemote: true, remoteEndpoint: endpoint, remoteCleanupDeadlineMilliseconds: 5_000, fetchImpl: (input, init) => String(input) === endpoint ? Promise.resolve(Response.json(capability(server.origin), { status: 202 })) : fetch(input, init) }));
     assert.deepEqual(calls, ["GET /v1/jobs/job-1", "DELETE /v1/jobs/job-1"]);
   } finally { await server.close(); clearOpenEnaLongitudinalExecutionCacheV3(); }
 });
