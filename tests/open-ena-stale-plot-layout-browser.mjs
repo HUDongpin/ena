@@ -26,6 +26,8 @@ try {
     await page.goto(`${runtime.baseUrl}/en/open-ena`, { waitUntil: "domcontentloaded" });
     await page.getByRole("textbox", { name: "Account name" }).fill(credentials.username);
     await page.getByRole("textbox", { name: "Password" }).fill(credentials.password);
+    // Sign-in navigation invalidates response bodies still being read for asset custody.
+    await runtime.drainAssetReads("login assets before sign-in");
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await page.getByRole("button", { name: "Load sample", exact: true }).click();
     await page.getByTestId("open-ena-group-comparison-plot").waitFor();
