@@ -61,7 +61,7 @@ export default function AboutContent({ homeHref = "/" }: { homeHref?: string }) 
         <section className={styles["team-section"]} aria-labelledby="team-title">
           <div className={styles["team-section-heading"]}>
             <h2 id="team-title">The team</h2>
-            <span>Four perspectives, connected by a shared commitment to understandable research tools.</span>
+            <span>Five perspectives, connected by a shared commitment to understandable research tools.</span>
           </div>
           <div className={styles["team-grid"]}>
             {teamMembers.map((member, index) => <TeamCard key={member.name} member={member} index={index} />)}
