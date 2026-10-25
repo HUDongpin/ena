@@ -85,6 +85,9 @@ import { OpenEnaTrajectoryAnalysisPanelV3, trajectoryAnalysisCopyV3 } from "./mo
 import type { OpenEnaTrajectoryPathControlsV3 } from "@/lib/open-ena/trajectory-path-inference-v3";
 import type { OpenEnaTrajectoryExportOptionsV3 } from "@/lib/open-ena/trajectory-export-v3";
 import { OpenEnaNativeStatsPanelV3 } from "./model-v3/OpenEnaNativeStatsPanelV3";
+import { useEndpointMeansFrame2D } from "./model-v3/use-endpoint-means-frame-2d";
+import { applyEndpointMeansFrame2D, endpointMeansFrameReceipt2D } from "@/lib/open-ena/endpoint-means-frame-2d-v3";
+import { groupDisplayNames2D } from "@/lib/open-ena/group-label-layout-2d";
 import { OpenEnaModelTabsV3, type OpenEnaModelScientificSummaryV3 } from "./model-v3/OpenEnaModelTabsV3";
 import { modelRebuildBlockingChecklistV3 } from "./model-v3/OpenEnaRebuildBlockingChecklistV3";
 import { OpenEnaUnitsPanelV3 } from "./model-v3/OpenEnaUnitsPanelV3";
@@ -589,6 +592,8 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     };
   }, [resultTableRowCounts, resultTableAvailability, resultTable, resultTablePreviewRows, copy.resultTables, current, result, resultTableSource, workspaceCopy.stats.exportApplicability, workspaceId]);
   const completedResultKind = result?.configuration.analysisFamily;
+  const endpoint2DStatistics = view === "2d" && result?.configuration.analysisFamily === "standard"
+    && result.configuration.analysis.model.type === "EndPoint";
   const supportedAxes = presentation?.result.dimensions ?? [];
   const twoDAxes = axes.length === 2 && axes.every((axis) => supportedAxes.includes(axis)) ? axes : supportedAxes.slice(0, 2);
   const availableThreeDAxes = threeDAxes.length === 3 && threeDAxes.every((axis) => supportedAxes.includes(axis)) ? threeDAxes : supportedAxes.slice(0, 3);
@@ -605,6 +610,8 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const genericThreeDAvailable = threeDDimensions !== null
     && (completedResultKind === "ona" || standardThreeDPluginAvailability?.enabled === true);
   const groups = result?.executionProvenance.identityDictionary.groups ?? [];
+  const groupLabels2D = useMemo(() => view === "2d" && result?.configuration.analysisFamily === "standard"
+    && result.configuration.analysis.model.type === "EndPoint" ? groupDisplayNames2D(groups) : undefined, [result, view]);
   const primary = groups.find((group) => group.token === primaryGroupName) ?? null;
   const secondary = groups.find((group) => group.token === secondaryGroupName) ?? null;
   const horizons = result?.executionProvenance.identityDictionary.horizons ?? [];
@@ -681,6 +688,8 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     : null, [result, primaryGroupName, secondaryGroupName, twoDAxes.join("\0")]);
   const groupDisplay = useMemo(() => retainedPlotContrast ? presentBoundGroupDisplayV3(retainedPlotContrast, display.groups, hiddenUnitKeys, display.allGroupsSuppressed) : null, [retainedPlotContrast, display.groups, hiddenUnitKeys, display.allGroupsSuppressed]);
   const contrast = groupDisplay?.contrast ?? null;
+  const endpointFrame2D = useEndpointMeansFrame2D(result, currentPlan, current, view);
+  const contrast2D = useMemo(() => contrast && endpointFrame2D.frame ? applyEndpointMeansFrame2D(contrast, endpointFrame2D.frame) : contrast, [contrast, endpointFrame2D.frame]);
   const onaView = useMemo(() => result?.configuration.analysisFamily === "ona" ? buildHistoricalOnaViewV3(result as BoundOnaResultV3, primary?.token ?? null) : null, [result, primaryGroupName]);
   const dataViewGroup = dataViewContext === "primary" ? primary?.fields[0].value ?? null : dataViewContext === "secondary" ? secondary?.fields[0].value ?? null : null;
   const dataViewPresentation = useMemo(() => result ? buildDataViewPresentationV3(result, dataViewGroup) : null, [result, dataViewContext, primary, secondary]);
@@ -1278,6 +1287,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   }
   const captureImageExport = () => {
     const captured = latest.current;
+    if (endpointFrame2D.status === "pending") return null;
     if (!mounted.current || !captured.current || !captured.currentPlan || !captured.state.model.result || !confirmCurrentIdentityBearingExport()) return null;
     const capturedContext = canonicalJsonV3(modelScientificContextV3(captured.state.model));
     return () => mounted.current && latest.current.current && latest.current.currentPlan === captured.currentPlan && latest.current.state.model.result === captured.state.model.result && canonicalJsonV3(modelScientificContextV3(latest.current.state.model)) === capturedContext;
@@ -1537,13 +1547,16 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
               label={`${cloudCopy.savedStatistics} ${index + 1}`} />)}
           <button type="button" onClick={() => downloadJson("saved-statistical-report.json", initialCloudWorkspace.statisticsReport)}>{cloudCopy.downloadStatistics}</button>
         </details> : null}
-      {mode === "stats" && <section className="ena-workspace-section-v3 ena-workspace-stats-v3"><OpenEnaNativeStatsPanelV3 result={result} current={current} axes={twoDAxes} inference={activeInference} copy={copy.stats} nativeCopy={modelV3Copy.nativeStats} comparisonCardCopy={restoredCopy.comparisonCards} renderTable={(rows, label) => <ResearchTableV3 {...researchTableCopy} rows={rows} label={label} />}>{groupSelectors}
+      {mode === "stats" && <section className="ena-workspace-section-v3 ena-workspace-stats-v3"><OpenEnaNativeStatsPanelV3 result={result} current={current} axes={twoDAxes} inference={activeInference} copy={copy.stats} nativeCopy={modelV3Copy.nativeStats} comparisonCardCopy={restoredCopy.comparisonCards} renderTable={(rows, label) => <ResearchTableV3 {...researchTableCopy} rows={rows} label={label} />}
+        endpoint2D={endpoint2DStatistics ? { plan: currentPlan, controls: endpointControls, busy: inferenceBusy || endpointFrame2D.status === "pending",
+          axisSigns: Object.fromEntries(twoDAxes.map((axis, index) => [axis, (index === 0 ? flipX : flipY) ? -1 : 1])),
+          onRun: () => void attempt(runInference), onExport: value => downloadJson("open-ena-endpoint-statistics-2d.json", { ...value, ...endpointMeansFrameReceipt2D(contrast2D, endpointFrame2D.frame) }) } : undefined}>{groupSelectors}
         <p>{workspaceCopy.stats.separation}</p>
         {isTrajectory && <><label>{workspaceCopy.stats.inferenceDesign}<select value={inferenceDesign} onChange={(e) => setInferenceDesign(e.target.value as typeof inferenceDesign)}><option value="independent">{workspaceCopy.stats.designs.independent}</option><option value="paired">{workspaceCopy.stats.designs.paired}</option><option value="repeated">{workspaceCopy.stats.designs.repeated}</option></select></label>
           <label><input type="checkbox" checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />{workspaceCopy.stats.identityConfirmation}</label>
           <p>{workspaceCopy.stats.periodInstructions}</p>
           {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={selectedPeriods.includes(horizon.token)} onChange={(e) => setSelectedPeriods((values) => e.target.checked ? [...values, horizon.token] : values.filter((value) => value !== horizon.token))} />{horizon.displayLabel}</label>)}</>}
-        <button type="button" disabled={!current || !controls || inferenceBusy || completedResultKind === "ona"} onClick={() => void attempt(runInference)}>{workspaceCopy.stats.runInference}</button>
+        {!endpoint2DStatistics && <button type="button" disabled={!current || !controls || inferenceBusy || completedResultKind === "ona"} onClick={() => void attempt(runInference)}>{workspaceCopy.stats.runInference}</button>}
         {completedResultKind === "ona" && <p>{workspaceCopy.stats.onaDescriptive}</p>}
         {onaView && <><p>{workspaceCopy.stats.onaMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={onaView.edges} label={workspaceCopy.stats.onaEdges} />
           <ResearchTableV3 {...researchTableCopy} rows={onaView.auditRows} label={workspaceCopy.stats.onaAudit} /></>}
@@ -1669,18 +1682,20 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
           <div className="ena-visual-toolbar-actions"><button type="button" data-testid="open-ena-data-view-toggle" disabled={!result} aria-pressed={centerSurface === "data"} aria-label={centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnAriaLabel : workspaceCopy.dataView.returnAriaLabel) : workspaceCopy.toolbar.dataView} onClick={() => setCenterSurface((value) => value === "plot" ? "data" : "plot")}>{centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnLabel : workspaceCopy.dataView.returnLabel) : workspaceCopy.toolbar.dataView}</button>
               <div className="ena-analysis-toolbar-cluster"><div className="ena-view-toggle"><button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>{completedResultKind === "ona" ? copy.ona.workspace.twoD : copy.views.twoD}</button><button type="button" aria-pressed={view === "3d"} disabled={!genericThreeDAvailable} onClick={() => setView("3d")}>{completedResultKind === "ona" ? copy.ona.workspace.threeD : copy.views.threeD}</button></div>
                 <button type="button" className="ena-download-model-button ena-compact-toolbar-button" disabled={!current || Boolean(currentAnalysisDisclosure?.disabled)} aria-describedby={currentAnalysisNote ? currentAnalysisNoteId : undefined} title={currentAnalysisNote || undefined} onClick={() => void attempt(async () => { if (currentAnalysisDisclosure?.disabled) return; if (result && currentPlan) { const value = await exportCurrentAnalysisV3(result, currentPlan); if (mounted.current && latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(value); } })}><span className="ena-download-model-button-icon" aria-hidden="true">↓</span>{workspaceCopy.toolbar.downloadModel}</button>
-              </div><button type="button" className="ena-compact-toolbar-button" disabled={!current || view === "3d"} onClick={exportPlotSvg}>{workspaceCopy.toolbar.exportSvg}</button><button type="button" className="ena-compact-toolbar-button" disabled={!current || view === "3d"} onClick={exportPlotPng}>{workspaceCopy.toolbar.exportPng}</button>
+              </div><button type="button" className="ena-compact-toolbar-button" disabled={!current || view === "3d" || endpointFrame2D.status === "pending"} onClick={exportPlotSvg}>{workspaceCopy.toolbar.exportSvg}</button><button type="button" className="ena-compact-toolbar-button" disabled={!current || view === "3d" || endpointFrame2D.status === "pending"} onClick={exportPlotPng}>{workspaceCopy.toolbar.exportPng}</button>
             </div>
           </div>
           <div>
       {presentation && result && <section aria-label={workspaceCopy.result.plotAria} data-ena-workbench-region="center">{modelState.resultStatus === "stale" && rebuildCue ? <div className="ena-stale-rebuild-callout" data-testid="open-ena-stale-rebuild" data-ena-rebuild-cue={rebuildCue.reason}><p role="status" aria-live="polite">{workspaceCopy.result.sourceReplacementNotice}</p><button type="button" ref={staleRebuildRef} className="ena-action-button ena-action-primary ena-stale-rebuild-button" data-testid="open-ena-stale-rebuild-run" aria-label={workspaceCopy.result.rebuildNowAria} aria-describedby={mode === "model" ? rebuildBlockingDescribedBy : undefined} disabled={sourceBusy || sourcePreview !== null || modelState.runStatus === "running"} onClick={requestRebuildAfterSourceReplacement}>{workspaceCopy.result.rebuildNow}<span aria-hidden="true">→</span></button></div> : <p>{modelState.resultStatus === "stale" ? workspaceCopy.result.historicalGeometry : workspaceCopy.result.boundGeometry}</p>}
+        {endpointFrame2D.status === "pending" && <p role="status" data-ena-2d-frame-status="pending">{locale === "zh-hans" ? "正在准备 2D 图形比例…" : locale === "zh-hant" ? "正在準備 2D 圖形比例…" : "Preparing the 2D plot scale…"}</p>}
+        {endpointFrame2D.status === "unavailable" && <p role="status" data-ena-2d-frame-status="unavailable">{locale === "zh-hans" ? "此模型暂无可用的 R 兼容 2D 图形比例，目前显示原生比例。" : locale === "zh-hant" ? "此模型暫無可用的 R 相容 2D 圖形比例，目前顯示原生比例。" : "The R-compatible 2D plot scale is unavailable for this model. The plot uses its native scale."}</p>}
         {view === "3d" && completedResultKind === "standard" && !genericThreeDAvailable ? <p role="status">{copy.plot.threeDUnavailable}</p> : selectedAxes.length < 2 ? <><p>{workspaceCopy.result.oneAxis}</p><ResearchTableV3 {...researchTableCopy} rows={result.set.points} label={workspaceCopy.result.fittedCoordinates} /></>
           : completedResultKind === "ona" ? view === "3d" && threeDDimensions
             ? <OpenEna3DOrderedResultLayout {...plotProps} sharedCamera={camera} onCameraChange={setCamera} sharedAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
             : <OpenEnaOrderedResultLayout {...plotProps} copy={copy.ona.layout} plotCopy={copy.ona.plot} textScale={textScale} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} svgRef={plotSvgRef} />
           : contrast ? view === "3d" && threeDDimensions
             ? <OpenEna3DGroupContrast {...plotProps} sharedCamera={camera} onCameraChange={setCamera} sharedAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} groupColumn="Group" result={plotResult!} contrast={contrast} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />
-            : <OpenEnaGroupContrast {...plotProps} uiCopy={workspaceCopy.plot} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} onConfirmIdentityBearingExport={confirmCurrentIdentityBearingExport} onSwitchPlots={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }} contrast={contrast} showGroupLabels={showGroupLabels && !display.allGroupsSuppressed} unitCircle={unitCircle} textScale={textScale} svgRef={plotSvgRef} />
+            : <OpenEnaGroupContrast {...plotProps} groupLabels={groupLabels2D} uiCopy={workspaceCopy.plot} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} onConfirmIdentityBearingExport={confirmCurrentIdentityBearingExport} onSwitchPlots={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }} contrast={contrast2D!} showGroupLabels={showGroupLabels && !display.allGroupsSuppressed} unitCircle={unitCircle} textScale={textScale} svgRef={plotSvgRef} />
           : centerSurface === "data" ? nativeDataView : view === "3d" && threeDDimensions ? <OpenEnaInteractive3DPlot {...plotProps} result={plotResult!} initialCamera={camera} onCameraChange={setCamera} initialAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} />
           : <OpenEnaPlot {...plotProps} result={plotResult!} view="2d" svgRef={plotSvgRef} />}
         {!contrast && completedResultKind !== "ona" && <div data-ena-workbench-region="right-stack">{persistentPlotTools}</div>}

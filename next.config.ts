@@ -50,6 +50,12 @@ const nextConfig: NextConfig = {
         },
       ],
     }, {
+      source: "/open-ena-2d-lapack/worker.js",
+      headers: [
+        // Scope WebAssembly permission to the isolated 2D display worker.
+        { key: "Content-Security-Policy", value: "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'" },
+      ],
+    }, {
       source: "/:locale/plugins/:privatePath(propose|status|operator)/:rest*",
       headers: [
         { key: "Cache-Control", value: "private, no-store, max-age=0" },

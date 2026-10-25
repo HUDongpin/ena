@@ -107,7 +107,7 @@ export type ModelStateActionV3 =
   /** A newly accepted source generation invalidates asynchronous work even when
    * its normalized content hash is equal (e.g. different file metadata). */
   | { type: "adopt-dataset"; datasetSha256: string }
-  | { type: "replace-standard-draft"; draft: StandardEnaDraftV3 }
+  | { type: "replace-standard-draft"; draft: StandardEnaDraftV3; intent?: "rotation" }
   | { type: "replace-ona-draft"; draft: OrderedNetworkDraftV3 }
   /** Explicit artifact adoption counts even when its fields equal the empty sibling. */
   | { type: "adopt-ona-draft"; draft: OrderedNetworkDraftV3 }

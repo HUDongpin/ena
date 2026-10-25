@@ -353,6 +353,27 @@ test("official group labels default on beside comparison mean squares and remain
   assert.match(hidden, />Evidence<|>Reflection<|>Revision</);
 });
 
+test("2D group text and collision layout preserve all model marks and frame parameters", async () => {
+  const groupLabels = { [contrast.primary.name]: "First group", [contrast.secondary.name]: "Second group" };
+  const withLabels = await render({ groupLabels, showGroupLabels: true });
+  const withoutLabels = await render({ groupLabels, showGroupLabels: false });
+  for (const id of ["open-ena-group-comparison-plot", "open-ena-group-primary-plot", "open-ena-group-secondary-plot"]) {
+    const a = plotSvg(withLabels, id), b = plotSvg(withoutLabels, id);
+    assert.deepEqual(edgeLineTags(a), edgeLineTags(b));
+    assert.deepEqual(unitPointTags(a), unitPointTags(b));
+    for (const code of ["Evidence", "Reflection", "Revision"]) assert.deepEqual(codeNodePosition(a, code), codeNodePosition(b, code));
+    const guides = (svg: string) => [...svg.matchAll(/<(?:line|rect)\b[^>]*data-ena-interval-(?:line|handle)="[^"]+"[^>]*>/g)].map(m => m[0]);
+    assert.deepEqual(guides(a), guides(b));
+    const means = (svg: string) => [...svg.matchAll(/<g\b[^>]*data-ena-summary-marker="true"[^>]*>/g)].map(m => m[0]);
+    assert.deepEqual(means(a), means(b));
+    for (const attr of ["data-ena-official-point-position-scale", "data-ena-official-max-position", "data-ena-official-extreme-position"]) assert.equal(tagAttribute(a, attr), tagAttribute(b, attr));
+  }
+  assert.match(withLabels, /data-ena-group-label-text="primary"[^>]*>First group<\/text>/);
+  assert.match(withLabels, /data-ena-group-label-text="secondary"[^>]*>Second group<\/text>/);
+  assert.match(withLabels, /data-ena-group-label-leader="primary"/);
+  assert.doesNotMatch(withoutLabels, /data-ena-group-label-leader=/);
+});
+
 test("official axes retain their square camera endpoints as small neutral marks", async () => {
   const comparison = plotSvg(await render(), "open-ena-group-comparison-plot");
   assert.equal((comparison.match(/data-ena-axis-endpoint="true"/g) ?? []).length, 4);

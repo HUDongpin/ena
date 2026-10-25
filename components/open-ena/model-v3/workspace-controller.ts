@@ -9,10 +9,11 @@ import { validateBoundResultV3 } from "../../../lib/open-ena/model-v3/result-bin
 import { analyzePlanWithReferenceSourceV3 } from "../../../lib/open-ena/model-v3/reference-v2";
 import { bindReferenceToTargetV3, decodeReferenceV2 } from "../../../lib/open-ena/model-v3/reference-codec-v2";
 import { canonicalJsonV3, deepFreezeV3 } from "../../../lib/open-ena/model-v3/canonical-json";
+import { scalarIdentityV3 } from "../../../lib/open-ena/model-v3/identity";
 import { workspaceDraftsFromArtifactV3 } from "../../../lib/open-ena/model-v3/migration";
 import { importOpenEnaArtifactV3, type OpenEnaImportResultV3 } from "../../../lib/open-ena/model-artifact-imports-v3";
 import type { ParsedDataset } from "../../../lib/open-ena/types";
-import type { BoundResultV3, ModelWorkspaceDraftsV3, OpenEnaStandardReferenceV2, ReferenceSourceWitnessV3 } from "../../../lib/open-ena/model-v3/types";
+import type { BoundResultV3, ModelWorkspaceDraftsV3, OpenEnaStandardReferenceV2, ReferenceSourceWitnessV3, StandardEnaDraftV3, ScalarIdentityV3 } from "../../../lib/open-ena/model-v3/types";
 import { createModelStateV3, modelScientificContextV3, modelStateReducerV3, type ModelStateActionV3, type ModelStateV3, type ModelScientificContextV3, type ModelRunRequestV3 } from "./model-state";
 import { createWindowsPanelRawStateV3, windowFieldBlockersV3, parseWindowExtentInputV3, type OpenEnaWindowsPanelRawStateV3 } from "./OpenEnaWindowsPanelV3";
 import { createOrderPolicyEditorRawStateV3, orderPolicyFromRawStateV3, confirmationMatchesContextV3, type OrderPolicyEditorRawStateV3 } from "./OpenEnaOrderPolicyEditorV3";
@@ -29,6 +30,8 @@ export interface WorkspaceCompilationV3 {
   readonly error: string | null;
 }
 export interface WorkspaceStateV3 {
+  /** One-time default for a new interactive endpoint, never an imported choice. */
+  readonly defaultEndpointRotationPending: boolean;
   readonly dataset: ParsedDataset | null;
   readonly model: ModelStateV3;
   readonly raw: WorkspaceRawEditorsV3;
@@ -163,7 +166,7 @@ export function workspaceDraftExportableV3(state: WorkspaceStateV3): boolean {
 
 export function createWorkspaceStateV3(input?: { dataset: ParsedDataset; datasetSha256: string; drafts: ModelWorkspaceDraftsV3 }): WorkspaceStateV3 {
   const drafts = input?.drafts ?? emptyWorkspaceDraftsV3();
-  return reconcileRaw({ dataset: input?.dataset ?? null, model: createModelStateV3(drafts, input?.datasetSha256 ?? "0".repeat(64)),
+  return reconcileRaw({ defaultEndpointRotationPending: input === undefined, dataset: input?.dataset ?? null, model: createModelStateV3(drafts, input?.datasetSha256 ?? "0".repeat(64)),
     raw: rawEditors(drafts), compilation: null, references: [], preview: null, historical: [], sourceWitness: null, presetHiddenGroups: null, progress: null, colorCompanions: { standard: {}, ona: {} }, error: null, autoRunIntent: null, rebuildCue: null });
 }
 
@@ -172,15 +175,48 @@ export function createWorkspaceStateFromCloud(restored: RestoredOpenEnaCloudWork
   if (!isRestoredOpenEnaCloudWorkspace(restored)) throw new TypeError("Cloud workspace has not passed restoration validation.");
   const model = { ...createModelStateV3(restored.drafts, restored.datasetSha256),
     onaDraftInitialized: restored.onaDraftInitialized, display: restored.display, result: restored.result, resultStatus: restored.resultStatus };
-  const state = reconcileRaw({ ...createWorkspaceStateV3(), dataset: restored.dataset, model,
+  const state = reconcileRaw({ ...createWorkspaceStateV3(), defaultEndpointRotationPending: false, dataset: restored.dataset, model,
     raw: rawEditors(restored.drafts), references: restored.references, historical: restored.historical });
   return { ...state, compilation: restored.compilation ? { ...restored.compilation, context: modelScientificContextV3(state.model) } : null };
+}
+
+function defaultEndpointMeans(dataset: ParsedDataset | null, draft: StandardEnaDraftV3): StandardEnaDraftV3 | null {
+  if (!dataset || draft.model !== "EndPoint" || draft.rotation.type !== "svd"
+    || !draft.groupColumn || draft.unitColumns.length === 0) return null;
+  const levels = new Map<string, ScalarIdentityV3>();
+  const unitGroups = new Map<string, string>();
+  try {
+    for (const row of dataset.rows) {
+      const value = row[draft.groupColumn];
+      if (value === null || value === undefined || typeof value === "string" && value.trim() === "") return null;
+      const group = scalarIdentityV3(value, "default Group"), key = canonicalJsonV3(group);
+      const unit = canonicalJsonV3(draft.unitColumns.map(column => [column, scalarIdentityV3(row[column], "default Unit")]));
+      if (unitGroups.has(unit) && unitGroups.get(unit) !== key) return null;
+      unitGroups.set(unit, key); levels.set(key, group);
+      if (levels.size > 2) return null;
+    }
+  } catch { return null; } // The compiler reports invalid source identities.
+  if (levels.size !== 2) return null;
+  const [negativeLevel, positiveLevel] = [...levels.values()];
+  return { ...draft, rotation: { type: "means", centerAlignToOrigin: draft.rotation.centerAlignToOrigin, negativeLevel, positiveLevel } };
 }
 
 export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceActionV3): WorkspaceStateV3 {
   switch (action.type) {
     case "model": {
-      const model = modelStateReducerV3(state.model, action.action);
+      let model = modelStateReducerV3(state.model, action.action);
+      let defaultEndpointRotationPending = state.defaultEndpointRotationPending;
+      if (action.action.type === "replace-standard-draft" && (action.action.intent === "rotation"
+        || canonicalJsonV3(action.action.draft.rotation) !== canonicalJsonV3(state.model.drafts.standard.rotation))) {
+        defaultEndpointRotationPending = false;
+      }
+      if (defaultEndpointRotationPending && action.action.type === "replace-standard-draft" && model.drafts.activeFamily === "standard") {
+        const automatic = defaultEndpointMeans(state.dataset, model.drafts.standard);
+        if (automatic) {
+          model = modelStateReducerV3(model, { type: "replace-standard-draft", draft: automatic });
+          defaultEndpointRotationPending = false;
+        }
+      }
       const seededOnaWindows = action.action.type === "set-active-family"
         && model.drafts.ona !== state.model.drafts.ona;
       const raw = seededOnaWindows
@@ -188,6 +224,7 @@ export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceAct
         : state.raw;
       const next = reconcileRaw({
         ...state,
+        defaultEndpointRotationPending,
         progress: action.action.type === "mark-running" ? null : state.progress,
         model,
         raw,
@@ -204,7 +241,15 @@ export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceAct
       model = modelStateReducerV3(model, { type: "replace-standard-draft", draft: drafts.standard });
       model = modelStateReducerV3(model, { type: "replace-ona-draft", draft: drafts.ona });
       model = modelStateReducerV3(model, { type: "set-active-family", family: drafts.activeFamily });
-      const next = reconcileRaw({ ...state, dataset: action.dataset, model, presetHiddenGroups: null, raw: rawEditors(model.drafts), compilation: null, preview: null, error: null, autoRunIntent: null });
+      let defaultEndpointRotationPending = state.defaultEndpointRotationPending && !action.drafts;
+      if (defaultEndpointRotationPending && model.drafts.activeFamily === "standard") {
+        const automatic = defaultEndpointMeans(action.dataset, model.drafts.standard);
+        if (automatic) {
+          model = modelStateReducerV3(model, { type: "replace-standard-draft", draft: automatic });
+          defaultEndpointRotationPending = false;
+        }
+      }
+      const next = reconcileRaw({ ...state, defaultEndpointRotationPending, dataset: action.dataset, model, presetHiddenGroups: null, raw: rawEditors(model.drafts), compilation: null, preview: null, error: null, autoRunIntent: null });
       const rebuildCue = !action.autoRun && retainedResult
         ? { reason: "source-replacement" as const, serial: (state.rebuildCue?.serial ?? 0) + 1 }
         : null;
@@ -246,7 +291,7 @@ export function workspaceReducerV3(state: WorkspaceStateV3, action: WorkspaceAct
         : { type: "adopt-ona-draft", draft: drafts.ona });
       model = modelStateReducerV3(model, { type: "set-active-family", family });
       const replacement = rawEditors(model.drafts);
-      return reconcileRaw({ ...state, model, preview: null, autoRunIntent: null, raw: {
+      return reconcileRaw({ ...state, defaultEndpointRotationPending: false, model, preview: null, autoRunIntent: null, raw: {
         windows: { ...state.raw.windows, [family]: replacement.windows[family] },
         horizonOrder: family === "standard" ? replacement.horizonOrder : state.raw.horizonOrder,
       } });

@@ -821,21 +821,20 @@ test("Conversation connectivity never creates cross-Unit edges inside a shared H
   assert.equal(exactlyOne(result, "STANDARD_HORIZON_SHARED_BY_MULTIPLE_UNITS").severity, "information");
 });
 
-test("zero analytical observations block target-fitted rotations but remain projectable by Reference", () => {
+test("mixed zero endpoint observations remain valid in target fits and Reference projection", () => {
   const input = dataset([
     { unit: "zero", horizon: "h0", group: "negative", turn: 1, phase: 1, A: 1, B: 0, C: 0 },
     { unit: "ab", horizon: "h1", group: "negative", turn: 2, phase: 2, A: 1, B: 1, C: 0 },
     { unit: "ac", horizon: "h2", group: "positive", turn: 3, phase: 3, A: 1, B: 0, C: 1 },
     { unit: "bc", horizon: "h3", group: "positive", turn: 4, phase: 4, A: 0, B: 1, C: 1 },
   ]);
-  const svd = exactlyOne(output(input), "STANDARD_TARGET_RANK_ZERO");
-  assert.match(svd.detail, /zero analytical observation|zero network/iu);
+  assert.equal(has(output(input), "STANDARD_TARGET_RANK_ZERO"), false);
 
   const means = output(input, meansDraft(
     { type: "string", value: "negative" },
     { type: "string", value: "positive" },
   ));
-  assert.equal(has(means, "STANDARD_TARGET_RANK_ZERO"), true);
+  assert.equal(has(means, "STANDARD_TARGET_RANK_ZERO"), false);
 
   const reference = output(input, referenceDraft());
   assert.equal(has(reference, "STANDARD_TARGET_RANK_ZERO"), false);
