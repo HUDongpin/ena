@@ -89,7 +89,7 @@ try {
   await first.evaluate(() => window.resolveRun(0));
   await first.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]').dataset.resultStatus === "current");
   await first.getByRole("button", { name: "Stats & Export", exact: true }).click();
-  await first.getByRole("button", { name: "Run confirmed inference", exact: true }).click();
+  await first.getByRole("button", { name: "Non-parametric", exact: true }).click();
   await first.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
   await first.locator(".ena-ai-consent input").check();
   const changesBeforeAi = await first.evaluate(() => window.cloudChanges);
@@ -220,7 +220,7 @@ try {
   assert.equal(aiRequests, 1);
   await second.evaluate((text) => window.cloudOpen(text), historicalBaselineText);
   await second.getByRole("button", { name: "Stats & Export", exact: true }).click();
-  await second.getByRole("button", { name: "Run confirmed inference", exact: true }).click();
+  await second.getByRole("button", { name: "Non-parametric", exact: true }).click();
   await second.waitForFunction(() => !document.querySelector(".ena-ai-consent input").disabled);
   await second.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
   assert.equal(await second.getByText(changedEvidenceText, { exact: true }).count(), 1,

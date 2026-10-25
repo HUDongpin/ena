@@ -178,8 +178,10 @@ async function runInferenceAndGenerate(page, { failOnce = false } = {}) {
     }
     await periods[0].check();
   }
-  const infer = page.getByRole("button", { name: "Run confirmed inference", exact: true });
-  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) => button.textContent === "Run confirmed inference" && !button.disabled));
+  // EndPoint 2D confirms native inference through the comparison action;
+  // trajectory retains its existing explicit confirmation control.
+  const infer = page.getByRole("button", { name: "Non-parametric", exact: true })
+    .or(page.getByRole("button", { name: "Run confirmed inference", exact: true }));
   await infer.click();
   await page.getByRole("button", { name: "AI-assisted interpretation", exact: true }).click();
   try {
