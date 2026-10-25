@@ -4,14 +4,21 @@ import { formatAcademyDate } from "@/lib/academy-format";
 import type { AcademyUiCopy } from "@/lib/academy-i18n";
 import type { AcademyLesson } from "@/lib/academy-types";
 import AcademyLessonVisual from "./AcademyLessonVisual";
+import AcademyCoverCredit from "./AcademyCoverCredit";
 
 interface AcademyCardProps {
   lesson: AcademyLesson;
   locale: Locale;
   copy: AcademyUiCopy;
+  coverSizes?: string;
 }
 
-export default function AcademyCard({ lesson, locale, copy }: AcademyCardProps) {
+export default function AcademyCard({
+  lesson,
+  locale,
+  copy,
+  coverSizes = "(max-width: 820px) calc(100vw - 34px), (max-width: 1212px) calc(50vw - 32px), 574px",
+}: AcademyCardProps) {
   const isRtl = getLocaleMeta(locale).dir === "rtl";
   const stableNumber = String(lesson.sequence).padStart(2, "0");
 
@@ -19,7 +26,10 @@ export default function AcademyCard({ lesson, locale, copy }: AcademyCardProps) 
     <article className="news-card academy-card">
       <Link href={`/${locale}/academy/${lesson.slug}`} prefetch={false} className="news-card-link academy-card-link">
         <div className="news-card-media academy-card-media">
-          <AcademyLessonVisual variant={lesson.visual} alt={lesson.visualAlt} sequence={lesson.sequence} />
+          <AcademyLessonVisual
+            lessonId={lesson.id}
+            sizes={coverSizes}
+          />
         </div>
         <div className="news-card-copy academy-card-copy">
           <div className="news-card-meta">
@@ -42,6 +52,7 @@ export default function AcademyCard({ lesson, locale, copy }: AcademyCardProps) 
           <span className="news-read-link">{copy.openLesson} <span aria-hidden="true">{isRtl ? "←" : "→"}</span></span>
         </div>
       </Link>
+      <AcademyCoverCredit lessonId={lesson.id} />
     </article>
   );
 }

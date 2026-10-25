@@ -770,6 +770,56 @@ main:has(> :is(.premium-public-page, [data-mission-page])) + .site-footer .foote
 
 /* Academy long-form refinements */
 
+.premium-public-page .academy-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.premium-public-page .academy-card-link {
+  height: auto;
+  flex: 1;
+}
+
+.academy-cover-credit {
+  color: var(--faint);
+  font-size: 0.74rem;
+  line-height: 1.65;
+}
+
+.academy-cover-credit p {
+  margin: 0;
+}
+
+.academy-cover-credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+
+.academy-card > .academy-cover-credit {
+  padding: 12px clamp(26px, 3vw, 38px);
+  border-top: 1px solid var(--line);
+}
+
+.academy-detail-figure > .academy-cover-credit {
+  margin-top: 32px;
+}
+
+.academy-cover-credit .academy-cover-caption {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.academy-cover-credit .academy-cover-note {
+  margin-top: 5px;
+}
+
+.academy-detail-page .news-related-section .academy-card-link {
+  grid-template-columns: 1fr;
+}
+
 .premium-detail-page .academy-detail-visual {
   box-shadow: 18px 18px 0 rgba(166, 110, 36, 0.24), var(--premium-shadow-md);
 }

@@ -37,7 +37,6 @@ test("public ENA identity assets and generated metadata use Baby Blue", () => {
   for (const relativePath of [
     "app/opengraph-image.tsx",
     "components/about/open-ena/AboutContent.module.css",
-    "components/AcademyLessonVisual.tsx",
   ]) {
     const assetSource = source(relativePath);
     assert.match(assetSource, /#89cff0/i, `${relativePath} must use the shared Baby Blue identity`);
