@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWorkspaceStateV3, emptyWorkspaceDraftsV3, workspaceReducerV3, type WorkspaceStateV3 } from "../components/open-ena/model-v3/workspace-controller";
+import { createWorkspaceStateV3, createWorkspaceStateFromCloud, emptyWorkspaceDraftsV3, workspaceReducerV3, type WorkspaceStateV3 } from "../components/open-ena/model-v3/workspace-controller";
 import type { ParsedDataset } from "../lib/open-ena/types";
 import { modelScientificContextV3, type ModelStateActionV3 } from "../components/open-ena/model-v3/model-state";
 
@@ -31,6 +31,17 @@ test("a fresh two-group endpoint defaults to Means in first-source group order",
 test("an explicitly imported SVD draft is never replaced by automatic Means", () => {
   const state = mapGroups(createWorkspaceStateV3({ dataset, datasetSha256: "a".repeat(64), drafts: emptyWorkspaceDraftsV3() }));
   assert.equal(state.model.drafts.standard.rotation.type, "svd");
+});
+test("a cloud-restored explicit SVD choice remains authoritative after field edits", async () => {
+  const cloud = await import("../lib/open-ena/cloud-workspace");
+  const empty = emptyWorkspaceDraftsV3();
+  const drafts = { ...empty, standard: { ...empty.standard, unitColumns: ["Group", "Name"], horizonColumns: ["Name"], groupColumn: "Group", codes: ["A", "B", "C"], windowType: "Conversation" as const } };
+  const original = createWorkspaceStateV3({ dataset, datasetSha256: "a".repeat(64), drafts });
+  const snapshot = await cloud.captureOpenEnaCloudWorkspace({ state: original, currentPlan: null, presentation: cloud.defaultOpenEnaCloudPresentation() });
+  const restored = await cloud.restoreOpenEnaCloudWorkspace(JSON.stringify(snapshot));
+  const state = createWorkspaceStateFromCloud(restored);
+  assert.equal(state.defaultEndpointRotationPending, false);
+  assert.equal(mapGroups(state).model.drafts.standard.rotation.type, "svd");
 });
 test("an explicit SVD choice before Group mapping is preserved", () => {
   let state = fresh();

@@ -1518,7 +1518,7 @@ function ContrastSvg({
     const point = nodePoints.get(node.code)!, radius = codeNodeSize(node.code);
     labelObstacles.push(paddedLabelBox2D({ x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2 }, 3));
     if (!showLabels) continue;
-    const label = safeFigureLabel(openEnaRenderedCodeLabel(codePresentation, node.code), 72) || "Unnamed code";
+    const label = safeFigureLabel(openEnaRenderedCodeLabel(codePresentation, node.code), 72) || (edgeCopy.unnamedCode ?? DEFAULT_GROUP_CONTRAST_UI_COPY.unnamedCode);
     const fitted = baseModelNodePoints.get(node.code)!, override = nodeLayout?.get(node.code);
     const pointLabel = project(override?.get(xAxis) ?? fitted.x, override?.get(yAxis) ?? fitted.y);
     const size = metrics(`code:${node.code}`, label, Math.max(13, groupFontSize));
