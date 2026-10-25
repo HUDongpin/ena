@@ -69,6 +69,8 @@ try {
   await page.keyboard.press("Enter");
   const settingsDialog = page.getByRole("dialog", { name: "Plot Settings" });
   await settingsDialog.waitFor();
+  // The dialog schedules initial focus after two animation frames.
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Close Plot Settings");
   const edgeWeight = settingsDialog.getByRole("slider", { name: "Minimum edge weight" });
   await edgeWeight.focus();
   assert.equal(
