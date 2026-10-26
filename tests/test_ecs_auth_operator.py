@@ -1,5 +1,8 @@
 """Local operator tests: temporary files, synthetic credentials, no ECS access."""
 import contextlib
+import base64
+import hashlib
+import hmac
 import importlib.util
 import io
 import json
@@ -37,7 +40,8 @@ ORIGINAL = (
 
 
 @contextlib.contextmanager
-def http_fixture(*, reject_login=False, retain_session=False, proxy=False):
+def http_fixture(*, reject_login=False, retain_session=False, proxy=False,
+                 expected_username=None, accept_previous_session=False):
     state = types.SimpleNamespace(requests=[], authenticated=False)
 
     class Handler(BaseHTTPRequestHandler):
@@ -58,17 +62,20 @@ def http_fixture(*, reject_login=False, retain_session=False, proxy=False):
                 self.end_headers()
                 return
             if self.path == "/api/open-ena/login":
-                state.authenticated = not reject_login
+                rejected = reject_login or (expected_username is not None
+                    and parse_qs(body).get("username") != [expected_username])
+                state.authenticated = not rejected
                 self.send_response(303)
                 self.send_header(
                     "Location",
-                    operator.ORIGIN + ("/en?auth=invalid" if reject_login else "/en/open-ena"),
+                    operator.ORIGIN + ("/en?auth=invalid" if rejected else "/en/open-ena"),
                 )
                 self.send_header("Cache-Control", "no-store")
-                self.send_header(
-                    "Set-Cookie",
-                    "open-ena-session=synthetic-cookie; HttpOnly; Secure; SameSite=Lax",
-                )
+                if not rejected:
+                    self.send_header(
+                        "Set-Cookie",
+                        "open-ena-session=synthetic-cookie; HttpOnly; Secure; SameSite=Lax",
+                    )
                 self.end_headers()
             elif self.path == "/api/open-ena/logout":
                 if not retain_session:
@@ -80,7 +87,8 @@ def http_fixture(*, reject_login=False, retain_session=False, proxy=False):
                 authenticated = (
                     state.authenticated
                     and self.headers.get("Cookie") == "open-ena-session=synthetic-cookie"
-                )
+                ) or (accept_previous_session
+                      and self.headers.get("Cookie", "").startswith("open-ena-session=v2."))
                 self.send_response(200)
                 self.end_headers()
                 marker = "open-ena-workbench" if authenticated else "open-ena-login-form"
@@ -214,6 +222,74 @@ class OperatorLifecycleTests(unittest.TestCase):
         self.assertEqual((backup / "runtime.env").read_text(), ORIGINAL)
         self.assertFalse((backup / "receipt.json").exists())
         self.assertIn("original runtime.env restored", self.output.getvalue())
+
+    def test_new_login_name_rotates_sessions_and_rejects_previous_credentials(self):
+        with http_fixture(expected_username="research-owner") as server:
+            with mock.patch.object(operator, "LOCAL", server.url):
+                operator.main(username="research-owner", rotate_sessions=True)
+        updated = operator.parse_env(self.env_file.read_text())
+        self.assertEqual(updated["OPEN_ENA_USERNAME"], "research-owner")
+        self.assertEqual(updated["OPEN_ENA_PASSWORD"], PASSWORD)
+        self.assertNotEqual(updated["OPEN_ENA_SESSION_SECRET"], SESSION_SECRET)
+        self.assertGreaterEqual(len(updated["OPEN_ENA_SESSION_SECRET"]), 32)
+        self.assertEqual(updated["OPEN_ENA_ACCOUNT_ID"], "stable-test-account")
+        self.assertEqual(updated["OPEN_ENA_AUTH_DATABASE_URL"], DATABASE)
+        self.assertEqual(updated["UNRELATED_SETTING"], "keep-me")
+        logins = [body["username"][0] for path, body, _ in server.requests if path == "/api/open-ena/login"]
+        self.assertEqual(logins, ["research-owner", "previous-user"])
+        backup, = self.backups.iterdir()
+        receipt = json.loads((backup / "receipt.json").read_text())
+        self.assertTrue(receipt["previous_login_disabled"])
+        self.assertTrue(receipt["previous_sessions_invalidated"])
+        self.assertFalse(receipt["session_secret_preserved"])
+        self.assertNotIn(updated["OPEN_ENA_SESSION_SECRET"], self.output.getvalue())
+        self.assertNotIn(PASSWORD, self.output.getvalue())
+
+    def test_invalid_new_login_name_stops_before_password_or_mutation(self):
+        with self.assertRaisesRegex(RuntimeError, "^USERNAME_INVALID$"):
+            operator.main(username="invalid\nusername", rotate_sessions=True)
+        self.assertEqual(self.env_file.read_text(), ORIGINAL)
+        self.password_prompt.assert_not_called()
+
+    def test_old_login_still_accepted_rolls_back_the_rotation(self):
+        with http_fixture() as server, mock.patch.object(operator, "LOCAL", server.url):
+            with self.assertRaisesRegex(RuntimeError, "^PREVIOUS_LOGIN_STILL_VALID$"):
+                operator.main(username="research-owner", rotate_sessions=True)
+        self.assertEqual(self.env_file.read_text(), ORIGINAL)
+        self.assertEqual(len(self.restart_calls()), 2)
+        backup, = self.backups.iterdir()
+        self.assertFalse((backup / "receipt.json").exists())
+
+    def test_previous_session_still_accepted_rolls_back_the_rotation(self):
+        with http_fixture(expected_username="research-owner", accept_previous_session=True) as server:
+            with mock.patch.object(operator, "LOCAL", server.url):
+                with self.assertRaisesRegex(RuntimeError, "^PREVIOUS_SESSION_STILL_VALID$"):
+                    operator.main(username="research-owner", rotate_sessions=True)
+        self.assertEqual(self.env_file.read_text(), ORIGINAL)
+        self.assertEqual(len(self.restart_calls()), 2)
+        backup, = self.backups.iterdir()
+        self.assertFalse((backup / "receipt.json").exists())
+
+    def test_rotation_requires_a_new_password_before_writing(self):
+        self.password_prompt.return_value = "previous-synthetic-password"
+        with self.assertRaisesRegex(RuntimeError, "^NEW_PASSWORD_REQUIRED$"):
+            operator.main(username="research-owner", rotate_sessions=True)
+        self.assertEqual(self.env_file.read_text(), ORIGINAL)
+        self.assertFalse(self.backups.exists())
+        self.assertFalse(self.restart_calls())
+
+    def test_previous_token_matches_the_application_v2_signature_contract(self):
+        environment = operator.parse_env(ORIGINAL)
+        environment["OPEN_ENA_ACCOUNT_ID"] = "  stable-test-account  "
+        cookie = operator.signed_previous_session(environment)
+        payload, supplied = cookie.removeprefix("open-ena-session=").rsplit(".", 1)
+        version, issued, jti, principal = payload.split(".")
+        encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+        self.assertEqual(version, "v2")
+        self.assertTrue(issued.isdigit())
+        self.assertRegex(jti, r"^[0-9a-f-]{36}$")
+        self.assertEqual(principal, encode(hashlib.sha256(b"stable-test-account").digest()))
+        self.assertEqual(supplied, encode(hmac.new(SESSION_SECRET.encode(), payload.encode(), hashlib.sha256).digest()))
 
     def test_missing_account_stops_before_mutation(self):
         original = ORIGINAL.replace('OPEN_ENA_ACCOUNT_ID="stable-test-account"\n', "")

@@ -37,6 +37,8 @@ jobs:
       - name: Verify vendored j-3dENA custody before dependency installation
         run: node scripts/verify-j3dena-vendor.mjs
       - run: npm ci
+      - name: Verify the local authentication development launcher
+        run: npm run test:dev:open-ena
       - name: Verify complete installed j-3dENA tree and jENA workspace peer
         run: node scripts/verify-j3dena-vendor.mjs --require-installed
       - name: Audit the production dependency graph
