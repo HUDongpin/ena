@@ -6,6 +6,8 @@ export interface PluginLabCopy {
   contentFallback: boolean;
   navLabel: string;
   explore: string;
+  choosePlugin: string;
+  viewFullDetails: string;
   propose: string;
   status: string;
   eyebrow: string;
@@ -78,6 +80,8 @@ const en: PluginLabCopy = {
   contentFallback: false,
   navLabel: "Plugin Lab",
   explore: "Explore plugins",
+  choosePlugin: "Choose a plugin",
+  viewFullDetails: "View full details",
   propose: "Propose a plugin",
   status: "Check proposal status",
   eyebrow: "Researcher × developer co-creation",
@@ -154,6 +158,8 @@ const zhHant: PluginLabCopy = {
   ...en,
   navLabel: "插件實驗室",
   explore: "探索插件",
+  choosePlugin: "選擇插件",
+  viewFullDetails: "查看完整資料",
   propose: "提出插件構想",
   status: "查詢提案狀態",
   eyebrow: "研究者 × 開發者共創",
@@ -230,6 +236,8 @@ const zhHans: PluginLabCopy = {
   ...zhHant,
   navLabel: "插件实验室",
   explore: "探索插件",
+  choosePlugin: "选择插件",
+  viewFullDetails: "查看完整资料",
   propose: "提出插件构想",
   status: "查询提案状态",
   eyebrow: "研究者 × 开发者共创",
