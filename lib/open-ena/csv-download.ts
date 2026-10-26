@@ -19,3 +19,14 @@ export function csvDownloadPayload(contents: string, type: string): { contents: 
   return { contents: `${CSV_UTF8_BOM}${body}`, type: CSV_DOWNLOAD_MEDIA_TYPE };
 }
 
+/** Publish SDK CSV bytes without decoding or changing the canonical member. */
+export function csvDownloadBlob(contents: string | Uint8Array): Blob {
+  if (typeof contents === "string") {
+    const payload = csvDownloadPayload(contents, CSV_DOWNLOAD_MEDIA_TYPE);
+    return new Blob([payload.contents], { type: payload.type });
+  }
+  const hasBom = contents[0] === 0xef && contents[1] === 0xbb && contents[2] === 0xbf;
+  const bytes = new Uint8Array(contents);
+  return new Blob(hasBom ? [bytes] : [CSV_UTF8_BOM, bytes], { type: CSV_DOWNLOAD_MEDIA_TYPE });
+}
+

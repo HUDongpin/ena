@@ -3,6 +3,7 @@
   "installCommand": "node scripts/verify-j3dena-vendor.mjs && npm ci && node scripts/verify-j3dena-vendor.mjs --require-installed",
   "git": {
     "deploymentEnabled": {
+      "codex/ena-trajectory-csv-bom-followup": false,
       "codex/ena-pr117-test-stability-followup": false,
       "codex/open-ena-p01-audit": false,
       "codex/ena-2d-parity": false,
