@@ -141,3 +141,18 @@ also has an independent bounded deadline, tested with a stalled 503 body.
 **PR #118 remains Draft; #108 remains open.** No production deployment or
 post-deployment six-call dual-domain check was performed. The finite projection
 has not satisfied the requested release acceptance gate.
+
+## Integration after the concurrent #117 merge
+
+PR #117 merged separately at `eaafac424b40e8b83842990f186b9fdc0d79d14a`,
+adding `strict: true` to the request envelope. The #118 merge-build test correctly
+rejected that change because the fixed candidate uses the unchanged V2 request.
+The correction is prepared in #122 and integrated into this draft; the assertion
+was not relaxed. That integration also retains the reviewed test cleanup and
+browser-response evidence repairs.
+
+The DeepSeek client, projection, live runner, fixed fixture, and complete nine-call
+receipt remain byte-for-byte identical to evidence commit
+`29a05be7acfcfd4d748219aba1a9c6a5a780dc87`. The focused integration selection
+passes 34/34. No additional provider generation was made, and the 5/9 acceptance
+result is unchanged. This integration is not a deployment or an AI-fault closure.
