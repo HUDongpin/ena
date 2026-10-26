@@ -11,7 +11,7 @@ const limits={minuteRequests:20,dailyMicroUsd:10000,monthlyMicroUsd:10000,global
 const request=(principal="A")=>new Request(url,{method:"POST",headers:{[OPEN_ENA_AI_OWNER_HEADER]:openEnaAiOperationOwnerKey(principal),"content-type":"application/json",origin:new URL(url).origin,cookie:`open-ena-session=${principal}`,"x-open-ena-ai-consent":OPEN_ENA_AI_CONSENT_VALUE,"x-open-ena-ai-operation-id":id},body:JSON.stringify(interpretationRequest())});
 for (const released of [true,false]) test(`current principal replay renews only explicitly released operation: ${released}`,async()=>{
  const store=new MemoryBillableStore();let generates=0;
- const handler=createOpenEnaAiInterpretationPostHandler({verifyPrincipal:token=>token?{principalRef:token}:null,authConfigurationReady:()=>true,environment:{},parseRequest:parseOpenEnaAiInterpretationRequest,providerDescriptor:()=>({provider:"synthetic",model:"fixture"}),billableStore:store,limits,generate:async()=>{generates++;throw Object.assign(new Error("synthetic"),{code:released&&generates===1?"invalid-configuration":"upstream-network",providerDispatched:!(released&&generates===1)});}});
+ const handler=createOpenEnaAiInterpretationPostHandler({verifyPrincipal:token=>token?{principalRef:token}:null,authConfigurationReady:()=>true,environment:{},parseRequest:parseOpenEnaAiInterpretationRequest,providerDescriptor:()=>({provider:"deepseek",model:"deepseek-flash"}),billableStore:store,limits,generate:async()=>{generates++;throw Object.assign(new Error("synthetic"),{code:released&&generates===1?"invalid-configuration":"upstream-network",providerDispatched:!(released&&generates===1)});}});
  const first=await handler(request());assert.equal(first.status,released?503:502);
  const retry=await handler(request());assert.equal(retry.status,409);assert.equal(retry.headers.get("x-open-ena-ai-retry"),released?"new-operation":null);assert.equal(generates,1);
  const other=await handler(request("B"));assert.equal(other.status,502);assert.equal(other.headers.get("x-open-ena-ai-retry"),null);assert.equal(generates,2);
@@ -48,6 +48,6 @@ for(const proof of ["missing","failure","unknown","reserved","settled"]) test(`r
  if(proof==="missing")Object.defineProperty(store,"isReleasedOperation",{value:undefined});
  if(proof==="failure")Object.defineProperty(store,"isReleasedOperation",{value:async()=>{throw new Error("synthetic lookup failure");}});
  if(proof==="unknown")Object.defineProperty(store,"isReleasedOperation",{value:async()=>"true"});
- const handler=createOpenEnaAiInterpretationPostHandler({verifyPrincipal:()=>({principalRef:"A"}),authConfigurationReady:()=>true,environment:{},parseRequest:parseOpenEnaAiInterpretationRequest,providerDescriptor:()=>({provider:"synthetic",model:"fixture"}),billableStore:store,limits,generate:async()=>{throw new Error("must never dispatch");}});
+ const handler=createOpenEnaAiInterpretationPostHandler({verifyPrincipal:()=>({principalRef:"A"}),authConfigurationReady:()=>true,environment:{},parseRequest:parseOpenEnaAiInterpretationRequest,providerDescriptor:()=>({provider:"deepseek",model:"deepseek-flash"}),billableStore:store,limits,generate:async()=>{throw new Error("must never dispatch");}});
  const response=await handler(request());assert.equal(response.status,409);assert.equal(response.headers.get("x-open-ena-ai-retry"),null);
 });

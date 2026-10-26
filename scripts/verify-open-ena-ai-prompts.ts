@@ -32,7 +32,7 @@ const LOCALES = ["en", "zh-hant", "zh-hans"] as const;
 const CONTRACT_TEST_SOURCE_SHA256 = deepFreeze({
   client: "5452c139887049e48865e7b3d8537937e4125334e4940ae6bfdf23229c484b64",
   payload: "4e46712d5a086885b4bef1650368c3b74978899821c08efe3b06ed2e3c3426ad",
-  route: "691f29580251e9e8571584460254721e4adc3f9875e80cf99224d2b080e501d9",
+  route: "ffb78657a5622f9e66ed92ceb340d1c6a3615381738792e984dbcab96192519b",
   workspace: "55f8cb4ed1983f7cfeb73e98c350065766d855b1f6e581bd7fbf32b1d74d47c7",
 } as const satisfies Readonly<Record<ContractTestSourceKey, string>>);
 

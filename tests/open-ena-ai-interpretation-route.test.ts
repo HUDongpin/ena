@@ -638,7 +638,7 @@ test("AI interpretation returns a fixed safe upgrade response for historical pro
   assert.doesNotMatch(JSON.stringify(body), /V1_PRIVATE_EVIDENCE_MUST_NOT_LEAK/);
 });
 
-test("AI interpretation reports the DeepSeek balance gate without exposing account details", async () => {
+test("AI interpretation reports provider credit failure without exposing account details", async () => {
   const { handler } = dependencies({
     generate: async () => {
       throw Object.assign(new Error("private billing body and account identifier"), {
@@ -653,7 +653,7 @@ test("AI interpretation reports the DeepSeek balance gate without exposing accou
 
   assert.equal(response.status, 402);
   assertNoStore(response);
-  assert.match(responseText, /DeepSeek balance is required/i);
+  assert.match(responseText, /AI provider account requires available credit/i);
   assert.doesNotMatch(responseText, /private billing body|account identifier/);
 });
 

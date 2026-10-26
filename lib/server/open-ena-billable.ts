@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { getOpenEnaAiProviderDescriptor } from "../open-ena/ai-provider";
 
 // Keep in sync with migration 006. Production provider requests are bounded to
 // at most 120 seconds (20 seconds for AI and 10 for compute by default). The
@@ -24,6 +25,8 @@ export type Reservation = {
   id: string;
   principalRef: string;
   resource: string;
+  /** Provider recorded at admission; later configuration cannot move its spend. */
+  providerRef?: string;
   reservedMicroUsd: number;
   /** Kept for compatibility with older injected test stores. Values are micro-USD, not cents. */
   cents: number;
@@ -205,6 +208,7 @@ export type BillableStore = {
   reserve(input: {
     principalRef: string;
     resource?: string;
+    provider?: string;
     microUsd: number;
     idempotencyKey: string;
     limits: BillableLimits;
@@ -212,6 +216,7 @@ export type BillableStore = {
   reserveDetailed?(input: {
     principalRef: string;
     resource?: string;
+    provider?: string;
     microUsd: number;
     idempotencyKey: string;
     limits: BillableLimits;
@@ -314,14 +319,15 @@ export function parseBillablePolicy(
 const utcDayKey = (date: Date) => date.toISOString().slice(0, 10);
 const utcMonthKey = (date: Date) => date.toISOString().slice(0, 7);
 const usageKey = (...parts: string[]) => parts.join("\0");
-export function providerRefForResource(resource: string) {
-  if (resource === "ai-interpretation") return "deepseek";
+export function providerRefForResource(resource: string, environment: Readonly<Record<string, string | undefined>> = process.env) {
+  if (resource === "ai-interpretation") return getOpenEnaAiProviderDescriptor({ OPEN_ENA_AI_PROVIDER: environment.OPEN_ENA_AI_PROVIDER }).provider;
   if (resource === "longitudinal") return "persistent-compute";
   return `resource:${resource}`;
 }
 
 type MemoryReservation = {
   reservation: Reservation;
+  providerRef: string;
   dayKey: string;
   monthKey: string;
   leaseExpiresAt: number;
@@ -355,6 +361,8 @@ export class MemoryBillableStore implements BillableStore {
   private readonly aiConsentReceiptKeys = new Map<string, string>();
   readonly alerts: BillableAlert[] = [];
 
+  constructor(private readonly environment: Readonly<Record<string, string | undefined>> = process.env) {}
+
   private amount(map: Map<string, number>, key: string) {
     return map.get(key) ?? 0;
   }
@@ -371,6 +379,7 @@ export class MemoryBillableStore implements BillableStore {
   async reserveDetailed(input: {
     principalRef: string;
     resource?: string;
+    provider?: string;
     microUsd: number;
     idempotencyKey: string;
     limits: BillableLimits;
@@ -408,7 +417,9 @@ export class MemoryBillableStore implements BillableStore {
     const principalDay = usageKey(input.principalRef, "day", dayKey);
     const principalMonth = usageKey(input.principalRef, "month", monthKey);
     const globalMonth = usageKey("global", monthKey);
-    const providerRef = providerRefForResource(resource);
+    let providerRef: string;
+    try { providerRef = providerRefForResource(resource, input.provider === undefined ? this.environment : { OPEN_ENA_AI_PROVIDER: input.provider }); }
+    catch { return { ok: false, reason: "invalid-reservation" }; }
     const providerMonth = usageKey(providerRef, monthKey);
     const activeKey = input.principalRef;
     if (this.amount(this.active, activeKey) >= input.limits.maxConcurrency) {
@@ -431,13 +442,14 @@ export class MemoryBillableStore implements BillableStore {
       id: randomUUID(),
       principalRef: input.principalRef,
       resource,
+      providerRef,
       reservedMicroUsd: input.microUsd,
       cents: input.microUsd,
       dispatched: false,
       dispatchDeadlineMonotonicMs,
     };
     const record: MemoryReservation = {
-      reservation, dayKey, monthKey,
+      reservation, providerRef, dayKey, monthKey,
       leaseExpiresAt: now.getTime() + OPEN_ENA_BILLABLE_RESERVATION_LEASE_MS,
       status: "reserved",
     };
@@ -471,6 +483,7 @@ export class MemoryBillableStore implements BillableStore {
   async reserve(input: {
     principalRef: string;
     resource?: string;
+    provider?: string;
     microUsd: number;
     idempotencyKey: string;
     limits: BillableLimits;
@@ -501,7 +514,7 @@ export class MemoryBillableStore implements BillableStore {
     this.adjust(this.globalSpend, usageKey("global", record.monthKey), delta);
     this.adjust(
       this.providerSpend,
-      usageKey(providerRefForResource(record.reservation.resource), record.monthKey),
+      usageKey(record.providerRef, record.monthKey),
       delta,
     );
     record.status = "settled";
@@ -549,7 +562,7 @@ export class MemoryBillableStore implements BillableStore {
     );
     this.adjust(
       this.providerSpend,
-      usageKey(providerRefForResource(record.reservation.resource), record.monthKey),
+      usageKey(record.providerRef, record.monthKey),
       -record.reservation.reservedMicroUsd,
     );
     record.status = "released";
@@ -647,7 +660,7 @@ export async function createProductionBillableStore(
   environment: Readonly<Record<string, string | undefined>> = process.env,
   injectedQuery?: Query,
 ): Promise<BillableStore | null> {
-  if (injectedQuery) return createPostgresBillableStore(injectedQuery);
+  if (injectedQuery) return createPostgresBillableStore(injectedQuery, environment);
   if (productionStorePromise) return productionStorePromise;
   const url = environment.OPEN_ENA_BILLABLE_DATABASE_URL?.trim();
   if (!url) return null;
@@ -678,7 +691,7 @@ export async function createProductionBillableStore(
       return createPostgresBillableStore(async (sql, params) => {
         const result = await pool.query(sql, params as unknown[]);
         return { rows: result.rows as Array<Record<string, unknown>> };
-      });
+      }, environment);
     })
     .catch(() => null);
   productionStorePromise = pending;
@@ -701,13 +714,14 @@ function rowReservation(value: unknown): Reservation | null {
     id: row.id,
     principalRef: row.principal_ref,
     resource: typeof row.resource === "string" ? row.resource : "default",
+    ...(typeof row.provider_ref === "string" ? { providerRef: row.provider_ref } : {}),
     reservedMicroUsd,
     cents: reservedMicroUsd,
     dispatched: row.dispatched === true,
   };
 }
 
-export function createPostgresBillableStore(query: Query): BillableStore {
+export function createPostgresBillableStore(query: Query, environment: Readonly<Record<string, string | undefined>> = process.env): BillableStore {
   return {
     async reserveDetailed(input) {
       // Start before I/O so a slow connection, lock, or reply cannot return a
@@ -723,7 +737,7 @@ export function createPostgresBillableStore(query: Query): BillableStore {
             input.idempotencyKey,
             JSON.stringify({
               ...input.limits,
-              provider: providerRefForResource(input.resource ?? "default"),
+              provider: providerRefForResource(input.resource ?? "default", input.provider === undefined ? environment : { OPEN_ENA_AI_PROVIDER: input.provider }),
             }),
           ],
         );

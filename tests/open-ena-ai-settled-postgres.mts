@@ -104,7 +104,7 @@ try {
   const handler = createOpenEnaAiInterpretationPostHandler({
     environment: { NODE_ENV: "development" }, verifyPrincipal: () => ({ principalRef: routePrincipal }),
     authConfigurationReady: () => true, billableStore: store, limits, requireBillable: true,
-    providerDescriptor: () => ({ provider: "synthetic", model: "fixture" }),
+    providerDescriptor: () => ({ provider: "deepseek", model: "deepseek-flash" }),
     parseRequest: parseOpenEnaAiInterpretationRequest,
     generate: async () => {
       providerCalls += 1;

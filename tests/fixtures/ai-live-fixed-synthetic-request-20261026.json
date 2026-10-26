@@ -1,0 +1,217 @@
+{
+  "binding": {
+    "analyzedAt": "2026-10-24T05:30:57.862Z",
+    "axes": [
+      "SVD1",
+      "SVD2"
+    ],
+    "datasetHash": "10842152b95a3e729b0399cd52152a63e5d502b5f835301dc298b7b77326ff93",
+    "datasetHashKind": "normalized-utf8-csv-text-sha256",
+    "evidenceKey": "fnv1a32-63890b4b",
+    "modelType": "EndPoint"
+  },
+  "evidence": {
+    "boundaries": [
+      "aggregate-only",
+      "researcher-confirmed-inference-not-recomputed",
+      "no-causal-claims",
+      "p-values-do-not-establish-learning-gain",
+      "p-values-do-not-establish-practical-importance",
+      "axis-sign-arbitrary",
+      "holm-multiplicity",
+      "missingness-reported",
+      "cluster-independence-unverified",
+      "independent-entity-assumption"
+    ],
+    "descriptive": {
+      "axes": [
+        {
+          "id": "axis-1",
+          "role": "axis-1",
+          "varianceShare": 0.6306250319649528
+        },
+        {
+          "id": "axis-2",
+          "role": "axis-2",
+          "varianceShare": 0.18972286095768787
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-difference-1",
+          "primaryWeight": 0.29523276851000096,
+          "secondaryWeight": 0.3273129039990978,
+          "signedDifference": -0.03208013548909683,
+          "sourceCodeRole": "code-1",
+          "targetCodeRole": "code-4"
+        },
+        {
+          "id": "edge-difference-2",
+          "primaryWeight": 0.26542645791424385,
+          "secondaryWeight": 0.242150029151732,
+          "signedDifference": 0.023276428762511847,
+          "sourceCodeRole": "code-4",
+          "targetCodeRole": "code-5"
+        },
+        {
+          "id": "edge-difference-3",
+          "primaryWeight": 0.32033825651264886,
+          "secondaryWeight": 0.2970622829176933,
+          "signedDifference": 0.023275973594955535,
+          "sourceCodeRole": "code-3",
+          "targetCodeRole": "code-4"
+        },
+        {
+          "id": "edge-difference-4",
+          "primaryWeight": 0.36033734538782475,
+          "secondaryWeight": 0.3469418157418131,
+          "signedDifference": 0.01339552964601165,
+          "sourceCodeRole": "code-3",
+          "targetCodeRole": "code-5"
+        },
+        {
+          "id": "edge-difference-5",
+          "primaryWeight": 0.3389515610047373,
+          "secondaryWeight": 0.35099957630574996,
+          "signedDifference": -0.012048015301012682,
+          "sourceCodeRole": "code-1",
+          "targetCodeRole": "code-5"
+        },
+        {
+          "id": "edge-difference-6",
+          "primaryWeight": 0.3945385730052825,
+          "secondaryWeight": 0.4041603435227634,
+          "signedDifference": -0.009621770517480921,
+          "sourceCodeRole": "code-1",
+          "targetCodeRole": "code-3"
+        },
+        {
+          "id": "edge-difference-7",
+          "primaryWeight": 0.31005142231810473,
+          "secondaryWeight": 0.3008557174601988,
+          "signedDifference": 0.00919570485790594,
+          "sourceCodeRole": "code-2",
+          "targetCodeRole": "code-3"
+        },
+        {
+          "id": "edge-difference-8",
+          "primaryWeight": 0.2620247234463581,
+          "secondaryWeight": 0.2547266822321744,
+          "signedDifference": 0.007298041214183704,
+          "sourceCodeRole": "code-2",
+          "targetCodeRole": "code-5"
+        },
+        {
+          "id": "edge-difference-9",
+          "primaryWeight": 0.30560123349543167,
+          "secondaryWeight": 0.31193477964534816,
+          "signedDifference": -0.006333546149916491,
+          "sourceCodeRole": "code-1",
+          "targetCodeRole": "code-2"
+        },
+        {
+          "id": "edge-difference-10",
+          "primaryWeight": 0.2265884011774944,
+          "secondaryWeight": 0.22931148464774312,
+          "signedDifference": -0.002723083470248716,
+          "sourceCodeRole": "code-2",
+          "targetCodeRole": "code-4"
+        }
+      ],
+      "groups": [
+        {
+          "id": "descriptive-primary",
+          "meanCoordinates": {
+            "axis-1": 0.011445299801998637,
+            "axis-2": 0.009412002553324524
+          },
+          "n": 4,
+          "role": "primary"
+        },
+        {
+          "id": "descriptive-secondary",
+          "meanCoordinates": {
+            "axis-1": -0.010927886845121214,
+            "axis-2": -0.004617176532140173
+          },
+          "n": 4,
+          "role": "secondary"
+        }
+      ],
+      "trajectory": null
+    },
+    "inference": [
+      {
+        "axisRole": "axis-1",
+        "continuityCorrectionApplied": false,
+        "familyRole": "comparison-family",
+        "groupRoles": [
+          "primary",
+          "secondary"
+        ],
+        "id": "comparison-axis-1",
+        "nPrimary": 4,
+        "nSecondary": 4,
+        "pHolm": 1,
+        "pRaw": 0.8857142857142857,
+        "rankBiserialPrimaryVsSecondary": -0.125,
+        "resolvedPMethod": "exact-classic",
+        "status": "available",
+        "test": "mann-whitney-u",
+        "tieGroupCount": 0,
+        "tiedObservationCount": 0,
+        "uPrimary": 7,
+        "uSecondary": 9,
+        "warnings": [
+          "small-sample",
+          "discrete-attainable-p",
+          "independent-entity-assumption",
+          "cluster-independence-unverified",
+          "arbitrary-axis-sign"
+        ]
+      },
+      {
+        "axisRole": "axis-2",
+        "continuityCorrectionApplied": false,
+        "familyRole": "comparison-family",
+        "groupRoles": [
+          "primary",
+          "secondary"
+        ],
+        "id": "comparison-axis-2",
+        "nPrimary": 4,
+        "nSecondary": 4,
+        "pHolm": 1,
+        "pRaw": 1,
+        "rankBiserialPrimaryVsSecondary": 0,
+        "resolvedPMethod": "exact-classic",
+        "status": "available",
+        "test": "mann-whitney-u",
+        "tieGroupCount": 0,
+        "tiedObservationCount": 0,
+        "uPrimary": 8,
+        "uSecondary": 8,
+        "warnings": [
+          "small-sample",
+          "discrete-attainable-p",
+          "independent-entity-assumption",
+          "cluster-independence-unverified",
+          "arbitrary-axis-sign"
+        ]
+      }
+    ],
+    "inferenceOmissions": [],
+    "kind": "endpoint-independent",
+    "modelType": "EndPoint",
+    "scope": {
+      "groupRoles": [
+        "primary",
+        "secondary"
+      ],
+      "kind": "endpoint-independent"
+    }
+  },
+  "locale": "en",
+  "promptVersion": "open-ena-aggregate-inference-review-v2",
+  "schemaVersion": "open-ena-ai-interpretation-request-v2"
+}

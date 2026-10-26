@@ -1138,6 +1138,7 @@ export interface OpenEnaAiInterpretationCopy {
   failureUnavailable: string;
   failureNetwork: string;
   failureInvalidOutput: string;
+  providerConsentChanged: string;
   operationAlreadyProcessed: string;
   generateNew: string;
   newGenerationWarning: string;
@@ -1167,6 +1168,7 @@ export interface OpenEnaAiInterpretationCopy {
   regionDisclosure: string;
   auditReceiptDisclosure: string;
   disclosureSummary: string;
+  providerPolicyLinks?: readonly { label: string; url: string }[];
   provider: string;
   model: string;
   provenance: string;
@@ -3362,6 +3364,7 @@ const en: OpenEnaCopy = {
     failureUnavailable: "AI interpretation is temporarily unavailable or rate limited.",
     failureNetwork: "The AI interpretation request did not finish because the network failed or the request timed out.",
     failureInvalidOutput: "The model returned output that could not be used as an interpretation.",
+    providerConsentChanged: "The AI provider disclosure changed. Export unsaved work before reloading, then review the current provider and aggregate request and give new consent.",
     operationAlreadyProcessed: "This AI generation operation was already processed.",
     generateNew: "Generate a new interpretation",
     newGenerationWarning: "This starts a separate AI generation and may incur additional charges. The final charge for the previous attempt is not confirmed here.",
@@ -3812,6 +3815,7 @@ const zhHant: OpenEnaCopy = {
     previewTitle: "審閱彙總請求",
     previewHint: "決定是否傳送前，請檢查完整且具版本的 JSON。",
     consentLabel: "我已審閱此彙總請求，並同意將它傳送給 DeepSeek。資料可能在中國內地處理；不保證零保留或排除模型訓練。",
+    providerConsentChanged: "AI 供應商披露已變更。請先匯出未儲存的工作，再重新載入，審閱目前供應商與彙總請求並重新同意。",
     generate: "生成 AI 解讀",
     generating: "正在生成解讀…",
     cancel: "取消",
@@ -4236,6 +4240,7 @@ const zhHans: OpenEnaCopy = {
     previewTitle: "审阅汇总请求",
     previewHint: "决定是否发送前，请检查完整且带版本的 JSON。",
     consentLabel: "我已审阅此汇总请求，并同意将它发送给 DeepSeek。数据可能在中国内地处理；不保证零保留或排除模型训练。",
+    providerConsentChanged: "AI 供应商披露已变更。请先导出未保存的工作，再重新加载，审阅当前供应商与汇总请求并重新同意。",
     generate: "生成 AI 解读",
     generating: "正在生成解读…",
     cancel: "取消",
@@ -4390,4 +4395,31 @@ export function getOpenEnaCopy(locale: Locale): OpenEnaCopy {
 
 export function getOpenEnaNavLabel(locale: Locale) {
   return navLabels[locale];
+}
+
+/** Current-provider consent copy is separate from the provider stored on earlier records. */
+export function getOpenEnaAiProviderCopy(locale: Locale, descriptor: { provider: string; model: string }, base: OpenEnaAiInterpretationCopy = getOpenEnaCopy(locale).aiInterpretation): OpenEnaAiInterpretationCopy {
+  if (descriptor.provider !== "qwen") return base;
+  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : en;
+  return {
+    ...base,
+    consentLabel: t(
+      "I reviewed the aggregate-only JSON and consent to send it to Alibaba Cloud Model Studio (Qwen) through its Beijing (cn-beijing) endpoint. Raw source rows, source text and participant records are excluded. I understand that call data may be retained.",
+      "我已審閱僅含彙總證據的 JSON，並同意透過北京（cn-beijing）接入點傳送至阿里雲百煉（Qwen）。請求不包含原始資料列、來源文字或參與者紀錄。我理解調用資料可能被保留。",
+      "我已审阅仅含汇总证据的 JSON，并同意通过北京（cn-beijing）接入点发送至阿里云百炼（Qwen）。请求不包含原始数据行、来源文本或参与者记录。我理解调用数据可能被保留。"),
+    providerDisclosure: t("Provider: the reviewed aggregate evidence is sent to Alibaba Cloud Model Studio using the Qwen model shown above.", "供應商：經審閱的彙總證據會傳送至阿里雲百煉，使用上方顯示的 Qwen 模型。", "供应商：经审阅的汇总证据会发送至阿里云百炼，使用上方显示的 Qwen 模型。"),
+    retentionDisclosure: t(
+      "Alibaba Cloud's terms state that conversation data is not used to train its models without authorization and is retained for the minimum period necessary for the service, subject to law. No fixed retention period is stated; zero retention is not guaranteed.",
+      "阿里雲條款說明，未經授權不會使用對話資料訓練其模型，並在遵循法律的前提下，於提供服務所需的最短期間內保留資料。條款未列明固定保留期；不保證零保留。",
+      "阿里云条款说明，未经授权不会使用对话数据训练其模型，并在遵循法律的前提下，于提供服务所需的最短期间内保留数据。条款未列明固定保留期；不保证零保留。"),
+    regionDisclosure: t(
+      "Access and data storage region: North China 2 (Beijing, cn-beijing). Inference follows the model's service deployment scope; the endpoint does not guarantee execution only in Beijing. Review the current regional policy below.",
+      "接入與資料儲存地域：華北2（北京，cn-beijing）。推理按模型的服務部署範圍調度；接入點不代表只在北京市執行。請查閱下方現行地域政策。",
+      "接入与数据存储地域：华北2（北京，cn-beijing）。推理按模型的服务部署范围调度；接入点不代表只在北京市执行。请查阅下方当前地域政策。"),
+    providerPolicyLinks: [
+      { label: t("Alibaba Cloud data privacy", "阿里雲資料私隱說明", "阿里云数据隐私说明"), url: "https://help.aliyun.com/zh/model-studio/privacy-notice" },
+      { label: t("Service terms and retention", "服務條款與保留期", "服务条款与保留期"), url: "https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html" },
+      { label: t("Beijing access and inference scope", "北京接入與推理範圍", "北京接入与推理范围"), url: "https://help.aliyun.com/zh/model-studio/beijing-access-information" },
+    ],
+  };
 }
