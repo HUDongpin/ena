@@ -26,6 +26,23 @@ sudo chmod 600 /root/update-open-ena-ecs-auth.py
 sudo python3 /root/update-open-ena-ecs-auth.py
 ```
 
+To replace the login name, disable the previous login credentials and invalidate
+existing sessions while preserving the account identity and database, use:
+
+```sh
+sudo python3 /root/update-open-ena-ecs-auth.py --username research-owner --rotate-sessions
+```
+
+The operator enters a new password at the hidden prompts and confirms `APPLY`.
+The script generates the new signing secret internally. It additionally verifies
+that the previous credentials and a token signed with the previous secret are
+rejected. A verification failure restores the original configuration. Existing
+disposable credentials also depend on the signing secret, so rotation invalidates
+those credentials and their sessions too. Registered-user sessions are also
+signed with this secret and require sign-in again; registered accounts and
+their stored passwords are not edited. Passwords and tokens never appear in
+the command, output or receipt.
+
 The script first checks the service binding and existing authentication schema.
 It runs the PostgreSQL check as the service's operating-system user, including
 its supplementary groups, so a Unix-socket connection with peer authentication
@@ -36,12 +53,14 @@ Enter the intended password twice at the hidden prompts, then type `APPLY`.
 The password must contain at least 12 characters. Do not put it in a command
 argument, paste it into a saved Cloud Assistant command, or commit it.
 
-The update sets `OPEN_ENA_USERNAME=open-ena`, the entered password, the public
-origin, and the HTTPS allowlists for the bare and `www` forms of `ena.hk` and
-`open-ena.com`. It preserves the exact existing account ID, session secret, auth
-database URL, and unrelated environment entries. A missing account ID or a
-session secret shorter than 32 characters stops preflight without changing the
-service.
+By default the update sets `OPEN_ENA_USERNAME=open-ena` (or the chosen
+`--username`), the entered password, the public origin, and the HTTPS allowlists
+for the bare and `www` forms of `ena.hk` and `open-ena.com`. It preserves the
+existing account ID, auth database URL and unrelated environment entries.
+The session secret is preserved unless `--rotate-sessions` is selected.
+Login names accept 3–64 ASCII letters, digits, dots, underscores or hyphens.
+A missing account ID or a session secret shorter than 32 characters stops
+preflight without changing the service.
 
 Before writing, it checks for a concurrent environment-file change and saves a
 restricted backup under `/root/open-ena-auth-backups/<UTC timestamp>/`. It
