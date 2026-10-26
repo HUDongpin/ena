@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "open-ena-qwen-fixed-nine-v1",
+  "candidate": {
+    "provider": "alibaba-model-studio",
+    "model": "qwen3.7-plus-2026-05-26",
+    "region": "cn-beijing",
+    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "timeoutMilliseconds": 20000,
+    "maximumOutputTokens": 1800
+  },
+  "fixedFixtureSha256": "06c65f11f455236448275d7327e62e153558e2c8312b81b9310e9e4d4c9fc9dd",
+  "evidenceSha256": "5c806c8a82758c8713cb7acc0b5e995b02cd5baa947f39226b47630367cca644",
+  "promptVersion": "open-ena-aggregate-inference-review-v2",
+  "sources": {
+    "candidateGitSha": "bb5b65153d40b0f70078f182b3b65c6703ae7a15",
+    "criticalSourceSha256": {
+      "tests/fixtures/ai-live-fixed-synthetic-request-20261026.json": "06c65f11f455236448275d7327e62e153558e2c8312b81b9310e9e4d4c9fc9dd",
+      "scripts/verify-open-ena-qwen-live-matrix.ts": "0c7804d20c6b589a41f938b29e1ce8f1c2e0a33c62f62f09bf0bb42b27aaf764",
+      "scripts/lib/open-ena-qwen-candidate.ts": "3def3249bdf40fdb55d96edc3ac4ccfb726e369860ff963a948048d0eaf851e6",
+      "lib/open-ena/ai-interpretation.ts": "597992ad818c1d9a614c6b71aabfd211f7c1deaecc8d375ed07c6fe7e61daa1b",
+      "lib/server/open-ena-ai-prompt-governance.ts": "233b0617feec2a2049ebac5a4944e3e2fed2aa9043eaa13be62badc6ab4cd7f2",
+      "package-lock.json": "6fd3a547886568c5faa0b80f55dbab8a90f9be2027818bdcc1ff9865c2e54b09"
+    },
+    "worktreeClean": true
+  },
+  "cases": [
+    {
+      "id": "01-en",
+      "locale": "en",
+      "repetition": 1,
+      "outgoingBodySha256": "16af967a6c38bc309c8718dd71a9e29318f5c1fd9231d540a553e552005c717a"
+    },
+    {
+      "id": "02-en",
+      "locale": "en",
+      "repetition": 2,
+      "outgoingBodySha256": "16af967a6c38bc309c8718dd71a9e29318f5c1fd9231d540a553e552005c717a"
+    },
+    {
+      "id": "03-en",
+      "locale": "en",
+      "repetition": 3,
+      "outgoingBodySha256": "16af967a6c38bc309c8718dd71a9e29318f5c1fd9231d540a553e552005c717a"
+    },
+    {
+      "id": "04-zh-hans",
+      "locale": "zh-hans",
+      "repetition": 1,
+      "outgoingBodySha256": "3f46131c73607257cc2f4790942f0cb0129910efa56fc3ef2c5b06a4787e5c82"
+    },
+    {
+      "id": "05-zh-hans",
+      "locale": "zh-hans",
+      "repetition": 2,
+      "outgoingBodySha256": "3f46131c73607257cc2f4790942f0cb0129910efa56fc3ef2c5b06a4787e5c82"
+    },
+    {
+      "id": "06-zh-hans",
+      "locale": "zh-hans",
+      "repetition": 3,
+      "outgoingBodySha256": "3f46131c73607257cc2f4790942f0cb0129910efa56fc3ef2c5b06a4787e5c82"
+    },
+    {
+      "id": "07-zh-hant",
+      "locale": "zh-hant",
+      "repetition": 1,
+      "outgoingBodySha256": "3429ea76c5566e0dfe0b2d18c409d9e45e3ed6f8aa607689d884dc1017791bf0"
+    },
+    {
+      "id": "08-zh-hant",
+      "locale": "zh-hant",
+      "repetition": 2,
+      "outgoingBodySha256": "3429ea76c5566e0dfe0b2d18c409d9e45e3ed6f8aa607689d884dc1017791bf0"
+    },
+    {
+      "id": "09-zh-hant",
+      "locale": "zh-hant",
+      "repetition": 3,
+      "outgoingBodySha256": "3429ea76c5566e0dfe0b2d18c409d9e45e3ed6f8aa607689d884dc1017791bf0"
+    }
+  ],
+  "localeContracts": [
+    {
+      "locale": "en",
+      "systemPromptSha256": "1ab3bcdb77202fd0b23c43380a8b3bfa0b2c149432cc6a9d158d13c1fd75de17",
+      "approvedArtifactSha256": "c765ce2284f5f820898b66ad29369f86e68402dc67175bb9c93ae0b297c5d783",
+      "sourceSchemaSha256": "1f7ae306ab99647b9c3ee82313a96d5cfba803df5d757af125e45463d3ee2da5",
+      "transportSchemaSha256": "4c17ef05c8076e9788cfaafe82204a402020f5d61e3da7e4b563b609de3fd7d1",
+      "omittedSchemaKeywords": [
+        "/properties/observedPatterns/items/properties/evidenceRefs/uniqueItems"
+      ]
+    },
+    {
+      "locale": "zh-hans",
+      "systemPromptSha256": "e7f95b00bf6ed3d04208f5efb756e69f23a7b89d9c825828998ffbca06c9f586",
+      "approvedArtifactSha256": "642a0e0048d898417139d5755794afaefa11e0dbd707ea1895d5d7ba3c807e66",
+      "sourceSchemaSha256": "1f7ae306ab99647b9c3ee82313a96d5cfba803df5d757af125e45463d3ee2da5",
+      "transportSchemaSha256": "4c17ef05c8076e9788cfaafe82204a402020f5d61e3da7e4b563b609de3fd7d1",
+      "omittedSchemaKeywords": [
+        "/properties/observedPatterns/items/properties/evidenceRefs/uniqueItems"
+      ]
+    },
+    {
+      "locale": "zh-hant",
+      "systemPromptSha256": "7a2a1f7d12f7d07dc5083d8e373428a10fa659859cd4ed063bd93129150265bc",
+      "approvedArtifactSha256": "3539adc465912e0af5abcecd4b78e800c8b5528c3f1940cb3fccf8006c8bc316",
+      "sourceSchemaSha256": "1f7ae306ab99647b9c3ee82313a96d5cfba803df5d757af125e45463d3ee2da5",
+      "transportSchemaSha256": "4c17ef05c8076e9788cfaafe82204a402020f5d61e3da7e4b563b609de3fd7d1",
+      "omittedSchemaKeywords": [
+        "/properties/observedPatterns/items/properties/evidenceRefs/uniqueItems"
+      ]
+    }
+  ],
+  "retries": 0,
+  "repairCalls": 0,
+  "fallbackCalls": 0,
+  "maximumGenerationPosts": 9
+}

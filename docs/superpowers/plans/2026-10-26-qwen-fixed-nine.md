@@ -29,8 +29,8 @@
 - [x] Add a preflight-only-by-default fixed-nine runner; test order, complete failure retention, output custody and preservation failures offline.
 - [x] Run focused existing strict-parser, prompt-governance and provider regressions plus TypeScript.
 - [x] Independently review the frozen candidate and ensure production routes, provider labels, billing and configuration remain unchanged.
-- [ ] Commit the candidate before the nine live calls; freeze source and input hashes, and use a new private output directory.
-- [ ] Execute the authorized matrix once. Save the redacted receipt and document every accepted/rejected case without replacing failures.
+- [x] Commit the candidate before the nine live calls; freeze source and input hashes, and use a new private output directory.
+- [x] Execute the authorized matrix once. Save the redacted receipt and document every accepted/rejected case without replacing failures.
 
 ## Source verification
 

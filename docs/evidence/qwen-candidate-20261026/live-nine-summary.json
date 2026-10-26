@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "candidateSha": "bb5b65153d40b0f70078f182b3b65c6703ae7a15",
+  "attempted": 9,
+  "accepted": 9,
+  "startedAt": "2026-10-26T08:44:40.060Z",
+  "finishedAt": "2026-10-26T08:46:52.834Z",
+  "completionTokens": {
+    "minimum": 460,
+    "maximum": 948,
+    "total": 6390
+  },
+  "promptTokens": 18180,
+  "elapsedMilliseconds": {
+    "minimum": 11737,
+    "maximum": 18852
+  },
+  "receiptSha256": "7671389865936ea5c522a8fbeedc536eb33fab39a8b8f498b0f065e98ebc77b8",
+  "preservationAudits": 9,
+  "retries": 0,
+  "deployment": false,
+  "observedPatternsPreserved": 47,
+  "limitationsPreserved": 55,
+  "independentFileVerification": "pass"
+}
