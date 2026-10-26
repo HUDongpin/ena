@@ -7,8 +7,10 @@ import { createServer } from "node:net";
 import { mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { OwnedSmokeLifecycle } from "./open-ena-models-v3-lifecycle.mjs";
 import { immutableBuildManifestV3 } from "./open-ena-build-custody-v3.mjs";
+import { STATIC_RESPONSE_CUSTODY_HEADER_V3, readOwnedStaticResponseRecordsV3, verifyOriginalStaticResponseV3 } from "./open-ena-static-response-custody-v3.mjs";
 const require = createRequire(import.meta.url);
 const hash = value => createHash("sha256").update(value).digest("hex");
 
@@ -67,6 +69,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
   const lifecycle = new OwnedSmokeLifecycle({ directory, redact: safe, overallMs: 1800000, onUpdate: state => { receipt.lifecycle = state; if (state.reason) { receipt.status = "fail"; receipt.failure = state.reason.message; } json("receipt.json", receipt); } });
   let browser, page, databaseEntry, browserEntry, serverEntry, closing, buildManifest;
   const database = join(directory, "postgres"), profile = join(directory, "browser-profile");
+  const staticResponseJournal = join(directory, "original-static-responses.ndjson");
   const env = { ...process.env, NEXT_DIST_DIR: ".next", NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account ?? "task38-local-account", OPEN_ENA_TRUSTED_CLIENT_IP_HEADER: "x-ena-client-ip", OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", npm_config_cache: join(directory, "npm-cache") };
   const child = (label, command, args, timeout = 60000) => lifecycle.command(label, command, args, { cwd: root, env, logName: `${label}.log` }, timeout);
   const assetReads = [];
@@ -101,6 +104,11 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
       assert.deepEqual(sourceManifest(root), receipt.source, "source changed during browser gate");
       if (buildManifest) assert.deepEqual(immutableBuildManifestV3(join(root, ".next")), buildManifest, "built content changed during browser gate");
       if (receipt.plotlyDependency) assert.deepEqual(verifyPlotlyDisposal(root), receipt.plotlyDependency, "applied Plotly dependency changed during browser gate");
+      if (serverEntry) {
+        const records = readOwnedStaticResponseRecordsV3(staticResponseJournal);
+        receipt.originalStaticResponses = { records: records.length, journal: "original-static-responses.ndjson" };
+        assert.ok(records.every(record => !record.error), "Original static response capture failed; inspect its journal");
+      }
       if (receipt.servedAssets.some(asset => asset.error || asset.status !== 200)) throw new Error("A served static asset response could not be verified");
     } catch (error) { receipt.cleanup.errors.push({ name: "source and served asset custody", message: safe(error.message) }); }
     if (serverLogPath && serverEntry) writeFileSync(serverLogPath, safe(serverEntry.output));
@@ -139,7 +147,9 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     await child("disposable-expiry-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/008_open_ena_disposable_expiry_after_lock.sql")]);
     await child("login-throttle-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/009_open_ena_login_failure_windows.sql")]);
     const serverPort = await port(), baseUrl = `http://127.0.0.1:${serverPort}`;
-    serverEntry = lifecycle.spawnOwned("server", process.execPath, [join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: `postgresql://postgres@127.0.0.1:${databasePort}/postgres`, OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl } });
+    const staticResponsePreload = join(directory, "static-response-preload.mjs");
+    writeFileSync(staticResponsePreload, `import { installOwnedStaticResponseCaptureV3 } from ${JSON.stringify(new URL("./open-ena-static-response-custody-v3.mjs", import.meta.url).href)};\ninstallOwnedStaticResponseCaptureV3(${JSON.stringify(resolve(staticResponseJournal))});\n`, { flag: "wx" });
+    serverEntry = lifecycle.spawnOwned("server", process.execPath, ["--import", pathToFileURL(resolve(staticResponsePreload)).href, join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: `postgresql://postgres@127.0.0.1:${databasePort}/postgres`, OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl } });
     receipt.server = { port: serverPort, baseUrl, pid: serverEntry.child.pid };
     await waitHttp(`${baseUrl}/en/open-ena`, "server readiness");
     const { chromium } = await import("playwright");
@@ -201,13 +211,26 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
           const scheduledAt = new Date().toISOString();
           const request = assetRequests.get(response.request()) ?? { pageId };
           const responseStatus = response.status();
+          const custodyId = response.headers()[STATIC_RESPONSE_CUSTODY_HEADER_V3];
           Object.assign(request, { responseAt: scheduledAt, responseFrameUrl: safe(response.frame().url()), responsePageUrl: safe(page.url()) });
-          assetReads.push(response.body().then(bytes => {
-            const entry = { path, sequence, request, scheduledAt, settledAt: new Date().toISOString(), status: response.status(), sha256: hash(bytes) };
+          assetReads.push((async () => {
+            const entry = { path, sequence, request, scheduledAt, status: responseStatus };
             const buildEntry = files.find(file => file.path === path.replace("/_next/", ""));
-            if (!buildEntry || buildEntry.sha256 !== entry.sha256) entry.error = "served bytes differ from owned build";
+            try {
+              try { entry.sha256 = hash(await response.body()); entry.captureSource = "browser-response-body"; }
+              catch (error) {
+                entry.browserBodyReadError = safe(error.message);
+                if (!/Target page, context or browser has been closed|No resource with given identifier|Response body is unavailable/u.test(error.message)) throw error;
+                assert.equal(new URL(response.url()).origin, baseUrl, "Static response is not from the owned server");
+                const url = new URL(response.url());
+                const capture = verifyOriginalStaticResponseV3({ records: readOwnedStaticResponseRecordsV3(staticResponseJournal), id: custodyId, requestTarget: url.pathname + url.search, status: responseStatus, expectedSha256: buildEntry?.sha256 });
+                Object.assign(entry, { sha256: capture.sha256, captureSource: capture.source, originalResponseCapture: capture });
+              }
+              if (!buildEntry || buildEntry.sha256 !== entry.sha256) entry.error = "served bytes differ from owned build";
+            } catch (error) { entry.error = safe(error.message); }
+            entry.settledAt = new Date().toISOString();
             receipt.servedAssets.push(entry);
-          }).catch(error => receipt.servedAssets.push({ path, sequence, request, status: responseStatus, scheduledAt, settledAt: new Date().toISOString(), error: safe(error.message) })).finally(() => { receipt.assetReadState.settled++; receipt.assetReadState.inFlight--; }));
+          })().finally(() => { receipt.assetReadState.settled++; receipt.assetReadState.inFlight--; }));
         }
       });
     };
