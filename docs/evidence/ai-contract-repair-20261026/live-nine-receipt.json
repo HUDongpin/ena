@@ -1,0 +1,287 @@
+{
+  "schemaVersion": "open-ena-fixed-nine-provider-check.v1",
+  "synthetic": true,
+  "candidateSha": "7dcfba686f37819d0a57959a2029a8353ffa04ef",
+  "fixtureSha256": "06c65f11f455236448275d7327e62e153558e2c8312b81b9310e9e4d4c9fc9dd",
+  "evidenceSha256": "c1ef4d5cdca153b8a1414d92c68291b7a8c8b12ace53de2f30e7a4be92e000ec",
+  "sourceHashes": {
+    "lib/server/deepseek-client.ts": "515152a481c7b5be763ff619d6d2747d08b4d40f2c16d828b85a7570eb7b3e45",
+    "lib/server/open-ena-ai-provider-projection.ts": "724727c2f8cdf5ef6bbdbcb1a5932a0ce8b57bdab4589143ba98802edb9d31e7",
+    "lib/open-ena/ai-interpretation.ts": "49ae20540009b4edeab79975ab6e3764b7b1e90c159c7c4ec3579e9e857ea4c4"
+  },
+  "model": "deepseek-flash",
+  "timeoutMilliseconds": 20000,
+  "maximumOutputTokens": 1800,
+  "cases": [
+    {
+      "locale": "en",
+      "repeat": 1,
+      "requestSha256": "fc8c296dcbcc472517040ac91272c1530b3bfe09a601926bd363ff86c7af3add",
+      "startedAt": "2026-10-26T04:55:13.837Z",
+      "accepted": true,
+      "outgoingRequestSha256": "92f1a87100f4f4c2acfbba312e92bf14a6ec586bf2b4e82ad8e07f6884452608",
+      "httpStatus": 200,
+      "usage": {
+        "promptTokens": 1985,
+        "completionTokens": 1260,
+        "totalTokens": 3245,
+        "costMicroUsd": 2108
+      },
+      "responseCapture": "complete",
+      "responseBytes": 7645,
+      "responseSha256": "866ed393820697e2a6661b8bfa76dc9cac9b477d0366095df585a94144005f92",
+      "responseStatus": "completed",
+      "outputTokens": 1260,
+      "preservationAudit": "pass",
+      "patternCount": 8,
+      "limitationCount": 8,
+      "acceptedResponseSha256": "cecccee5a598563c1f12cd45c8e648d8b9a72ebcd345c25b5d1598c581a5f26f",
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:55:26.406Z"
+    },
+    {
+      "locale": "en",
+      "repeat": 2,
+      "requestSha256": "fc8c296dcbcc472517040ac91272c1530b3bfe09a601926bd363ff86c7af3add",
+      "startedAt": "2026-10-26T04:55:26.407Z",
+      "accepted": false,
+      "outgoingRequestSha256": "92f1a87100f4f4c2acfbba312e92bf14a6ec586bf2b4e82ad8e07f6884452608",
+      "httpStatus": 200,
+      "errorCode": "upstream-malformed",
+      "providerDispatched": true,
+      "usage": {
+        "promptTokens": 1985,
+        "completionTokens": 1137,
+        "totalTokens": 3122,
+        "costMicroUsd": 1960
+      },
+      "responseCapture": "complete",
+      "responseBytes": 7590,
+      "responseSha256": "2c442f1b60482c3f33a17ac1a1b6a3461640cbeec24753dc7671a14b56104d17",
+      "responseStatus": "completed",
+      "outputTokens": 1137,
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:55:35.171Z"
+    },
+    {
+      "locale": "en",
+      "repeat": 3,
+      "requestSha256": "fc8c296dcbcc472517040ac91272c1530b3bfe09a601926bd363ff86c7af3add",
+      "startedAt": "2026-10-26T04:55:35.172Z",
+      "accepted": true,
+      "outgoingRequestSha256": "92f1a87100f4f4c2acfbba312e92bf14a6ec586bf2b4e82ad8e07f6884452608",
+      "httpStatus": 200,
+      "usage": {
+        "promptTokens": 1985,
+        "completionTokens": 1039,
+        "totalTokens": 3024,
+        "costMicroUsd": 1843
+      },
+      "responseCapture": "complete",
+      "responseBytes": 6837,
+      "responseSha256": "4b5badbc05368f206f775579a98817d8ab2937ae2df518333f9a7f69c7da3ce4",
+      "responseStatus": "completed",
+      "outputTokens": 1039,
+      "preservationAudit": "pass",
+      "patternCount": 8,
+      "limitationCount": 8,
+      "acceptedResponseSha256": "f4dd2d58ab106d5fff39be6513286046a5e9971632966f17f3341eca3ed32144",
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:55:44.284Z"
+    },
+    {
+      "locale": "zh-hans",
+      "repeat": 1,
+      "requestSha256": "f3ec7b5c08811dac78cb90392d333c662c32f676c1da1e3f04d666c1539dd787",
+      "startedAt": "2026-10-26T04:55:44.284Z",
+      "accepted": true,
+      "outgoingRequestSha256": "bfc86d49157e4b98d547e97e627d6f82f0c7bca07e25451083fe239099383b65",
+      "httpStatus": 200,
+      "usage": {
+        "promptTokens": 1986,
+        "completionTokens": 1053,
+        "totalTokens": 3039,
+        "costMicroUsd": 1860
+      },
+      "responseCapture": "complete",
+      "responseBytes": 6475,
+      "responseSha256": "56e171eede011b5d1b62ecb5db0dcb4e49c20d19c149a21029d4e96bc8bd4276",
+      "responseStatus": "completed",
+      "outputTokens": 1053,
+      "preservationAudit": "pass",
+      "patternCount": 6,
+      "limitationCount": 8,
+      "acceptedResponseSha256": "9f1e6fea4faf83c9a8bf1438c7e7a876fe0683daa7cc04b5b6e2b2f4e95f07be",
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:55:54.114Z"
+    },
+    {
+      "locale": "zh-hans",
+      "repeat": 2,
+      "requestSha256": "f3ec7b5c08811dac78cb90392d333c662c32f676c1da1e3f04d666c1539dd787",
+      "startedAt": "2026-10-26T04:55:54.115Z",
+      "accepted": false,
+      "outgoingRequestSha256": "bfc86d49157e4b98d547e97e627d6f82f0c7bca07e25451083fe239099383b65",
+      "httpStatus": 200,
+      "errorCode": "upstream-malformed",
+      "providerDispatched": true,
+      "usage": {
+        "promptTokens": 1986,
+        "completionTokens": 1035,
+        "totalTokens": 3021,
+        "costMicroUsd": 1838
+      },
+      "responseCapture": "complete",
+      "responseBytes": 6281,
+      "responseSha256": "e4c04af343746fd44c08a41f40ea0840b688a4b9a6d4dafa7d6b82f9144288ff",
+      "responseStatus": "completed",
+      "outputTokens": 1035,
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:56:02.588Z"
+    },
+    {
+      "locale": "zh-hans",
+      "repeat": 3,
+      "requestSha256": "f3ec7b5c08811dac78cb90392d333c662c32f676c1da1e3f04d666c1539dd787",
+      "startedAt": "2026-10-26T04:56:02.588Z",
+      "accepted": false,
+      "outgoingRequestSha256": "bfc86d49157e4b98d547e97e627d6f82f0c7bca07e25451083fe239099383b65",
+      "httpStatus": 200,
+      "errorCode": "upstream-malformed",
+      "providerDispatched": true,
+      "usage": {
+        "promptTokens": 1986,
+        "completionTokens": 1106,
+        "totalTokens": 3092,
+        "costMicroUsd": 1923
+      },
+      "responseCapture": "complete",
+      "responseBytes": 6420,
+      "responseSha256": "aeada4216f044f1a8f42f60192944c92d2a21b0bc4c51fbca211967f49d23ad3",
+      "responseStatus": "completed",
+      "outputTokens": 1106,
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:56:11.019Z"
+    },
+    {
+      "locale": "zh-hant",
+      "repeat": 1,
+      "requestSha256": "2b7e3554d3cad863b8a3371d2f3ef2acea4741df8c2c29020334934b532e02bb",
+      "startedAt": "2026-10-26T04:56:11.020Z",
+      "accepted": false,
+      "outgoingRequestSha256": "484317e5db81c8cc57af320e3ef3b279ec24b9c0e44a7a8625559f9148a975b7",
+      "httpStatus": 200,
+      "errorCode": "upstream-malformed",
+      "providerDispatched": true,
+      "usage": {
+        "promptTokens": 1986,
+        "completionTokens": 1386,
+        "totalTokens": 3372,
+        "costMicroUsd": 2259
+      },
+      "responseCapture": "complete",
+      "responseBytes": 7075,
+      "responseSha256": "8588ea3497b146d320ab44df04e5bfe6f6da013c84a96793166c96aac4c53f67",
+      "responseStatus": "completed",
+      "outputTokens": 1386,
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:56:21.693Z"
+    },
+    {
+      "locale": "zh-hant",
+      "repeat": 2,
+      "requestSha256": "2b7e3554d3cad863b8a3371d2f3ef2acea4741df8c2c29020334934b532e02bb",
+      "startedAt": "2026-10-26T04:56:21.694Z",
+      "accepted": true,
+      "outgoingRequestSha256": "484317e5db81c8cc57af320e3ef3b279ec24b9c0e44a7a8625559f9148a975b7",
+      "httpStatus": 200,
+      "usage": {
+        "promptTokens": 1986,
+        "completionTokens": 1255,
+        "totalTokens": 3241,
+        "costMicroUsd": 2102
+      },
+      "responseCapture": "complete",
+      "responseBytes": 6609,
+      "responseSha256": "789f749dbfa4a43990c2c2e5fcdd1e0936fbce98bb9307d5704f2432dd4d46f0",
+      "responseStatus": "completed",
+      "outputTokens": 1255,
+      "preservationAudit": "pass",
+      "patternCount": 8,
+      "limitationCount": 8,
+      "acceptedResponseSha256": "b8e52a27cecb8c487667035edb132979d2f737d07e6569605963e92bb4606c42",
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:56:31.845Z"
+    },
+    {
+      "locale": "zh-hant",
+      "repeat": 3,
+      "requestSha256": "2b7e3554d3cad863b8a3371d2f3ef2acea4741df8c2c29020334934b532e02bb",
+      "startedAt": "2026-10-26T04:56:31.846Z",
+      "accepted": true,
+      "outgoingRequestSha256": "484317e5db81c8cc57af320e3ef3b279ec24b9c0e44a7a8625559f9148a975b7",
+      "httpStatus": 200,
+      "usage": {
+        "promptTokens": 1986,
+        "completionTokens": 1531,
+        "totalTokens": 3517,
+        "costMicroUsd": 2433
+      },
+      "responseCapture": "complete",
+      "responseBytes": 7571,
+      "responseSha256": "ca97c4f7eedb15380ad80850c8cee63c4b96dfd184358eeb1739216f0ce06bff",
+      "responseStatus": "completed",
+      "outputTokens": 1531,
+      "preservationAudit": "pass",
+      "patternCount": 8,
+      "limitationCount": 8,
+      "acceptedResponseSha256": "f9d26f5a8aab5ab627fdd1a5bed2da55cbe753f8b91e2cae54f35ca2d4ad6883",
+      "responseDispatches": 1,
+      "finishedAt": "2026-10-26T04:56:43.566Z"
+    }
+  ],
+  "retries": 0,
+  "deployment": false,
+  "startedAt": "2026-10-26T04:55:13.837Z",
+  "status": "fail",
+  "accepted": 5,
+  "finishedAt": "2026-10-26T04:56:43.580Z",
+  "offlineFailureAnalysis": [
+    {
+      "locale": "en",
+      "repeat": 2,
+      "categories": [
+        "distinct-evidence-references-over-eight",
+        "limitations-over-eight"
+      ],
+      "distinctReferencesInFailingPattern": 10,
+      "limitationCount": 9
+    },
+    {
+      "locale": "zh-hans",
+      "repeat": 2,
+      "categories": [
+        "unverified-schema-version-echo",
+        "distinct-evidence-references-over-eight"
+      ],
+      "distinctReferencesInFailingPattern": 10
+    },
+    {
+      "locale": "zh-hans",
+      "repeat": 3,
+      "categories": [
+        "unrecognized-top-level-field"
+      ],
+      "unrecognizedFieldCount": 1
+    },
+    {
+      "locale": "zh-hant",
+      "repeat": 1,
+      "categories": [
+        "missing-required-limitation"
+      ],
+      "observedPatternCount": 0,
+      "limitationCount": 0
+    }
+  ]
+}

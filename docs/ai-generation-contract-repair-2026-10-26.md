@@ -105,5 +105,39 @@ The runner is `scripts/verify-open-ena-ai-live-matrix.ts`. Without `--run-nine`
 it performs a local preflight only. Credentials are supplied through process
 memory and never included in the fixture, receipt, source, or logs.
 
-Run result is pending. #108 remains open. No production deployment or
-post-deployment six-call dual-domain check is authorized in this change.
+The run completed on candidate `7dcfba686f37819d0a57959a2029a8353ffa04ef`
+from **12:55:13 to 12:56:43 (UTC+08:00, 26 October 2026)**. Result:
+**5/9 accepted, so the 9/9 gate failed**. Every request was sent exactly once;
+there were no extra generations, repairs, or retries.
+
+| Locale | Consecutive results | Accepted |
+| --- | --- | --- |
+| en | pass, fail, pass | 2/3 |
+| zh-hans | pass, fail, fail | 1/3 |
+| zh-hant | fail, pass, pass | 2/3 |
+
+All nine provider responses were HTTP 200 and `completed`, with 1,035–1,531
+output tokens, below the unchanged 1,800-token cap. The first rejected English
+response contains ten distinct references on one observation and nine
+limitations. The rejected Simplified Chinese responses contain an unverified
+schema-version echo plus a ten-reference observation, and an unrecognized
+top-level field, respectively. The rejected Traditional Chinese response has
+no required limitation. These are retained output-contract failures, not
+transport failures or demonstrated token truncation.
+
+All five accepted outputs passed independent word/reference preservation
+checks: observation count/order and statements are retained, each complete
+distinct evidence set remains associated with its original observation, and
+every supplied limitation/disclosure is retained. This does not establish
+broader scientific validity or stochastic reliability.
+
+[Complete redacted receipt](evidence/ai-contract-repair-20261026/live-nine-receipt.json)
+records every case, exact fixture/evidence/prompt/source/request/response hashes,
+HTTP state, token usage, dispatch count, and preservation outcome. The raw
+synthetic responses remain in the local private run directory; neither provider
+prose nor credential values are published in the receipt. Local raw capture
+also has an independent bounded deadline, tested with a stalled 503 body.
+
+**PR #118 remains Draft; #108 remains open.** No production deployment or
+post-deployment six-call dual-domain check was performed. The finite projection
+has not satisfied the requested release acceptance gate.
