@@ -10,6 +10,7 @@ import {
 } from "j-3dena";
 
 import type { Locale } from "@/lib/i18n";
+import { csvDownloadBlob, isCsvDownloadMediaType } from "@/lib/open-ena/csv-download";
 import {
   buildOpenEnaLongitudinalExecutionRequestV3,
   advanceOpenEnaLongitudinalScientificRevisionV3,
@@ -823,7 +824,9 @@ function inferenceRows(bundle: LongitudinalAnalysisBundleV2): Array<Record<strin
 }
 
 function downloadBlob(name: string, value: BlobPart, type: string): void {
-  const url = URL.createObjectURL(new Blob([value], { type }));
+  const blob = isCsvDownloadMediaType(type) && (typeof value === "string" || value instanceof Uint8Array)
+    ? csvDownloadBlob(value) : new Blob([value], { type });
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = name;

@@ -319,10 +319,24 @@ function extractAndVerifyBundle(zipPath, kind, participantLevelIncluded) {
   return { extracted, manifest, analysis, plot, participants, zipSha256: sha256(readFileSync(zipPath)) };
 }
 function verifyStandaloneDownloads(downloads, aggregate) {
+  const comparisons = [];
+  const utf8Bom = Buffer.from([0xef, 0xbb, 0xbf]);
   for (const name of [...aggregate.manifest.files.map(file => file.filename), "manifest.json"]) {
     const standaloneBytes = readFileSync(downloads[name]);
-    assert.deepEqual(standaloneBytes, readFileSync(join(aggregate.extracted, name)), `${name} differs from genuine ZIP`);
+    const zipMemberBytes = readFileSync(join(aggregate.extracted, name));
+    const isCsv = aggregate.manifest.files.some(file => file.filename === name && file.mimeType === "text/csv");
+    if (isCsv) assert.deepEqual(standaloneBytes.subarray(0, utf8Bom.length), utf8Bom, `${name} must begin with a UTF-8 BOM`);
+    const bomByteLength = isCsv ? utf8Bom.length : 0;
+    assert.deepEqual(standaloneBytes.subarray(bomByteLength), zipMemberBytes, `${name} differs from genuine ZIP`);
+    comparisons.push({
+      filename: name,
+      bomByteLength,
+      published: artifactEvidence(downloads[name]),
+      zipMember: { byteLength: zipMemberBytes.byteLength, sha256: sha256(zipMemberBytes) },
+      contentMatchesZipMember: true,
+    });
   }
+  return comparisons;
 }
 // Preservation map: native Worker binding replaces legacy path-task receipts;
 // separately collected real rank designs replace an all-families legacy table;
@@ -2500,7 +2514,10 @@ try {
   const downloads = await runBrowserPhase("all native aggregate and participant downloads", downloadAllArtifacts, {}, 240_000);
   const aggregate = extractAndVerifyBundle(downloads.aggregate.bundle, "aggregate", false);
   const participant = extractAndVerifyBundle(downloads.participant.bundle, "participant", true);
-  verifyStandaloneDownloads(downloads.aggregate, aggregate); verifyStandaloneDownloads(downloads.participant, participant);
+  const standaloneDownloads = {
+    aggregate: verifyStandaloneDownloads(downloads.aggregate, aggregate),
+    participant: verifyStandaloneDownloads(downloads.participant, participant),
+  };
   assert.deepEqual(aggregate.manifest.binding, plotAudit.binding);
   assert.deepEqual(participant.manifest.binding, plotAudit.binding);
   const expectedPathRows = aggregate.analysis.pathComparison.tests.map(test => [test.metric, test.timeIndex === null ? "—" : String(test.timeIndex), test.distanceSpace ?? "", String(test.observed), String(test.pValue), String(test.holmAdjustedPValue), String(test.permutationCount)]);
@@ -2548,7 +2565,7 @@ try {
   assert.ok(chromiumAngleReadPixelsDiagnostics.sourcePaths.length <= 1);
   const screenshots = Object.fromEntries(readdirSync(artifactDirectory).filter(name => /\.(png|svg)$/u.test(name)).map(name => [name, artifactEvidence(join(artifactDirectory, name))]));
   const browserRuntimeEvidence = await readBrowserRuntimeEvidence(runtime.page);
-  completedSummary = { status: "PASS", finalCurrentScience, finalResultStatus: staleImageAudit.finalState.resultStatus, source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, screenshots, downloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, staleImageAudit, browserErrors };
+  completedSummary = { status: "PASS", finalCurrentScience, finalResultStatus: staleImageAudit.finalState.resultStatus, source: { ...sourceEvidenceBefore, smokeSourceSha256 }, runtimeBrowserVersion: browserRuntimeEvidence.version, runtimeBrowserUserAgent: browserRuntimeEvidence.userAgent, plotAudit, screenshots, downloads, standaloneDownloads, aggregate: { manifest: aggregate.manifest, zipSha256: aggregate.zipSha256 }, participant: { manifest: participant.manifest, zipSha256: participant.zipSha256 }, railPanelAudit, displayAudit, plotActionAudit, pendingImageAudit, fallbackA11yAudit, responsiveAudit, staleImageAudit, browserErrors };
 } catch (caught) {
   primaryFailure = caught;
   if (runtime) { try { await runtime.page.screenshot({ path: failureScreenshotPath, fullPage: true }); } catch {} }

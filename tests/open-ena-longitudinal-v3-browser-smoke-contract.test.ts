@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 const smokePath = join(process.cwd(), "tests", "open-ena-longitudinal-v3-browser-smoke.mjs");
@@ -27,10 +28,102 @@ test("three separately downloaded native rank designs preserve controls rows fol
 test("explicit independent whole-path statistics retain all selected-period metrics and permutation inference", () => {
   requires(["histories in these two Groups are independent", "Run whole-path comparison", "Whole-path comparison current", "orderedHorizons.length * 5 + (orderedHorizons.length - 1) * 4", "assert.equal(path.repetitions, 500)", "assert.equal(path.seed, 2026)", "test.holmAdjustedPValue", "permutationPlanSha256", "all-period-complete"]);
 });
-test("aggregate and explicit participant bundles preserve every standalone byte and privacy boundary", () => {
+test("aggregate and explicit participant bundles preserve standalone content and privacy boundaries", () => {
   requires(["Export trajectory bundle", "Include participant data in this export", "participants.json", "manifest.json", "plot-specification.json", "trajectory-inference.csv", "member.byteLength", "member.sha256", "member.mimeType", "verifyStandaloneDownloads", "noParticipantFacts", "aggregate-path-comparison-complete-cohort", "participant opt-in changed aggregate descriptor"]);
   for (const family of ["independent-period", "paired-periods", "repeated-periods", "path-comparison"]) assert.ok(source.includes(family));
   assert.doesNotMatch(source, /3dena.longitudinal-provenance-manifest|provenance-manifest.json/u);
+});
+type StandaloneComparison = {
+  filename: string;
+  bomByteLength: number;
+  published: { file: string; bytes: number; sha256: string };
+  zipMember: { byteLength: number; sha256: string };
+  contentMatchesZipMember: boolean;
+};
+
+function withStandaloneDownloads(check: (fixture: {
+  verify: () => StandaloneComparison[];
+  downloads: Record<string, string>;
+  canonicalCsv: Buffer;
+  canonicalJson: Buffer;
+  bom: Buffer;
+}) => void) {
+  const directory = mkdtempSync(join(tmpdir(), "ena-standalone-contract-"));
+  const extracted = join(directory, "zip-members");
+  mkdirSync(extracted);
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  const canonicalCsv = Buffer.from("參與者,効果\n中文 café 👩‍🔬,1.5\n", "utf8");
+  const canonicalJson = Buffer.from('{"value":"中文 café"}', "utf8");
+  const downloads: Record<string, string> = {};
+  const files = [
+    { filename: "trajectory-inference.csv", mimeType: "text/csv" },
+    { filename: "analysis.json", mimeType: "application/json" },
+  ];
+  for (const filename of [...files.map(file => file.filename), "manifest.json"]) {
+    const bytes = filename.endsWith(".csv") ? canonicalCsv : canonicalJson;
+    writeFileSync(join(extracted, filename), bytes);
+    downloads[filename] = join(directory, filename);
+    writeFileSync(downloads[filename], filename.endsWith(".csv") ? Buffer.concat([bom, bytes]) : bytes);
+  }
+  const declaration = source.match(/function verifyStandaloneDownloads\(downloads, aggregate\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(declaration, "the actual full-browser standalone download verifier must remain executable");
+  const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+  const artifactEvidence = (path: string) => ({ file: path, bytes: readFileSync(path).byteLength, sha256: sha256(readFileSync(path)) });
+  const verify = new Function("assert", "readFileSync", "join", "artifactEvidence", "sha256", `${declaration}; return verifyStandaloneDownloads;`)(
+    assert, readFileSync, join, artifactEvidence, sha256,
+  ) as (downloads: Record<string, string>, aggregate: unknown) => StandaloneComparison[];
+  try {
+    check({ verify: () => verify(downloads, { extracted, manifest: { files } }), downloads, canonicalCsv, canonicalJson, bom });
+    assert.deepEqual(readFileSync(join(extracted, "trajectory-inference.csv")), canonicalCsv, "verification must leave canonical ZIP bytes unchanged");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+test("full browser accepts one CSV BOM and records published bytes separately from canonical ZIP bytes", () => {
+  withStandaloneDownloads(({ verify, canonicalCsv, canonicalJson }) => {
+    const receipts = verify();
+    const csv = receipts.find(file => file.filename === "trajectory-inference.csv")!;
+    assert.equal(csv.bomByteLength, 3);
+    assert.equal(csv.contentMatchesZipMember, true);
+    assert.equal(csv.published.bytes, canonicalCsv.byteLength + 3);
+    assert.equal(csv.zipMember.byteLength, canonicalCsv.byteLength);
+    assert.equal(csv.zipMember.sha256, createHash("sha256").update(canonicalCsv).digest("hex"));
+    assert.notEqual(csv.published.sha256, csv.zipMember.sha256);
+    for (const file of receipts.filter(file => !file.filename.endsWith(".csv"))) {
+      assert.equal(file.bomByteLength, 0);
+      assert.equal(file.published.bytes, canonicalJson.byteLength);
+      assert.equal(file.published.sha256, file.zipMember.sha256);
+      assert.equal(file.contentMatchesZipMember, true);
+    }
+  });
+});
+
+test("full browser rejects a CSV download without its UTF-8 BOM", () => {
+  withStandaloneDownloads(({ verify, downloads, canonicalCsv }) => {
+    writeFileSync(downloads["trajectory-inference.csv"], canonicalCsv);
+    assert.throws(verify, /UTF-8 BOM/u);
+  });
+});
+
+test("full browser rejects duplicate BOMs and changed CSV content after the signature", () => {
+  withStandaloneDownloads(({ verify, downloads, canonicalCsv, bom }) => {
+    writeFileSync(downloads["trajectory-inference.csv"], Buffer.concat([bom, bom, canonicalCsv]));
+    assert.throws(verify, /differs from genuine ZIP/u);
+    writeFileSync(downloads["trajectory-inference.csv"], Buffer.concat([bom, canonicalCsv, Buffer.from("changed")]));
+    assert.throws(verify, /differs from genuine ZIP/u);
+  });
+});
+
+test("full browser keeps non-CSV standalone downloads byte-identical to ZIP members", () => {
+  withStandaloneDownloads(({ verify, downloads, canonicalJson, bom }) => {
+    writeFileSync(downloads["analysis.json"], Buffer.concat([bom, canonicalJson]));
+    assert.throws(verify, /analysis.json differs from genuine ZIP/u);
+  });
+});
+
+test("full browser summary carries both aggregate and participant standalone receipts", () => {
+  requires(["standaloneDownloads", "aggregate: verifyStandaloneDownloads(downloads.aggregate, aggregate)", "participant: verifyStandaloneDownloads(downloads.participant, participant)"]);
 });
 test("native trajectory geometry retains Codes square centroids black paths direction and zero edges", () => {
   requires(["codesPresent", "centroidSquares", 't.marker?.symbol === "square" && t.marker?.size === 7', "blackTrajectories", "lineOnlyTrajectories", "directionArrowTraceCount > 0", "networkEdgeTraceCount, 0", "errorBarTraceCount === 0", "unknownTraceRoles.length === 0", "display action changed bound fitted coordinates"]);

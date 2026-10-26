@@ -1,4 +1,5 @@
 "use client";
+import { csvDownloadBlob, isCsvDownloadMediaType } from "../../../lib/open-ena/csv-download";
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../../../lib/i18n";
 import { canonicalJsonV3 } from "../../../lib/open-ena/model-v3/canonical-json";
@@ -93,7 +94,9 @@ export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, res
     return pathCurrent && path && completeControls ? { path: { value: path.value, controls: completeControls }, ranks, ...(participants ? { participantConsent: { includeParticipants: true as const } } : {}) } : null;
   }
   function save(bytes: Uint8Array, mimeType: string, filename: string) {
-    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: mimeType }));
+    const blob = isCsvDownloadMediaType(mimeType)
+      ? csvDownloadBlob(bytes) : new Blob([new Uint8Array(bytes)], { type: mimeType });
+    const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   async function exportFiles(filename?: string) {
