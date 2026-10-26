@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "open-ena-qwen-access-check.v1",
+  "checkedOn": "2026-10-26",
+  "credentialSelection": "ALI QWEN entry from the approved project credential document",
+  "excludedCredential": "SU FEIYA ALI QWEN",
+  "separateEntriesVerified": true,
+  "selectedKeyPassedExplicitly": true,
+  "defaultCliCredentialUsed": false,
+  "region": "cn-beijing",
+  "method": "GET",
+  "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1/models",
+  "httpStatus": 200,
+  "requestedModelPresent": "qwen3.7-plus-2026-05-26",
+  "generationDispatches": 0,
+  "secretValuesRecorded": false,
+  "deployment": false,
+  "unauthenticatedControlHttpStatus": 401
+}

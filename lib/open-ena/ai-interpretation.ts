@@ -2840,7 +2840,7 @@ export function parseOpenEnaAiInterpretationRequest(value: unknown): OpenEnaAiIn
   throw new Error("AI request schema version is invalid.");
 }
 
-function parseInterpretationV2(
+export function parseInterpretationV2(
   value: unknown,
   validEvidenceIds: ReadonlySet<string> | null,
 ) {
