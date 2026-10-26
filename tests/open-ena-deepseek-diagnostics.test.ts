@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateLunaInterpretation, LunaClientError } from "../lib/server/deepseek-client";
+import { OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2 } from "../lib/open-ena/ai-interpretation";
 import { interpretationRequest } from "./helpers/ai-interpretation-request-v2";
 
 const key = "synthetic-deepseek-key";
@@ -116,7 +117,7 @@ test("DeepSeek classifies token-cap JSON syntax as truncation and keeps shorter 
 test("DeepSeek rejects non-string prose even when a schema echo is also present", async () => {
   const { diagnostic, serialized } = await failure(JSON.stringify({
     ...valid,
-    schemaVersion: "echo",
+    schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
     observedPatterns: [{ statement: { private: "private-prose" }, evidenceRefs: ["axis-1"] }],
   }));
   assert.equal(diagnostic.rule, "string-type");

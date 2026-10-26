@@ -44,20 +44,30 @@ Responses enforced the schema.
 `projectOpenEnaProviderInterpretation` runs only on new DeepSeek output,
 before the non-string prose guard and `parseOpenEnaAiInterpretationResponse`.
 
-- Metadata echoes are removed and not stored: `$schema`,
-  `additionalProperties`, `name`, `promptVersion`, `responseFormatNote`,
-  `schemaVersion`, `type`.
-- Disclosure strings (`disclosure`, `limitationNote`,
-  `missingnessDisclosure`, `supplementalNote`) are appended to
+- Metadata is removed only when its value exactly matches the current V2
+  contract: `additionalProperties: false`, `type: "object"`,
+  `name: "open_ena_ai_interpretation"`,
+  `promptVersion: "open-ena-aggregate-inference-review-v2"`, or
+  `schemaVersion: "open-ena-ai-interpretation-response-v2"`.
+  Other values, including prose or objects under those keys, are rejected.
+  `$schema` is rejected because the outbound V2 response schema has no such
+  field; no URI or version aliases are accepted.
+- Top-level disclosure strings (`disclosure`, `limitationNote`,
+  `missingnessDisclosure`, `responseFormatNote`, `supplementalNote`) are appended to
   `limitations` when they fit. They are not truncated, coerced from
   non-strings, or dropped when the limitation list is already full.
   An empty string is removed. A duplicate of an existing limitation is not
   repeated.
-- A reference list longer than eight is partitioned, in order, only when
-  every id is a supplied evidence id and the resulting pattern count is
-  still at most eight. Distinct ids are kept. Unknown, malformed, or
-  non-string refs are not filtered out to make the list fit. Within-limit
-  duplicates are still rejected.
+- Disclosures inside an observed pattern are rejected. Moving such prose to
+  a global limitation would lose which pattern and evidence it qualifies;
+  the projection does not rewrite scientific statements or invent links.
+- A reference list longer than eight may collapse duplicates, in first-seen
+  order, only when every id was supplied and at most eight distinct ids remain.
+  The observation count, order, statement, and complete distinct evidence set
+  are retained. Lists with more than eight distinct ids remain strict-parser
+  failures: splitting observations can change which claim an ordinal disclosure
+  such as "Observation 2" qualifies. Unknown, malformed, or non-string refs are
+  not filtered out to make a list fit. Within-limit duplicates still reject.
 - Any other extra key, a ninth observation, a ninth limitation, or a
   seventh contextual question is still rejected.
 - The stored record is whatever the strict parser returns. The raw provider
@@ -70,9 +80,30 @@ Logs still omit provider prose, field values, and credentials. A contract
 failure does not start a second paid request. Rejected responses still
 carry provider usage.
 
+The independent review reproduced three accepted-output defects in the original
+candidate: missingness prose under `responseFormatNote` disappeared,
+pattern-level disclosures became detached global limitations, and reference
+partitioning renumbered observations without updating ordinal disclosures.
+Regression tests failed before the corresponding corrections (7 failures for
+metadata/disclosure handling, then 2 for reference partitioning). The final
+contract suite passes 21/21. Production-client mocks verify retained disclosure
+words or fail-closed rejection, one response dispatch, retained usage, and
+redacted diagnostics. Lists with more than eight distinct references remain an
+unrepaired provider failure; these tests do not establish live reliability.
+
 ## Live matrix
 
-Not run. This environment has no `DEEPSEEK_API_KEY`. The required gate is
-still three consecutive real generations on one fixed synthetic evidence
-set for `en`, `zh-Hans`, and `zh-Hant` (9/9), then the six-call dual-domain
-check. Parser acceptance of fixtures is not that gate. #108 stays open.
+The owner has authorized one fixed nine-call candidate validation on 2026-10-26:
+three consecutive real generations for each of `en`, `zh-hans`, and `zh-hant`,
+using `tests/fixtures/ai-live-fixed-synthetic-request-20261026.json`. This is the
+same synthetic teaching evidence used by the earlier diagnostic matrix. Only
+the locale changes; model, V2 prompt bytes, 1,800-token cap, and 20-second
+provider deadline remain fixed. Every result is retained; no success-only
+selection or implicit retry is permitted.
+
+The runner is `scripts/verify-open-ena-ai-live-matrix.ts`. Without `--run-nine`
+it performs a local preflight only. Credentials are supplied through process
+memory and never included in the fixture, receipt, source, or logs.
+
+Run result is pending. #108 remains open. No production deployment or
+post-deployment six-call dual-domain check is authorized in this change.

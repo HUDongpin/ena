@@ -1,29 +1,30 @@
+import {
+  OPEN_ENA_AI_PROMPT_VERSION_V2,
+  OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
+} from "../open-ena/ai-interpretation";
 import { OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2 } from "./open-ena-ai-prompt-governance";
 
-const PATTERN_LIMIT = OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.properties.observedPatterns.maxItems;
 const REFERENCE_LIMIT = OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.properties.observedPatterns.items.properties.evidenceRefs.maxItems;
 const LIMITATION_LIMIT = OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.properties.limitations.maxItems;
 
-/** Schema and transport echoes. Values are discarded, never stored as prose. */
+/** Only exact current-contract literals under these keys may be discarded. */
 export const OPEN_ENA_PROVIDER_METADATA_ECHO_KEYS = [
-  "$schema",
   "additionalProperties",
   "name",
   "promptVersion",
-  "responseFormatNote",
   "schemaVersion",
   "type",
 ] as const;
 
-/** Misplaced disclosure prose that the closed contract can still carry as a limitation. */
+/** Top-level disclosure prose that the closed contract can carry as a limitation. */
 export const OPEN_ENA_PROVIDER_DISCLOSURE_KEYS = [
   "disclosure",
   "limitationNote",
   "missingnessDisclosure",
+  "responseFormatNote",
   "supplementalNote",
 ] as const;
 
-const METADATA_ECHO_KEYS = new Set<string>(OPEN_ENA_PROVIDER_METADATA_ECHO_KEYS);
 const DISCLOSURE_KEYS = new Set<string>(OPEN_ENA_PROVIDER_DISCLOSURE_KEYS);
 const EVIDENCE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
@@ -57,21 +58,34 @@ function uniqueIds(values: readonly string[]): string[] {
   return unique;
 }
 
+function isVerifiedMetadataEcho(key: string, value: unknown): boolean {
+  switch (key) {
+    case "additionalProperties": return value === OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.additionalProperties;
+    case "name": return value === "open_ena_ai_interpretation";
+    case "promptVersion": return value === OPEN_ENA_AI_PROMPT_VERSION_V2;
+    case "schemaVersion": return value === OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2;
+    case "type": return value === OPEN_ENA_AI_BASE_RESPONSE_JSON_SCHEMA_V2.type;
+    default: return false;
+  }
+}
+
 function absorbExtra(key: string, value: unknown, label: string, notes: string[]): void {
-  if (METADATA_ECHO_KEYS.has(key)) return;
+  if (isVerifiedMetadataEcho(key, value)) return;
   if (!DISCLOSURE_KEYS.has(key) || typeof value !== "string") throw unexpected(label);
   if (value.trim() === "") return;
   notes.push(value);
 }
 
-function closedPattern(pattern: unknown, index: number, notes: string[]): unknown {
+function closedPattern(pattern: unknown, index: number): unknown {
   if (!isPlainObject(pattern)) return pattern;
   const closed: Record<string, unknown> = {};
   if (Object.hasOwn(pattern, "statement")) closed.statement = pattern.statement;
   if (Object.hasOwn(pattern, "evidenceRefs")) closed.evidenceRefs = pattern.evidenceRefs;
   for (const key of Object.keys(pattern)) {
     if (key === "statement" || key === "evidenceRefs") continue;
-    absorbExtra(key, pattern[key], `AI v2 observed pattern ${index + 1}`, notes);
+    // A scoped disclosure cannot become a global limitation without losing its
+    // pattern/evidence association. Leave that case fail-closed.
+    if (!isVerifiedMetadataEcho(key, pattern[key])) throw unexpected(`AI v2 observed pattern ${index + 1}`);
   }
   return closed;
 }
@@ -83,24 +97,24 @@ function withReferences(pattern: Record<string, unknown>, evidenceRefs: readonly
   return next;
 }
 
-function partitionPatterns(patterns: readonly unknown[], evidenceIds: ReadonlySet<string>): unknown[] {
-  const partitioned: unknown[] = [];
+function collapseDuplicateReferenceOverflow(patterns: readonly unknown[], evidenceIds: ReadonlySet<string>): unknown[] {
+  const normalized: unknown[] = [];
   for (const pattern of patterns) {
     if (!isPlainObject(pattern) || !Array.isArray(pattern.evidenceRefs) || pattern.evidenceRefs.length <= REFERENCE_LIMIT) {
-      partitioned.push(pattern);
+      normalized.push(pattern);
       continue;
     }
     if (!allSupplied(pattern.evidenceRefs, evidenceIds)) return [...patterns];
     const unique = uniqueIds(pattern.evidenceRefs);
     if (unique.length <= REFERENCE_LIMIT) {
-      partitioned.push(withReferences(pattern, unique));
+      normalized.push(withReferences(pattern, unique));
       continue;
     }
-    for (let index = 0; index < unique.length; index += REFERENCE_LIMIT) {
-      partitioned.push(withReferences(pattern, unique.slice(index, index + REFERENCE_LIMIT)));
-    }
+    // Splitting changes observation counts and can retarget ordinal disclosures.
+    // Keep the complete association for the strict parser to reject.
+    normalized.push(pattern);
   }
-  return partitioned.length > PATTERN_LIMIT ? [...patterns] : partitioned;
+  return normalized;
 }
 
 function mergeLimitations(existing: unknown, present: boolean, notes: readonly string[]): unknown {
@@ -119,9 +133,10 @@ function mergeLimitations(existing: unknown, present: boolean, notes: readonly s
 
 /**
  * Project a provider interpretation onto the closed v2 object before strict parsing.
- * Metadata echoes are removed. Disclosure strings move into limitations without
- * truncation or type coercion. Over-long reference lists are partitioned only when
- * every id was supplied and the result still fits the pattern cap. Anything else
+ * Verified literal metadata echoes are removed. Top-level disclosure strings move
+ * into limitations without truncation or type coercion; nested disclosures reject.
+ * Over-long reference lists collapse duplicates only when every id was supplied
+ * and the distinct set fits the reference cap, preserving pattern count and order. Anything else
  * is left for the strict parser to reject.
  */
 export function projectOpenEnaProviderInterpretation(
@@ -134,7 +149,7 @@ export function projectOpenEnaProviderInterpretation(
   if (Object.hasOwn(value, "observedPatterns")) {
     const patterns = value.observedPatterns;
     projected.observedPatterns = Array.isArray(patterns)
-      ? partitionPatterns(patterns.map((pattern, index) => closedPattern(pattern, index, notes)), evidenceIds)
+      ? collapseDuplicateReferenceOverflow(patterns.map((pattern, index) => closedPattern(pattern, index)), evidenceIds)
       : patterns;
   }
   if (Object.hasOwn(value, "contextualQuestions")) projected.contextualQuestions = value.contextualQuestions;

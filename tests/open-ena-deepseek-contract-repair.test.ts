@@ -8,6 +8,7 @@ import {
 } from "../lib/server/open-ena-ai-provider-projection";
 import {
   collectOpenEnaAiEvidenceIds,
+  OPEN_ENA_AI_PROMPT_VERSION_V2,
   OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
   parseOpenEnaAiInterpretationResponse,
   type OpenEnaAiInterpretationRequestV2,
@@ -91,11 +92,9 @@ function wrapped(request: OpenEnaAiInterpretationRequestV2, interpretation: unkn
 
 test("provider repair allowlists stay closed", () => {
   assert.deepEqual([...OPEN_ENA_PROVIDER_METADATA_ECHO_KEYS], [
-    "$schema",
     "additionalProperties",
     "name",
     "promptVersion",
-    "responseFormatNote",
     "schemaVersion",
     "type",
   ]);
@@ -103,6 +102,7 @@ test("provider repair allowlists stay closed", () => {
     "disclosure",
     "limitationNote",
     "missingnessDisclosure",
+    "responseFormatNote",
     "supplementalNote",
   ]);
 });
@@ -111,9 +111,9 @@ test("projection does not mutate provider JSON or duplicate an existing limitati
   const ids = new Set(["axis-1"]);
   const input = {
     ...clean,
-    schemaVersion: "echo",
+    schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
     supplementalNote: clean.limitations[0],
-    observedPatterns: [{ statement: "合成观察。", evidenceRefs: ["axis-1"], schemaVersion: "echo" }],
+    observedPatterns: [{ statement: "合成观察。", evidenceRefs: ["axis-1"], schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2 }],
   };
   const frozen = structuredClone(input);
   const projected = projectOpenEnaProviderInterpretation(input, ids);
@@ -169,20 +169,99 @@ test("the strict response parser still rejects extra fields and reference overfl
   );
 });
 
-test("Simplified Chinese schema echoes are removed and the closed interpretation is accepted", async () => {
-  for (const extra of ["schemaVersion", "type", "responseFormatNote"] as const) {
-    const { result, caught, serialized } = await dispatch("zh-hans", JSON.stringify({ ...clean, [extra]: "PRIVATE_SCHEMA_ECHO" }));
+test("verified literal schema and transport echoes are removed", async () => {
+  const echoes = {
+    additionalProperties: false,
+    name: "open_ena_ai_interpretation",
+    promptVersion: OPEN_ENA_AI_PROMPT_VERSION_V2,
+    schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
+    type: "object",
+  };
+  for (const [extra, value] of Object.entries(echoes)) {
+    const { result, caught } = await dispatch("zh-hans", JSON.stringify({
+      ...clean,
+      [extra]: value,
+      observedPatterns: [{ ...clean.observedPatterns[0], [extra]: value }],
+    }));
     assert.equal(caught, null, `${extra} must be repaired without a second dispatch`);
     assert.deepEqual(result?.response.interpretation, clean);
     assert.equal(result?.response.promptVersion, "open-ena-aggregate-inference-review-v2");
-    assert.ok(!serialized.includes("PRIVATE_SCHEMA_ECHO") && !serialized.includes(key));
-    assert.ok(!JSON.stringify(result?.response.interpretation).includes("PRIVATE_SCHEMA_ECHO"));
+  }
+  const { paid } = await dispatch("en", JSON.stringify(clean));
+  const format = (paid.body!.text as { format: { name: string; schema: { type: string; additionalProperties: boolean } } }).format;
+  assert.equal(echoes.name, format.name);
+  assert.equal(echoes.type, format.schema.type);
+  assert.equal(echoes.additionalProperties, format.schema.additionalProperties);
+});
+
+test("arbitrary metadata values are rejected instead of erasing disclosure prose", async () => {
+  const note = "This comparison excludes 12 units with missing observations.";
+  for (const extra of ["$schema", ...OPEN_ENA_PROVIDER_METADATA_ECHO_KEYS]) {
+    for (const value of [note, { missingnessDisclosure: note }]) {
+      for (const nested of [false, true]) {
+        const { result, caught, entries, serialized } = await dispatch("en", JSON.stringify(nested ? {
+          ...clean,
+          observedPatterns: [{ ...clean.observedPatterns[0], [extra]: value }],
+        } : { ...clean, [extra]: value }));
+        assert.ok(caught, `${nested ? "pattern" : "top-level"} ${extra} must not silently discard its value`);
+        assert.equal(result, null);
+        assert.equal(caught.providerDispatched, true);
+        assert.equal(caught.usage?.totalTokens, 30);
+        assert.equal(JSON.parse(entries[0][1] as string).rule, "unexpected-field");
+        assert.ok(!serialized.includes(note) && !serialized.includes(key));
+      }
+    }
+  }
+});
+
+test("metadata aliases and wrong primitive types are not verified echoes", async () => {
+  for (const [extra, value] of Object.entries({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    additionalProperties: "false",
+    name: "open_ena_ai_interpretation_v2",
+    promptVersion: "v2",
+    schemaVersion: "v2",
+    type: "array",
+  })) {
+    const { caught } = await dispatch("en", JSON.stringify({ ...clean, [extra]: value }));
+    assert.ok(caught, `${extra} must match the current contract exactly`);
+  }
+});
+
+test("top-level responseFormatNote retains missingness disclosure words", async () => {
+  const note = "This comparison excludes 12 units because of missing observations; the missingness mechanism is unknown.";
+  const { result, caught, serialized } = await dispatch("en", JSON.stringify({ ...clean, responseFormatNote: note }));
+  assert.equal(caught, null);
+  assert.deepEqual(result?.response.interpretation, { ...clean, limitations: [...clean.limitations, note] });
+  assert.equal(result?.usage?.totalTokens, 30);
+  assert.equal(result?.providerDispatched, true);
+  assert.ok(!serialized.includes(note) && !serialized.includes(key));
+});
+
+test("pattern disclosures are rejected instead of losing their evidence association", async () => {
+  const note = "This pattern excludes 12 units with missing observations.";
+  for (const extra of OPEN_ENA_PROVIDER_DISCLOSURE_KEYS) {
+    const { result, caught, entries, serialized } = await dispatch("en", JSON.stringify({
+      ...clean,
+      observedPatterns: [
+        { statement: "Synthetic pattern on axis 1.", evidenceRefs: ["axis-1"], [extra]: note },
+        { statement: "Synthetic pattern on axis 2.", evidenceRefs: ["axis-2"], [extra]: "This pattern uses all units." },
+      ],
+    }));
+    assert.ok(caught, `${extra} must not be detached into global limitations`);
+    assert.equal(result, null);
+    assert.equal(caught.providerDispatched, true);
+    assert.equal(caught.usage?.totalTokens, 30);
+    const diagnostic = JSON.parse(entries[0][1] as string);
+    assert.equal(diagnostic.rule, "unexpected-field");
+    assert.equal(diagnostic.field, "interpretation.observedPatterns[]");
+    assert.ok(!serialized.includes(note) && !serialized.includes(key));
   }
 });
 
 test("Traditional Chinese disclosure fields are preserved as limitations", async () => {
   const note = "合成披露，仅用于合约测试。";
-  for (const extra of ["supplementalNote", "missingnessDisclosure"] as const) {
+  for (const extra of OPEN_ENA_PROVIDER_DISCLOSURE_KEYS) {
     const { result, caught, serialized } = await dispatch("zh-hant", JSON.stringify({ ...clean, [extra]: note }));
     assert.equal(caught, null, `${extra} must be preserved inside the closed contract`);
     assert.deepEqual(result?.response.interpretation, {
@@ -193,36 +272,64 @@ test("Traditional Chinese disclosure fields are preserved as limitations", async
   }
 });
 
-test("English reference overflow is partitioned without dropping supplied evidence", async () => {
+test("more than eight distinct supplied references stay rejected without partitioning observations", async () => {
   const requestIds = evidenceIds(interpretationRequest("en", { edgeCount: 3 }));
   assert.equal(requestIds.length, 9);
   const statement = "Synthetic aggregate pattern.";
-  const { result, caught, serialized } = await dispatch("en", JSON.stringify({
+  const input = {
     ...clean,
     observedPatterns: [{ statement, evidenceRefs: requestIds }],
-  }), 3);
-  assert.equal(caught, null, "nine supplied references must fit the closed contract in one dispatch");
-  assert.deepEqual(result?.response.interpretation.observedPatterns, [
-    { statement, evidenceRefs: requestIds.slice(0, 8) },
-    { statement, evidenceRefs: requestIds.slice(8) },
-  ]);
-  assert.deepEqual(result?.response.interpretation.limitations, clean.limitations);
+  };
+  assert.deepEqual(projectOpenEnaProviderInterpretation(input, new Set(requestIds)), input);
+  const { result, caught, entries, serialized } = await dispatch("en", JSON.stringify(input), 3);
+  assert.ok(caught);
+  assert.equal(result, null);
+  assert.equal(caught.providerDispatched, true);
+  assert.equal(caught.usage?.totalTokens, 30);
+  const diagnostic = JSON.parse(entries[0][1] as string);
+  assert.equal(diagnostic.rule, "array-length");
+  assert.equal(diagnostic.field, "interpretation.observedPatterns[].evidenceRefs");
   assert.ok(!serialized.includes(statement) && !serialized.includes(requestIds[8]));
 });
 
-test("duplicate citations that push one pattern past eight references collapse without dropping distinct ids", async () => {
+test("reference overflow rejects instead of changing which observation a disclosure qualifies", async () => {
   const ids = evidenceIds(interpretationRequest("en", { edgeCount: 3 }));
+  const note = "Observation 2 excludes 12 units with missing observations.";
+  const input = {
+    ...clean,
+    observedPatterns: [
+      { statement: "Synthetic joint summary.", evidenceRefs: ids },
+      { statement: "Synthetic comparison on axis 2.", evidenceRefs: ["comparison-axis-2"] },
+    ],
+    limitations: [...clean.limitations, note],
+  };
+  const { result, caught, entries, serialized } = await dispatch("en", JSON.stringify(input), 3);
+  assert.ok(caught, "splitting the first observation must not silently retarget Observation 2's disclosure");
+  assert.equal(result, null);
+  assert.equal(caught.providerDispatched, true);
+  assert.equal(caught.usage?.totalTokens, 30);
+  assert.deepEqual(projectOpenEnaProviderInterpretation(input, new Set(ids)), input);
+  const diagnostic = JSON.parse(entries[0][1] as string);
+  assert.equal(diagnostic.rule, "array-length");
+  assert.equal(diagnostic.field, "interpretation.observedPatterns[].evidenceRefs");
+  assert.ok(!serialized.includes(note) && !serialized.includes(key));
+});
+
+test("duplicate-only reference overflow collapses in place without dropping distinct ids", async () => {
+  const ids = evidenceIds(interpretationRequest("en", { edgeCount: 3 })).slice(0, 8);
   const repeated = [ids[0], ...ids, ids[0]];
   assert.ok(repeated.length > 8);
+  const following = { statement: "Synthetic following observation.", evidenceRefs: ["comparison-axis-2"] };
   const { result, caught } = await dispatch("en", JSON.stringify({
     ...clean,
-    observedPatterns: [{ statement: "Synthetic aggregate pattern.", evidenceRefs: repeated }],
+    observedPatterns: [{ statement: "Synthetic aggregate pattern.", evidenceRefs: repeated }, following],
   }), 3);
   assert.equal(caught, null);
   assert.deepEqual(result?.response.interpretation.observedPatterns, [
-    { statement: "Synthetic aggregate pattern.", evidenceRefs: ids.slice(0, 8) },
-    { statement: "Synthetic aggregate pattern.", evidenceRefs: ids.slice(8) },
+    { statement: "Synthetic aggregate pattern.", evidenceRefs: ids },
+    following,
   ]);
+  assert.deepEqual(result?.response.interpretation.limitations, clean.limitations);
 });
 
 test("within-limit duplicate references stay rejected", async () => {
@@ -252,42 +359,48 @@ test("an unlisted extra field is still rejected and is not copied into diagnosti
 });
 
 test("a non-string disclosure is not coerced into limitation text", async () => {
-  const { caught, entries, serialized } = await dispatch("zh-hant", JSON.stringify({
-    ...clean,
-    supplementalNote: { hidden: "private-disclosure" },
-  }));
-  assert.ok(caught);
-  const diagnostic = JSON.parse(entries[0][1] as string);
-  assert.equal(diagnostic.rule, "unexpected-field");
-  assert.ok(!serialized.includes("private-disclosure"));
+  for (const extra of OPEN_ENA_PROVIDER_DISCLOSURE_KEYS) {
+    const { caught, entries, serialized } = await dispatch("zh-hant", JSON.stringify({
+      ...clean,
+      [extra]: { hidden: "private-disclosure" },
+    }));
+    assert.ok(caught);
+    const diagnostic = JSON.parse(entries[0][1] as string);
+    assert.equal(diagnostic.rule, "unexpected-field");
+    assert.ok(!serialized.includes("private-disclosure"));
+  }
 });
 
 test("a disclosure is rejected instead of truncated when limitations are already full", async () => {
   const note = "合成披露，不能截断。";
-  const { caught, entries, serialized } = await dispatch("zh-hant", JSON.stringify({
-    ...clean,
-    limitations: Array.from({ length: 8 }, (_, index) => `合成限制 ${index + 1}`),
-    supplementalNote: note,
-  }));
-  assert.ok(caught);
-  const diagnostic = JSON.parse(entries[0][1] as string);
-  assert.equal(diagnostic.rule, "array-length");
-  assert.equal(diagnostic.field, "interpretation.limitations");
-  assert.equal(diagnostic.stage, "responses-contract-limitation");
-  assert.ok(!serialized.includes(note));
+  for (const extra of ["supplementalNote", "responseFormatNote"] as const) {
+    const { caught, entries, serialized } = await dispatch("zh-hant", JSON.stringify({
+      ...clean,
+      limitations: Array.from({ length: 8 }, (_, index) => `合成限制 ${index + 1}`),
+      [extra]: note,
+    }));
+    assert.ok(caught);
+    const diagnostic = JSON.parse(entries[0][1] as string);
+    assert.equal(diagnostic.rule, "array-length");
+    assert.equal(diagnostic.field, "interpretation.limitations");
+    assert.equal(diagnostic.stage, "responses-contract-limitation");
+    assert.ok(!serialized.includes(note));
+  }
 });
 
 test("an overlong disclosure is a text-length failure and is not shortened", async () => {
   const note = "合".repeat(601);
-  const { caught, entries, serialized } = await dispatch("zh-hans", JSON.stringify({
-    ...clean,
-    missingnessDisclosure: note,
-  }));
-  assert.ok(caught);
-  const diagnostic = JSON.parse(entries[0][1] as string);
-  assert.equal(diagnostic.rule, "text-length");
-  assert.equal(diagnostic.field, "interpretation.limitations");
-  assert.ok(!serialized.includes(note));
+  for (const extra of ["missingnessDisclosure", "responseFormatNote"] as const) {
+    const { caught, entries, serialized } = await dispatch("zh-hans", JSON.stringify({
+      ...clean,
+      [extra]: note,
+    }));
+    assert.ok(caught);
+    const diagnostic = JSON.parse(entries[0][1] as string);
+    assert.equal(diagnostic.rule, "text-length");
+    assert.equal(diagnostic.field, "interpretation.limitations");
+    assert.ok(!serialized.includes(note));
+  }
 });
 
 test("reference overflow that does not fit in eight patterns stays rejected", async () => {
