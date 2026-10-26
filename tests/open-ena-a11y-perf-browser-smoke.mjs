@@ -54,8 +54,11 @@ function findPlotlyChunkNames() {
 async function loginAndLoad(page, baseUrl) {
   const authenticationCache = await page.context().newCDPSession(page);
   await authenticationCache.send("Network.enable");
+  // Native sign-in can replace the renderer while captured asset bodies settle.
+  const assetBodyRetention = { maxTotalBufferSize: 64 * 1024 * 1024, maxResourceBufferSize: 16 * 1024 * 1024 };
+  await authenticationCache.send("Network.configureDurableMessages", assetBodyRetention);
   await authenticationCache.send("Network.setCacheDisabled", { cacheDisabled: true });
-  const policy = { ...page.__task38Phase, policy: "authentication-disabled-then-measurement-browser-default", disabledAt: new Date().toISOString() };
+  const policy = { ...page.__task38Phase, policy: "authentication-disabled-then-measurement-browser-default", assetBodyRetention, disabledAt: new Date().toISOString() };
   (runtime.receipt.browser.contextCachePolicies ??= []).push(policy);
   let authenticationDetached = false;
   runtime.lifecycle.addCleanup(`authentication cache session ${policy.phase} ${policy.repetition}`, async () => { if (!authenticationDetached) { await authenticationCache.detach(); authenticationDetached = true; } });
@@ -88,6 +91,7 @@ async function loginAndLoad(page, baseUrl) {
   await page.getByRole("textbox", { name: "Account name" }).fill(username);
   await page.getByRole("textbox", { name: "Password" }).fill(password);
   await page.waitForLoadState("networkidle");
+  await runtime.drainAssetReads(`unauthenticated ${policy.phase} ${policy.repetition} assets before Sign in`);
   await page.getByRole("button", { name: "Sign in" }).click();
   const rail = page.getByRole("navigation", { name: "Analysis modes" });
   await rail.waitFor({ timeout: 30_000 });

@@ -11,6 +11,8 @@
     "jena:build": "npm run build --workspace=jena-js -- --no-config",
     "jena:verify": "npm run lint --workspace=jena-js && npm run typecheck --workspace=jena-js && npm test --workspace=jena-js && npm run test:pack-contract --workspace=jena-js && npm run jena:build && npm run pack:check --workspace=jena-js",
     "dev": "npm run jena:build && next dev",
+    "dev:open-ena": "node scripts/dev-open-ena.mjs",
+    "test:dev:open-ena": "node --test --test-timeout=10000 scripts/dev-open-ena.test.mjs",
     "build": "npm run jena:build && node scripts/verify-j3dena-vendor.mjs --require-runtime && npm run build:app",
     "build:app": "next build",
     "start": "next start",

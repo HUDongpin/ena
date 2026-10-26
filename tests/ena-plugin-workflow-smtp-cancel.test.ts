@@ -104,9 +104,15 @@ async function runFixture(certPath: string, keyPath: string) {
     } catch (caught) { error = caught instanceof Error ? caught.message : "unknown"; }
     const elapsed = Date.now() - startedAt;
     if (keepalive) clearInterval(keepalive);
-    // Permit close propagation, then try to resume SMTP. A rejected promise
-    // alone would leave this socket open and deliver the email after timeout.
-    await delay(100);
+    // Observe asynchronous TLS close propagation with a finite bound, then try
+    // to resume SMTP. A rejected promise alone must not permit late delivery.
+    await new Promise<void>((resolveClose) => {
+      const socket = recipientSocket;
+      if (!socket || socket.destroyed) { resolveClose(); return; }
+      const done = () => { clearTimeout(timer); socket.removeListener("close", done); resolveClose(); };
+      const timer = setTimeout(done, 2_000);
+      socket.once("close", done);
+    });
     const activeSocketClosed = recipientSocket?.destroyed === true;
     if (recipientSocket && !recipientSocket.destroyed) recipientSocket.write("250 recipient accepted\r\n");
     await delay(150);
