@@ -59,9 +59,9 @@ export const teamMembers: TeamMember[] = [
   },
   {
     name: "Ms. Shirleen XU Qiaolin",
-    institution: "Meredith College",
+    institution: "Meredith College, North Carolina, USA",
     role: "Open ENA team",
-    bio: "A member of the Open ENA team affiliated with Meredith College.",
+    bio: "A member of the Open ENA team affiliated with Meredith College, North Carolina, USA.",
     image: "/open-ena-about/team/shirleen-xu-qiaolin.png",
     imageAlt: "Portrait of Ms. Shirleen XU Qiaolin",
     imagePosition: "center 26%",

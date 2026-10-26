@@ -27,13 +27,11 @@ export default function TeamCard({ member, index }: TeamCardProps) {
         <p className={styles["team-role"]}>{member.role}</p>
       </div>
       <p className={styles["team-bio"]}>{member.bio}</p>
-      {member.profileUrl ? (
+      {member.profileUrl && (
         <a className={styles["team-profile-link"]} href={member.profileUrl} rel="noreferrer">
           {member.profileLabel}
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8" /></svg>
         </a>
-      ) : (
-        <span className={styles["team-profile-note"]}>Portrait and affiliation supplied by the Open ENA team</span>
       )}
     </article>
   );
