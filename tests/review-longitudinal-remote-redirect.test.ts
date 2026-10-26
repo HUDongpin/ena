@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import test from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { executeLongitudinalAnalysisV2, type LongitudinalExecutionRequestV2 } from "j-3dena";
 import { clearOpenEnaLongitudinalExecutionCacheV3, executeOpenEnaLongitudinalPreparedV3, OpenEnaLongitudinalExecutionClientErrorV3 } from "../lib/open-ena/longitudinal-v3-client";
 import { validOpenEnaLongitudinalRequestV3 } from "./helpers/open-ena-longitudinal-v3-fixture";
@@ -31,7 +32,7 @@ const fixture = validOpenEnaLongitudinalRequestV3(500_000, 200).then(async origi
   return { original, artifact, sha256: createHash("sha256").update(artifact).digest("hex") };
 });
 
-async function scenario(redirectPhase: Phase | null, redirectStatus: number) {
+async function scenario(redirectPhase: Phase | null, redirectStatus: number, deletionDelayMilliseconds = 0) {
   clearOpenEnaLongitudinalExecutionCacheV3();
   const { original, artifact, sha256 } = await fixture;
   const outside: Array<{ phase: string; method: string; authorization: string | undefined; bodyBytes: number }> = [];
@@ -61,12 +62,16 @@ async function scenario(redirectPhase: Phase | null, redirectStatus: number) {
     }
     const phase: Phase = request.method === "POST" ? "submission" : request.method === "DELETE" ? "deletion" : request.url?.endsWith("/artifact") ? "artifact" : request.url?.endsWith("/result") ? "result" : "status";
     received.push(phase);
+    if (phase === "deletion" && deletionDelayMilliseconds > 0) await delay(deletionDelayMilliseconds);
     if (phase === redirectPhase) { response.statusCode = redirectStatus; response.setHeader("location", `${origin}/outside-job/${phase}`); response.end(); }
     else respond(phase, response);
   });
   origin = await listen(server);
   try {
-    const outcome = await Promise.allSettled([executeOpenEnaLongitudinalPreparedV3(original, { allowRemote: true, remoteEndpoint: `${origin}/api/open-ena/longitudinal`, remotePollIntervalMilliseconds: 1, remoteCleanupDeadlineMilliseconds: 100, remoteDeadlineMilliseconds: 3_000 })]);
+    // This verifies redirect/binding rules, not a 100 ms timeout edge. Match
+    // the other real-HTTP tests' finite scheduling budget, below the 10 s
+    // production cleanup default; publication still requires a valid receipt.
+    const outcome = await Promise.allSettled([executeOpenEnaLongitudinalPreparedV3(original, { allowRemote: true, remoteEndpoint: `${origin}/api/open-ena/longitudinal`, remotePollIntervalMilliseconds: 1, remoteCleanupDeadlineMilliseconds: 5_000, remoteDeadlineMilliseconds: 15_000 })]);
     return { result: outcome[0]!, outside, received };
   } finally { await close(server); clearOpenEnaLongitudinalExecutionCacheV3(); }
 }
@@ -91,6 +96,13 @@ test("direct remote execution still verifies its actual SDK artifact and deletes
   const { result, outside, received } = await scenario(null, 307);
   assert.equal(result.status, "fulfilled");
   if (result.status === "fulfilled") assert.equal(result.value.cacheHit, false);
+  assert.deepEqual(outside, []);
+  assert.deepEqual(received, ["submission", "status", "result", "artifact", "deletion"]);
+});
+
+test("redirect verification tolerates a bounded scheduling delay in the genuine deletion response", async () => {
+  const { result, outside, received } = await scenario(null, 307, 250);
+  assert.equal(result.status, "fulfilled");
   assert.deepEqual(outside, []);
   assert.deepEqual(received, ["submission", "status", "result", "artifact", "deletion"]);
 });

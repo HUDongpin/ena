@@ -7,8 +7,10 @@ import { createServer } from "node:net";
 import { mkdirSync, readFileSync, statSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { OwnedSmokeLifecycle } from "./open-ena-models-v3-lifecycle.mjs";
 import { immutableBuildManifestV3 } from "./open-ena-build-custody-v3.mjs";
+import { STATIC_RESPONSE_CUSTODY_HEADER_V3, prepareOwnedStaticResponseCaptureV3, readOwnedStaticResponseRecordsV3, verifyBrowserStaticRequestCompletionV3, verifyOriginalStaticResponseV3 } from "./open-ena-static-response-custody-v3.mjs";
 const require = createRequire(import.meta.url);
 const hash = value => createHash("sha256").update(value).digest("hex");
 
@@ -65,7 +67,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
   const json = (name, value) => writeFileSync(join(directory, name), JSON.stringify(value, null, 2) + "\n");
   const receipt = { status: "running", sourceGitSha: literalGit(root, ["rev-parse", "HEAD"]), sourceParentSha: literalGit(root, ["rev-parse", "HEAD^"]), harnessPid: process.pid, node: process.version, servedAssets: [], stages: [], consoleErrors: [], consoleWarnings: [], pageErrors: [] };
   const lifecycle = new OwnedSmokeLifecycle({ directory, redact: safe, overallMs: 1800000, onUpdate: state => { receipt.lifecycle = state; if (state.reason) { receipt.status = "fail"; receipt.failure = state.reason.message; } json("receipt.json", receipt); } });
-  let browser, page, databaseEntry, browserEntry, serverEntry, closing, buildManifest;
+  let browser, page, databaseEntry, browserEntry, serverEntry, closing, buildManifest, staticResponseJournal;
   const database = join(directory, "postgres"), profile = join(directory, "browser-profile");
   const env = { ...process.env, NEXT_DIST_DIR: ".next", NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1", OPEN_ENA_USERNAME: credentials.username, OPEN_ENA_PASSWORD: credentials.password, OPEN_ENA_SESSION_SECRET: credentials.secret, OPEN_ENA_ACCOUNT_ID: credentials.account ?? "task38-local-account", OPEN_ENA_TRUSTED_CLIENT_IP_HEADER: "x-ena-client-ip", OPEN_ENA_BROWSER_SMOKE_DISABLE_ANALYTICS: "1", npm_config_cache: join(directory, "npm-cache") };
   const child = (label, command, args, timeout = 60000) => lifecycle.command(label, command, args, { cwd: root, env, logName: `${label}.log` }, timeout);
@@ -82,6 +84,7 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
       }
       lifecycle.signal.throwIfAborted();
       if (receipt.servedAssets.some(asset => asset.error || asset.status !== 200)) throw new Error("Required static asset response failed before navigation; inspect assetReadState and servedAssets");
+      for (const asset of receipt.servedAssets) verifyBrowserStaticRequestCompletionV3(asset.request);
       drain.status = "pass";
     } catch (error) { drain.status = "fail"; throw error; }
     finally { Object.assign(drain, { settledAt: new Date().toISOString(), scheduledAfter: receipt.assetReadState.scheduled, settledAfter: receipt.assetReadState.settled, inFlightAfter: receipt.assetReadState.inFlight }); json("receipt.json", receipt); }
@@ -101,7 +104,13 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
       assert.deepEqual(sourceManifest(root), receipt.source, "source changed during browser gate");
       if (buildManifest) assert.deepEqual(immutableBuildManifestV3(join(root, ".next")), buildManifest, "built content changed during browser gate");
       if (receipt.plotlyDependency) assert.deepEqual(verifyPlotlyDisposal(root), receipt.plotlyDependency, "applied Plotly dependency changed during browser gate");
+      if (serverEntry) {
+        const records = readOwnedStaticResponseRecordsV3(staticResponseJournal);
+        receipt.originalStaticResponses.records = records.length;
+        assert.ok(records.every(record => !record.error), "Original static response capture failed; inspect its journal");
+      }
       if (receipt.servedAssets.some(asset => asset.error || asset.status !== 200)) throw new Error("A served static asset response could not be verified");
+      for (const asset of receipt.servedAssets) verifyBrowserStaticRequestCompletionV3(asset.request);
     } catch (error) { receipt.cleanup.errors.push({ name: "source and served asset custody", message: safe(error.message) }); }
     if (serverLogPath && serverEntry) writeFileSync(serverLogPath, safe(serverEntry.output));
     receipt.status = failure || lifecycle.reason || receipt.cleanup.errors.length ? "fail" : "pass";
@@ -139,7 +148,11 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
     await child("disposable-expiry-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/008_open_ena_disposable_expiry_after_lock.sql")]);
     await child("login-throttle-migration", "psql", ["--no-psqlrc", "--set", "ON_ERROR_STOP=1", "--host", "127.0.0.1", "--port", String(databasePort), "--username", "postgres", "--dbname", "postgres", "--file", join(root, "migrations/009_open_ena_login_failure_windows.sql")]);
     const serverPort = await port(), baseUrl = `http://127.0.0.1:${serverPort}`;
-    serverEntry = lifecycle.spawnOwned("server", process.execPath, [join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: `postgresql://postgres@127.0.0.1:${databasePort}/postgres`, OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl } });
+    const staticResponseCapture = prepareOwnedStaticResponseCaptureV3(directory);
+    receipt.originalStaticResponses = { ...staticResponseCapture };
+    staticResponseJournal = join(directory, staticResponseCapture.journal);
+    const staticResponsePreload = join(directory, staticResponseCapture.preload);
+    serverEntry = lifecycle.spawnOwned("server", process.execPath, ["--import", pathToFileURL(resolve(staticResponsePreload)).href, join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: `postgresql://postgres@127.0.0.1:${databasePort}/postgres`, OPEN_ENA_PUBLIC_ORIGIN: baseUrl, OPEN_ENA_ALLOWED_ORIGINS: baseUrl } });
     receipt.server = { port: serverPort, baseUrl, pid: serverEntry.child.pid };
     await waitHttp(`${baseUrl}/en/open-ena`, "server readiness");
     const { chromium } = await import("playwright");
@@ -187,10 +200,13 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
       page.on("framenavigated", frame => { if (frame === page.mainFrame()) receipt.assetNavigations.push({ pageId, navigationSequence: ++navigationSequence, url: safe(frame.url()), at: new Date().toISOString() }); });
       page.on("request", request => {
         if (!new URL(request.url()).pathname.startsWith("/_next/static/")) return;
-        assetRequests.set(request, { pageId, navigationSequence, requestedAt: new Date().toISOString(), url: safe(request.url()), resourceType: request.resourceType(), frameUrl: safe(request.frame().url()), pageUrl: safe(page.url()) });
+        let settle;
+        const completion = new Promise(resolve => { settle = resolve; });
+        const entry = { pageId, navigationSequence, requestedAt: new Date().toISOString(), url: safe(request.url()), resourceType: request.resourceType(), frameUrl: safe(request.frame().url()), pageUrl: safe(page.url()) };
+        assetRequests.set(request, { entry, completion, settle });
       });
-      page.on("requestfinished", request => { const entry = assetRequests.get(request); if (entry) entry.requestFinishedAt = new Date().toISOString(); });
-      page.on("requestfailed", request => { const entry = assetRequests.get(request); if (entry) { entry.requestFailedAt = new Date().toISOString(); entry.requestFailure = safe(request.failure()?.errorText ?? "unknown"); } });
+      page.on("requestfinished", request => { const tracked = assetRequests.get(request); if (tracked) { tracked.entry.requestFinishedAt = new Date().toISOString(); tracked.settle(); } });
+      page.on("requestfailed", request => { const tracked = assetRequests.get(request); if (tracked) { tracked.entry.requestFailedAt = new Date().toISOString(); tracked.entry.requestFailure = safe(request.failure()?.errorText ?? "unknown"); tracked.settle(); } });
       page.on("console", message => { if (message.type() === "error") receipt.consoleErrors.push(safe(message.text())); if (message.type() === "warning") receipt.consoleWarnings.push(safe(message.text())); });
       page.on("pageerror", error => receipt.pageErrors.push(safe(error.message)));
       page.on("response", response => {
@@ -199,15 +215,31 @@ export async function createServedBrowserV3({ root, directory, credentials, reda
           const sequence = ++receipt.assetReadState.scheduled;
           receipt.assetReadState.inFlight++;
           const scheduledAt = new Date().toISOString();
-          const request = assetRequests.get(response.request()) ?? { pageId };
+          const trackedRequest = assetRequests.get(response.request());
+          const request = trackedRequest?.entry ?? { pageId };
           const responseStatus = response.status();
+          const custodyId = response.headers()[STATIC_RESPONSE_CUSTODY_HEADER_V3];
           Object.assign(request, { responseAt: scheduledAt, responseFrameUrl: safe(response.frame().url()), responsePageUrl: safe(page.url()) });
-          assetReads.push(response.body().then(bytes => {
-            const entry = { path, sequence, request, scheduledAt, settledAt: new Date().toISOString(), status: response.status(), sha256: hash(bytes) };
+          assetReads.push((async () => {
+            const entry = { path, sequence, request, scheduledAt, status: responseStatus };
             const buildEntry = files.find(file => file.path === path.replace("/_next/", ""));
-            if (!buildEntry || buildEntry.sha256 !== entry.sha256) entry.error = "served bytes differ from owned build";
+            try {
+              await trackedRequest?.completion;
+              verifyBrowserStaticRequestCompletionV3(request);
+              try { entry.sha256 = hash(await response.body()); entry.captureSource = "browser-response-body"; }
+              catch (error) {
+                entry.browserBodyReadError = safe(error.message);
+                if (!/Target page, context or browser has been closed|No resource with given identifier|Response body is unavailable/u.test(error.message)) throw error;
+                assert.equal(new URL(response.url()).origin, baseUrl, "Static response is not from the owned server");
+                const url = new URL(response.url());
+                const capture = verifyOriginalStaticResponseV3({ records: readOwnedStaticResponseRecordsV3(staticResponseJournal), request, id: custodyId, requestTarget: url.pathname + url.search, status: responseStatus, expectedSha256: buildEntry?.sha256 });
+                Object.assign(entry, { sha256: capture.sha256, captureSource: capture.source, originalResponseCapture: capture });
+              }
+              if (!buildEntry || buildEntry.sha256 !== entry.sha256) entry.error = "served bytes differ from owned build";
+            } catch (error) { entry.error = safe(error.message); }
+            entry.settledAt = new Date().toISOString();
             receipt.servedAssets.push(entry);
-          }).catch(error => receipt.servedAssets.push({ path, sequence, request, status: responseStatus, scheduledAt, settledAt: new Date().toISOString(), error: safe(error.message) })).finally(() => { receipt.assetReadState.settled++; receipt.assetReadState.inFlight--; }));
+          })().finally(() => { receipt.assetReadState.settled++; receipt.assetReadState.inFlight--; }));
         }
       });
     };

@@ -4,7 +4,11 @@
   "git": {
     "deploymentEnabled": {
       "codex/ena-trajectory-csv-bom-followup": false,
+      "codex/ena-pr117-test-stability-followup": false,
+      "codex/open-ena-p01-audit": false,
       "codex/ena-2d-parity": false,
+      "main": false,
+      "codex/plugin-lab-concentrated-ui": false,
       "codex/auth-recovery-tooling": false
     }
   }
