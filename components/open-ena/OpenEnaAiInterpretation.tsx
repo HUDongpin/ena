@@ -15,7 +15,8 @@ import {
 import { openEnaAiOperationScope, openEnaAiOperationStore } from "@/lib/open-ena/ai-operation-storage";
 import { OPEN_ENA_AI_OWNER_HEADER, OPEN_ENA_AI_OWNER_KEY } from "@/lib/open-ena/ai-operation-owner";
 import { openEnaAiReviewedRequestIdentityV3 } from "@/lib/open-ena/workspace-consumer-authority-v3";
-import type { OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
+import { getOpenEnaAiProviderCopy, type OpenEnaAiInterpretationCopy } from "@/lib/open-ena-i18n";
+import { getOpenEnaAiProviderDescriptor, OPEN_ENA_AI_PROVIDER_CONSENT_HEADER, openEnaAiProviderConsentKey } from "@/lib/open-ena/ai-provider";
 import type { SavedOpenEnaAiInterpretation } from "@/lib/open-ena/cloud-workspace-extras";
 import { getLocaleMeta, type Locale } from "@/lib/i18n";
 import { canonicalJsonV3 } from "@/lib/open-ena/model-v3/canonical-json";
@@ -32,7 +33,7 @@ interface OpenEnaAiInterpretationProps {
   copy: OpenEnaAiInterpretationCopy;
   disabled: boolean;
   disabledReason: string;
-  providerDescriptor?: { provider: string; model: string };
+  providerDescriptor?: { provider: string; model: string; displayName?: string; processingRegion?: string };
   showHeading?: boolean;
   onLocalWorkChange?: (hasWork: boolean) => void;
   onInterpretationChange?: (value: SavedOpenEnaAiInterpretation | null) => void;
@@ -51,7 +52,9 @@ export type OpenEnaAiFailureClass = (typeof OPEN_ENA_AI_FAILURE_CLASSES)[number]
 export function openEnaAiFailureRecovery(
   status: number,
   disposition?: "released" | "settled",
+  errorCode?: unknown,
 ): OpenEnaAiFailureRecovery {
+  if (errorCode === "provider-consent-required" || errorCode === "provider-consent-changed") return "local-only";
   if (status === 401) return "sign-in";
   if (disposition === "settled") return "new-generation";
   if (status === 409 && disposition !== "released") return "local-only";
@@ -242,7 +245,8 @@ export default function OpenEnaAiInterpretation({
   historicalEvidenceInvalidated = false,
   operationOwnerKey = null,
   request,
-  copy,
+  copy: suppliedCopy,
+  providerDescriptor,
   disabled,
   disabledReason,
   showHeading = true,
@@ -260,6 +264,9 @@ export default function OpenEnaAiInterpretation({
   const [retryAfter, setRetryAfter] = useState(0);
   const [retrySeconds, setRetrySeconds] = useState(0);
   const locale = selectedLocale ?? request?.locale ?? "en";
+  const copy = getOpenEnaAiProviderCopy(locale, providerDescriptor ?? getOpenEnaAiProviderDescriptor(), suppliedCopy);
+  const currentProvider = providerDescriptor ?? getOpenEnaAiProviderDescriptor();
+  const providerIdentity = openEnaAiProviderConsentKey({ provider: currentProvider.provider.toLowerCase(), model: currentProvider.model, processingRegion: providerDescriptor?.processingRegion ?? (currentProvider.provider === "qwen" ? "cn-beijing" : "provider-managed") });
   const [aiError, setAiError] = useState("");
   const [aiRecovery, setAiRecovery] = useState<OpenEnaAiFailureRecovery>("retry");
   const [aiFailureClass, setAiFailureClass] = useState<OpenEnaAiFailureClass | null>(null);
@@ -285,10 +292,10 @@ export default function OpenEnaAiInterpretation({
     request,
   });
   const owner = operationOwnerKey && OPEN_ENA_AI_OWNER_KEY.test(operationOwnerKey) ? operationOwnerKey : null;
-  const requestIdentity = owner && reviewedIdentity ? `${owner}:${locale}:${reviewedIdentity}` : null;
+  const requestIdentity = owner && reviewedIdentity ? `${owner}:${locale}:${providerIdentity}:${reviewedIdentity}` : null;
   const currentRequestIdentityRef = useRef(requestIdentity);
   currentRequestIdentityRef.current = requestIdentity;
-  const operationScope = useMemo(() => request && owner ? openEnaAiOperationScope(request, owner) : null, [request, owner, requestIdentity]);
+  const operationScope = useMemo(() => request && owner ? openEnaAiOperationScope(request, owner, currentProvider.provider === "qwen" ? providerIdentity : undefined) : null, [request, owner, requestIdentity, currentProvider.provider, providerIdentity]);
   const operationStorageKey = operationScope?.key ?? null;
   const consentGranted = requestIdentity !== null && consentedRequestIdentity === requestIdentity;
   const currentResponse = completedRecord?.value.response ?? null;
@@ -479,6 +486,7 @@ export default function OpenEnaAiInterpretation({
               headers: {
                 "Content-Type": "application/json",
                 [OPEN_ENA_AI_CONSENT_HEADER]: OPEN_ENA_AI_CONSENT_VALUE,
+                [OPEN_ENA_AI_PROVIDER_CONSENT_HEADER]: providerIdentity,
                 [OPEN_ENA_AI_OPERATION_HEADER]: operationId,
                 [OPEN_ENA_AI_OWNER_HEADER]: owner,
               },
@@ -496,6 +504,8 @@ export default function OpenEnaAiInterpretation({
           }
           const payload = await response.json().catch(() => null) as unknown;
           if (!response.ok) {
+            const errorCode = payload && typeof payload === "object" && "errorCode" in payload ? (payload as { errorCode?: unknown }).errorCode : undefined;
+            const providerConsentChanged = errorCode === "provider-consent-required" || errorCode === "provider-consent-changed";
             const declaredFailureClass = payload && typeof payload === "object" && "failureClass" in payload
               ? (payload as { failureClass?: unknown }).failureClass
               : undefined;
@@ -508,7 +518,7 @@ export default function OpenEnaAiInterpretation({
             else if (!isStaleGeneration() && settled) {
               openEnaAiOperationStore.markSettledRetry(requestedOperationScope, operationId);
             }
-            const recovery = openEnaAiFailureRecovery(response.status, released ? "released" : settled ? "settled" : undefined);
+            const recovery = openEnaAiFailureRecovery(response.status, released ? "released" : settled ? "settled" : undefined, errorCode);
             const failureClass = classifyOpenEnaAiPanelFailure({
               status: response.status,
               failureClass: declaredFailureClass,
@@ -519,7 +529,7 @@ export default function OpenEnaAiInterpretation({
               ? (payload as { error: string }).error
               : copy.errorTitle;
             const visibleMessage = openEnaAiVisibleServerMessage(response.status, payloadMessage, copy.operationAlreadyProcessed);
-            const safeMessage = recovery === "sign-in" ? copy.sessionRecovery : openEnaAiFailureClassMessage(copy, failureClass, visibleMessage);
+            const safeMessage = providerConsentChanged ? copy.providerConsentChanged : recovery === "sign-in" ? copy.sessionRecovery : openEnaAiFailureClassMessage(copy, failureClass, visibleMessage);
             if (!isStaleGeneration()) {
               if (response.status === 429) setRetryAfter(openEnaAiRetryAfter(response.headers.get("Retry-After")));
               setAiRecovery(recovery);
@@ -611,6 +621,14 @@ export default function OpenEnaAiInterpretation({
         <span>{copy.descriptiveOnly}</span>
         <span>{copy.notStatisticalInference}</span>
       </aside>
+
+      <p data-ena-ai-current-provider>{copy.provider}: {currentProvider.displayName || currentProvider.provider}; {copy.model}: {currentProvider.model}</p>
+      <details className="ena-ai-payload-preview" data-ena-ai-provider-disclosure>
+        <summary>{copy.disclosureSummary}</summary>
+        <p>{copy.providerDisclosure}</p><p>{copy.dataScopeDisclosure}</p>
+        <p>{copy.regionDisclosure}</p><p>{copy.retentionDisclosure}</p><p>{copy.auditReceiptDisclosure}</p>
+        {copy.providerPolicyLinks?.map(link => <p key={link.url}><a href={link.url} target="_blank" rel="noreferrer">{link.label}</a></p>)}
+      </details>
 
       {requestLanguageReady ? (
         <details className="ena-ai-payload-preview" data-ena-ai-payload-preview="reviewed-aggregate">

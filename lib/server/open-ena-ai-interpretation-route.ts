@@ -26,11 +26,11 @@ import {
   type OpenEnaAiInterpretationResponse,
 } from "@/lib/open-ena/ai-interpretation";
 import {
-  generateLunaInterpretation,
   LunaClientError,
-  OPEN_ENA_AI_DEFAULT_MODEL,
   type OpenEnaAiGenerationResult,
 } from "@/lib/server/deepseek-client";
+import { generateOpenEnaAiInterpretation } from "./open-ena-ai-provider";
+import { getOpenEnaAiProviderDescriptor, OPEN_ENA_AI_PROVIDER_CONSENT_HEADER, openEnaAiProviderConsentKey } from "../open-ena/ai-provider";
 import type {
   AiConsentReceipt,
   AiConsentReceiptInput,
@@ -229,7 +229,7 @@ export function openEnaAiProviderFailurePresentation(error: unknown): {
   if (status === 402 || code === "upstream-payment-required") {
     return {
       status: 402,
-      error: "DeepSeek balance is required before AI interpretation can run.",
+      error: "The AI provider account requires available credit before interpretation can run.",
       failureClass: null,
     };
   }
@@ -442,20 +442,28 @@ export function createOpenEnaAiInterpretationPostHandler(
 
     let descriptor: { provider: string; model: string };
     try {
-      descriptor = dependencies.providerDescriptor?.() ?? {
-        provider: "deepseek",
-        model: dependencies.environment?.OPEN_ENA_AI_MODEL?.trim() || OPEN_ENA_AI_DEFAULT_MODEL,
-      };
+      descriptor = dependencies.providerDescriptor?.() ?? getOpenEnaAiProviderDescriptor(dependencies.environment ?? process.env);
     } catch {
       return jsonResponse({ error: "AI interpretation provider configuration is unavailable." }, 503);
     }
     if (
       typeof descriptor.provider !== "string"
-      || !/^[A-Za-z0-9._:/@-]{1,80}$/u.test(descriptor.provider)
+      || (descriptor.provider !== "deepseek" && descriptor.provider !== "qwen")
       || typeof descriptor.model !== "string"
       || !/^[A-Za-z0-9._:/@-]{1,160}$/u.test(descriptor.model)
     ) {
       return jsonResponse({ error: "AI interpretation provider configuration is unavailable." }, 503);
+    }
+    const providerConsentKey = openEnaAiProviderConsentKey({
+      provider: descriptor.provider, model: descriptor.model,
+      processingRegion: descriptor.provider === "qwen" ? "cn-beijing" : "provider-managed",
+    });
+    const reviewedProvider = request.headers.get(OPEN_ENA_AI_PROVIDER_CONSENT_HEADER);
+    if (descriptor.provider === "qwen" && reviewedProvider === null) {
+      return jsonResponse({ error: "Refresh the workspace and review the current AI provider before generating.", errorCode: "provider-consent-required" }, 428);
+    }
+    if (reviewedProvider !== null && reviewedProvider !== providerConsentKey) {
+      return jsonResponse({ error: "The AI provider changed. Refresh the workspace and review the request again.", errorCode: "provider-consent-changed" }, 409);
     }
     const parsedRequestSha256 = requestSha256(parsedRequest);
     let reservation;
@@ -464,6 +472,7 @@ export function createOpenEnaAiInterpretationPostHandler(
       const reservationInput = {
         principalRef: principal.principalRef,
         resource: "ai-interpretation",
+        provider: descriptor.provider,
         microUsd: limits.maxReservationMicroUsd,
         idempotencyKey: operationId,
         limits,
@@ -526,7 +535,7 @@ export function createOpenEnaAiInterpretationPostHandler(
       principalRef: principal.principalRef,
       operationId,
       requestSha256: parsedRequestSha256,
-      consentPolicyVersion: CONSENT_POLICY_VERSION,
+      consentPolicyVersion: descriptor.provider === "qwen" ? providerConsentKey : CONSENT_POLICY_VERSION,
       provider: descriptor.provider,
       model: descriptor.model,
     };
@@ -689,7 +698,7 @@ const productionPostHandler = createOpenEnaAiInterpretationPostHandler({
   generate: (request, signal) => {
     const limits = parseBillablePolicy(process.env);
     if (!limits) return Promise.reject(Object.assign(new Error("AI interpretation billing policy is unavailable."), { code: "invalid-configuration", providerDispatched: false }));
-    return generateLunaInterpretation(request, {
+    return generateOpenEnaAiInterpretation(request, {
       signal,
       reservationMicroUsd: limits.maxReservationMicroUsd,
       environment: process.env,

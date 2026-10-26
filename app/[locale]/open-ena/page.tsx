@@ -14,7 +14,7 @@ import {
   verifyProductionOpenEnaSessionTokenAny,
 } from "@/lib/server/open-ena-auth-security-store";
 import { openEnaAiOperationOwnerKey } from "@/lib/open-ena/ai-operation-owner";
-import { OPEN_ENA_AI_DEFAULT_MODEL } from "@/lib/server/deepseek-client";
+import { getOpenEnaAiProviderDescriptor } from "@/lib/open-ena/ai-provider";
 import {
   getOpenEnaCopy,
   isOpenEnaLocalizedLocale,
@@ -94,15 +94,7 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
   }
 
   const copy = getOpenEnaCopy(typedLocale);
-  const configuredAiModel = process.env.OPEN_ENA_AI_MODEL?.trim();
-  const providerDescriptor = {
-    provider: "DeepSeek",
-    model: configuredAiModel && configuredAiModel.length <= 160
-      && !/[\u0000-\u001f\u007f]/u.test(configuredAiModel)
-      && /^[A-Za-z0-9._:/@-]+$/u.test(configuredAiModel)
-      ? configuredAiModel
-      : OPEN_ENA_AI_DEFAULT_MODEL,
-  };
+  const providerDescriptor = getOpenEnaAiProviderDescriptor(process.env);
   const canonicalLocale = isOpenEnaLocalizedLocale(typedLocale) ? typedLocale : "en";
   const structuredData = {
     "@context": "https://schema.org",

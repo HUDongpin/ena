@@ -14,7 +14,7 @@ const fixtureSha256 = "06c65f11f455236448275d7327e62e153558e2c8312b81b9310e9e4d4
 const locales = ["en", "zh-hans", "zh-hant"] as const;
 const sha256 = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
-const criticalFiles = [fixturePath, "scripts/verify-open-ena-qwen-live-matrix.ts", "scripts/lib/open-ena-qwen-candidate.ts", "lib/open-ena/ai-interpretation.ts", "lib/server/open-ena-ai-prompt-governance.ts", "package-lock.json"];
+const criticalFiles = [fixturePath, "scripts/verify-open-ena-qwen-live-matrix.ts", "scripts/lib/open-ena-qwen-candidate.ts", "lib/server/qwen-client.ts", "lib/server/open-ena-ai-provider.ts", "lib/open-ena/ai-provider.ts", "lib/open-ena/ai-interpretation.ts", "lib/server/open-ena-ai-prompt-governance.ts", "package-lock.json"];
 type SourceSnapshot = { candidateGitSha: string; criticalSourceSha256: Record<string, string>; worktreeClean: boolean };
 export type QwenMatrixDependencies = { fixtureBytes?: Uint8Array; snapshotSources?: () => SourceSnapshot; generate?: typeof generateQwenCandidate };
 type Options = { runNine?: boolean; outputDirectory?: string; apiKey?: string };

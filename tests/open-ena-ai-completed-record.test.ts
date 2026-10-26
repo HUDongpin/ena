@@ -81,8 +81,10 @@ test("retained audit provenance falls back to the completed response rather than
     savedInterpretation: { ...record, auditReceipt: { id: "synthetic-receipt", durable: "true", status: "settled",
       recordedAt: "2026-10-24T04:00:00.000Z", operationId: "", requestSha256: "", consentPolicyVersion: "", provider: "", model: "" } },
   }));
-  assert.match(html, /Model: synthetic-test/);
-  assert.doesNotMatch(html, /different-current-model/);
+  const provenance = /<dl class="ena-ai-provenance"[^>]*>([\s\S]*?)<\/dl>/u.exec(html)?.[0];
+  assert.ok(provenance, "the retained record must expose its own provenance");
+  assert.match(provenance, /Model: synthetic-test/);
+  assert.doesNotMatch(provenance, /different-current-model/);
 });
 
 const originalNativeScience = {

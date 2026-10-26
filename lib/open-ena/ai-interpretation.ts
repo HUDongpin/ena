@@ -1126,7 +1126,7 @@ export interface OpenEnaAiInterpretationResponseV2 {
   schemaVersion: typeof OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2;
   promptVersion: typeof OPEN_ENA_AI_PROMPT_VERSION_V2;
   binding: OpenEnaAiBindingV2;
-  provider: "openrouter" | "deepseek";
+  provider: "openrouter" | "deepseek" | "qwen";
   model: string;
   generatedAt: string;
   interpretation: {
@@ -2897,7 +2897,7 @@ export function parseOpenEnaAiInterpretationResponseV2(
   ], "AI v2 response");
   if (record.schemaVersion !== OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2) throw new Error("AI v2 response schema version is invalid.");
   if (record.promptVersion !== OPEN_ENA_AI_PROMPT_VERSION_V2) throw new Error("AI v2 response prompt version is invalid.");
-  if (record.provider !== "openrouter" && record.provider !== "deepseek") throw new Error("AI v2 response provider is invalid.");
+  if (record.provider !== "openrouter" && record.provider !== "deepseek" && record.provider !== "qwen") throw new Error("AI v2 response provider is invalid.");
   const binding = parseBindingV2(record.binding);
   if (expectedRequest && JSON.stringify(binding) !== JSON.stringify(expectedRequest.binding)) {
     throw new Error("AI v2 response binding does not match the current reviewed evidence.");

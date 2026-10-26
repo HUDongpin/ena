@@ -6,6 +6,11 @@ import test from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import type { NextConfig } from "next";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import OpenEnaAiInterpretation from "../components/open-ena/OpenEnaAiInterpretation";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
+import { getOpenEnaAiProviderDescriptor } from "../lib/open-ena/ai-provider";
 import {
   createPostgresBillableStore,
   MemoryBillableStore,
@@ -187,20 +192,37 @@ test("actual toolbar image handlers require one confirmation before materializat
   }
 });
 
-test("AI removes the screenshot-selected disclosure cards while preserving explicit consent and privacy controls", () => {
+test("AI omits duplicate disclosure cards while keeping one localized provider review and explicit consent", () => {
   assert.doesNotMatch(aiComponent, /ena-ai-privacy/u);
   assert.doesNotMatch(aiComponent, /data-ena-ai-provider-disclosure="pre-consent"/u);
+  for (const field of ["privacyLocal", "privacyExternal"]) assert.doesNotMatch(aiComponent, new RegExp(`copy\\.${field}`, "u"));
+  const providerDetails = [...aiComponent.matchAll(/<details\b[^>]*data-ena-ai-provider-disclosure[^>]*>[\s\S]*?<\/details>/gu)];
+  assert.equal(providerDetails.length, 1, "provider review belongs in one expandable section, not duplicate cards");
+  assert.match(providerDetails[0][0], /<summary>\{copy\.disclosureSummary\}<\/summary>/u);
   for (const field of [
-    "privacyLocal",
-    "privacyExternal",
     "providerDisclosure",
     "dataScopeDisclosure",
     "retentionDisclosure",
     "regionDisclosure",
     "auditReceiptDisclosure",
-  ]) assert.doesNotMatch(aiComponent, new RegExp(`copy\\.${field}`, "u"));
+  ]) {
+    assert.match(providerDetails[0][0], new RegExp(`copy\\.${field}`, "u"));
+    assert.doesNotMatch(aiComponent.replace(providerDetails[0][0], ""), new RegExp(`copy\\.${field}`, "u"), `${field} must not create a second disclosure card`);
+  }
+  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+    const html = renderToStaticMarkup(createElement(OpenEnaAiInterpretation, { locale, request: null, disabled: true, disabledReason: "", copy: getOpenEnaCopy(locale).aiInterpretation, providerDescriptor: getOpenEnaAiProviderDescriptor({ OPEN_ENA_AI_PROVIDER: "qwen" }) }));
+    const rendered = [...html.matchAll(/<details\b[^>]*data-ena-ai-provider-disclosure[^>]*>[\s\S]*?<\/details>/gu)];
+    assert.equal(rendered.length, 1, `${locale}: one current-provider review`);
+    assert.match(rendered[0][0], /cn-beijing/u);
+    assert.match(rendered[0][0], /not guaranteed|不保證|不保证/u);
+    assert.match(rendered[0][0], /no raw source rows|不含原始(?:來源資料列|来源数据行)/u);
+    assert.doesNotMatch(rendered[0][0], /DeepSeek/u);
+    assert.match(html, /data-ena-ai-current-provider="true"[^>]*>[\s\S]*?qwen3\.7-plus-2026-05-26/u);
+  }
   assert.match(aiComponent, /data-ena-ai-payload-preview="reviewed-aggregate"/u);
   assert.match(aiComponent, /data-ena-ai-consent="explicit"/u);
+  assert.match(aiComponent, /checked=\{consentGranted\}/u);
+  assert.match(aiComponent, /disabled=\{[^}]*!consentGranted/u);
   assert.match(aiComponent, /OPEN_ENA_AI_CONSENT_HEADER/u);
   assert.match(i18n, /DeepSeek/u);
   assert.match(i18n, /zero.retention/iu);

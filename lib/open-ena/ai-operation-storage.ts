@@ -24,9 +24,14 @@ export type OpenEnaAiOperationScope = {
   legacyKeys: readonly string[];
 };
 
-export function openEnaAiOperationScope(request: OpenEnaAiInterpretationRequest, owner: string): OpenEnaAiOperationScope {
+export function openEnaAiOperationScope(request: OpenEnaAiInterpretationRequest, owner: string, providerConsentKey?: string): OpenEnaAiOperationScope {
   if (!OPEN_ENA_AI_OWNER_KEY.test(owner)) throw new TypeError("A verified AI operation owner scope is required.");
   const legacyWireKey = openEnaAiOperationStorageKey(request);
+  if (providerConsentKey !== undefined) {
+    if (!/^[A-Za-z0-9._:-]{1,256}$/u.test(providerConsentKey)) throw new TypeError("A valid AI provider consent scope is required.");
+    // Provider-aware requests never adopt an earlier provider's unresolved identity.
+    return { key: `open-ena-ai-operation-v5:${owner}:${sha256HexUtf8(providerConsentKey)}:${legacyWireKey.slice("open-ena-ai-operation-v3:".length)}`, owner, legacyKeys: [] };
+  }
   return {
     key: `open-ena-ai-operation-v4:${owner}:${legacyWireKey.slice("open-ena-ai-operation-v3:".length)}`,
     owner,
