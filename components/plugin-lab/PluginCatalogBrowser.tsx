@@ -17,10 +17,11 @@ export default function PluginCatalogBrowser({ plugins, locale }: {
   plugins: readonly OpenEnaPluginManifestV1[];
   locale: Locale;
 }) {
-  const [selectedId, setSelectedId] = useState(plugins[0]?.pluginId);
+  const displayPlugins = [...plugins].sort((left, right) => Number(right.slug === "longitudinal-ena") - Number(left.slug === "longitudinal-ena"));
+  const [selectedId, setSelectedId] = useState(displayPlugins[0]?.pluginId);
   const id = useId();
   const copy = getPluginLabCopy(locale);
-  const plugin = plugins.find((entry) => entry.pluginId === selectedId) ?? plugins[0];
+  const plugin = plugins.find((entry) => entry.pluginId === selectedId) ?? displayPlugins[0];
   if (!plugin) return null;
   const localized = pluginContentForLocale(plugin, locale);
   const panelId = `${id}-detail`;
@@ -34,7 +35,7 @@ export default function PluginCatalogBrowser({ plugins, locale }: {
       </header>
       <div className="plugin-browser">
         <div className="plugin-browser-selector" role="group" aria-label={copy.choosePlugin}>
-          {plugins.map((entry) => {
+          {displayPlugins.map((entry) => {
             const content = pluginContentForLocale(entry, locale);
             return (
               <button
