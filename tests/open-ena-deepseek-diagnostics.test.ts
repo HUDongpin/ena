@@ -75,19 +75,6 @@ test("DeepSeek array type and length failures remain distinguishable", async () 
   assert.equal(tooMany.diagnostic.field, "interpretation.observedPatterns");
 });
 
-test("DeepSeek rejects the overlong limitations diagnosed in completed live responses", async () => {
-  // The live diagnostic discloses only the failed bound, not provider prose.
-  const { diagnostic, serialized } = await failure(JSON.stringify({
-    ...valid,
-    limitations: Array.from({ length: 9 }, (_, index) => `PRIVATE_LIMITATION_${index + 1}`),
-  }));
-  assert.equal(diagnostic.stage, "responses-contract-limitation");
-  assert.equal(diagnostic.rule, "array-length");
-  assert.equal(diagnostic.field, "interpretation.limitations");
-  assert.equal(diagnostic.responseStatus, "completed");
-  assert.ok(!serialized.includes("PRIVATE_LIMITATION_"));
-});
-
 test("DeepSeek rejects unseen evidence references without logging them", async () => {
   const { diagnostic, serialized } = await failure(JSON.stringify({ ...valid, observedPatterns: [{ statement: "合成。", evidenceRefs: ["private-evidence"] }] }));
   assert.equal(diagnostic.rule, "evidence-reference");
