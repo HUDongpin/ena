@@ -4,6 +4,8 @@
   "git": {
     "deploymentEnabled": {
       "codex/ena-2d-parity": false,
+      "main": false,
+      "codex/plugin-lab-concentrated-ui": false,
       "codex/auth-recovery-tooling": false
     }
   }

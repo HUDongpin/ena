@@ -22,6 +22,8 @@ test("every site locale has a Plugin Lab navigation label and an explicit conten
     const copy = getPluginLabCopy(locale);
     assert.ok(copy.navLabel.trim().length > 0, locale);
     assert.ok(copy.explore.trim().length > 0, locale);
+    assert.ok(copy.choosePlugin?.trim().length > 0, `${locale}: plugin selector label`);
+    assert.ok(copy.viewFullDetails?.trim().length > 0, `${locale}: full details link`);
     assert.equal(copy.contentFallback, !["en", "zh-hant", "zh-hans"].includes(locale));
     const localized = pluginContentForLocale(OPEN_ENA_PLUGIN_CATALOG[0], locale);
     assert.equal(localized.fallback, !["en", "zh-hant", "zh-hans"].includes(locale));
