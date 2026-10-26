@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Run as root in an interactive ECS terminal. Never embeds or prints secrets."""
+import argparse
+import base64
 import datetime
 import getpass
+import hashlib
+import hmac
 import json
 import os
 import pathlib
 import pwd
+import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -15,6 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 ENV_FILE = pathlib.Path("/etc/open-ena/runtime.env")
 SERVICE = "open-ena.service"
@@ -89,10 +96,21 @@ def request(opener, path, data=None, cookie=None):
         return response
 
 
-def verify(password):
+def signed_previous_session(environment):
+    """In-memory v2 token proving that the previous signing key is rejected."""
+    def b64(value):
+        return base64.urlsafe_b64encode(value).decode().rstrip("=")
+    principal = b64(hashlib.sha256(environment["OPEN_ENA_ACCOUNT_ID"].strip().encode()).digest())
+    payload = f"v2.{int(time.time())}.{uuid.uuid4()}.{principal}"
+    signature = b64(hmac.new(environment["OPEN_ENA_SESSION_SECRET"].encode(),
+                             payload.encode(), hashlib.sha256).digest())
+    return "open-ena-session=" + payload + "." + signature
+
+
+def verify(password, username="open-ena", previous_credentials=None, previous_session=None):
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     with request(opener, "/api/open-ena/login",
-                 {"username": "open-ena", "password": password, "locale": "en"}) as response:
+                 {"username": username, "password": password, "locale": "en"}) as response:
         require(response.code == 303, "LOGIN_STATUS_INVALID")
         require(response.headers.get("Location") == ORIGIN + "/en/open-ena",
                 "LOGIN_REJECTED")
@@ -112,11 +130,24 @@ def verify(password):
     with request(opener, "/en/open-ena", cookie=cookie) as response:
         require(response.code == 200 and "open-ena-login-form" in response.read().decode(),
                 "SESSION_REVOCATION_FAILED")
+    if previous_session:
+        with request(opener, "/en/open-ena", cookie=previous_session) as response:
+            require(response.code == 200 and "open-ena-login-form" in response.read().decode(),
+                    "PREVIOUS_SESSION_STILL_VALID")
+    if previous_credentials:
+        with request(opener, "/api/open-ena/login", {
+                "username": previous_credentials["OPEN_ENA_USERNAME"],
+                "password": previous_credentials["OPEN_ENA_PASSWORD"], "locale": "en"}) as response:
+            require(response.code == 303
+                    and urllib.parse.parse_qs(urllib.parse.urlparse(
+                        response.headers.get("Location", "")).query).get("auth") == ["invalid"]
+                    and not response.headers.get("Set-Cookie"), "PREVIOUS_LOGIN_STILL_VALID")
     return {"login": True, "authenticated_workspace": True,
             "logout": True, "old_cookie_rejected": True}
 
 
-def main():
+def main(username="open-ena", rotate_sessions=False):
+    require(bool(re.fullmatch(r"[A-Za-z0-9._-]{3,64}", username)), "USERNAME_INVALID")
     require(os.geteuid() == 0, "ROOT_REQUIRED")
     require(sys.stdin.isatty(), "INTERACTIVE_TERMINAL_REQUIRED")
     require(ENV_FILE.is_file() and not ENV_FILE.is_symlink(), "ENV_FILE_INVALID")
@@ -175,8 +206,14 @@ const p=new Pool({connectionString:process.env.OPEN_ENA_AUTH_DATABASE_URL,
     require(len(password) >= 12 and "\n" not in password and "\0" not in password,
             "PASSWORD_INVALID")
     require(password == getpass.getpass("Confirm password (hidden): "), "PASSWORD_MISMATCH")
+    if rotate_sessions:
+        require(password != env.get("OPEN_ENA_PASSWORD"), "NEW_PASSWORD_REQUIRED")
+        require(bool(env.get("OPEN_ENA_USERNAME")) and bool(env.get("OPEN_ENA_PASSWORD")),
+                "PREVIOUS_CREDENTIALS_MISSING")
     print("Will update /etc/open-ena/runtime.env, retain the account/database,")
-    print("retain the valid session secret, and restart only open-ena.service.")
+    print("set the login name to " + username + ", and restart only open-ena.service.")
+    print("Existing sessions will be invalidated." if rotate_sessions
+          else "The valid session secret will be retained.")
     require(input("Type APPLY to commit this change: ").strip() == "APPLY", "CANCELLED")
     require(ENV_FILE.read_text() == original, "CONCURRENT_ENV_CHANGE")
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -186,9 +223,10 @@ const p=new Pool({connectionString:process.env.OPEN_ENA_AUTH_DATABASE_URL,
     shutil.copy2(str(ENV_FILE), str(backup / "runtime.env"))
     (backup / "runtime.env").chmod(0o600)
     updates = {
-        "OPEN_ENA_USERNAME": "open-ena",
+        "OPEN_ENA_USERNAME": username,
         "OPEN_ENA_PASSWORD": password,
-        "OPEN_ENA_SESSION_SECRET": env["OPEN_ENA_SESSION_SECRET"],
+        "OPEN_ENA_SESSION_SECRET": secrets.token_urlsafe(48) if rotate_sessions
+            else env["OPEN_ENA_SESSION_SECRET"],
         "OPEN_ENA_ACCOUNT_ID": account_id,
         "OPEN_ENA_PUBLIC_ORIGIN": ORIGIN,
         "OPEN_ENA_ALLOWED_ORIGINS": "https://www.ena.hk,https://ena.hk",
@@ -222,13 +260,18 @@ const p=new Pool({connectionString:process.env.OPEN_ENA_AUTH_DATABASE_URL,
         require(pid != old_pid and int(pid) > 0, "SERVICE_NOT_RESTARTED")
         active = process_environment(pid)
         require(all(active.get(k) == v for k, v in updates.items()), "RUNTIME_ENV_MISMATCH")
-        checks = verify(password)
+        checks = verify(password, username,
+                        previous_credentials=env if rotate_sessions else None,
+                        previous_session=signed_previous_session(env) if rotate_sessions else None)
         receipt = {"status": "PASS", "service": SERVICE, "environment_file": str(ENV_FILE),
                    "account_id_preserved": True, "database_host": db.hostname,
                    "database_port": db.port, "database_name": db.path.lstrip("/"),
                    "session_secret_preserved": updates["OPEN_ENA_SESSION_SECRET"]
                    == env.get("OPEN_ENA_SESSION_SECRET"),
                    "session_secret_length": len(updates["OPEN_ENA_SESSION_SECRET"]),
+                   "login_name": username,
+                   "previous_login_disabled": rotate_sessions,
+                   "previous_sessions_invalidated": rotate_sessions,
                    "old_pid": old_pid, "new_pid": pid, "checks": checks,
                    "backup": str(backup), "verification_scope": "ECS loopback HTTP"}
         (backup / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
@@ -242,7 +285,12 @@ const p=new Pool({connectionString:process.env.OPEN_ENA_AUTH_DATABASE_URL,
 
 if __name__ == "__main__":
     try:
-        main()
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("--username", default="open-ena")
+        parser.add_argument("--rotate-sessions", action="store_true",
+                            help="Replace the session signing secret and verify old login/session rejection")
+        args = parser.parse_args()
+        main(username=args.username, rotate_sessions=args.rotate_sessions)
     except Exception as exc:
         safe = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
         print("STOPPED: " + safe, file=sys.stderr)
