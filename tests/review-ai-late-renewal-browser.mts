@@ -62,7 +62,7 @@ if(storeKind==='postgres') {
 let quotaCalls=0; const consumeQuota=store.consumeQuota.bind(store); store.consumeQuota=async (...args)=>{quotaCalls++;return consumeQuota(...args);};
 const generations: unknown[] = [], calls: {id: string | null; status: number; retry: string|null}[] = [];
 const handler = createOpenEnaAiInterpretationPostHandler({
- verifyPrincipal:token=>token==='synthetic-principal-A'||token==='synthetic-principal-B'?{principalRef:token}:null,authConfigurationReady:()=>true,environment:{},providerDescriptor:()=>({provider:'synthetic',model:'fixture'}),
+ verifyPrincipal:token=>token==='synthetic-principal-A'||token==='synthetic-principal-B'?{principalRef:token}:null,authConfigurationReady:()=>true,environment:{},providerDescriptor:()=>({provider:'deepseek',model:'deepseek-flash'}),
  parseRequest:parseOpenEnaAiInterpretationRequest,billableStore:store,requireBillable:storeKind==='postgres',limits,
  generate:async request=>{generations.push(request);throw Object.assign(new Error('synthetic provider failure'),generations.length===1?{code:'invalid-configuration',providerDispatched:false}:{code:'upstream-network',providerDispatched:true});},
 });

@@ -43,7 +43,7 @@ try {
     const calls: { operationId: string | null; body: any; status: number }[] = [], generations: unknown[] = [];
     const handler = createOpenEnaAiInterpretationPostHandler({
       verifyPrincipal: () => ({ principalRef: 'synthetic-request-scope' }), authConfigurationReady: () => true, environment: {},
-      providerDescriptor: () => ({ provider: 'synthetic', model: 'fixture' }), parseRequest: parseOpenEnaAiInterpretationRequest,
+      providerDescriptor: () => ({ provider: 'deepseek', model: 'deepseek-flash' }), parseRequest: parseOpenEnaAiInterpretationRequest,
       billableStore: new MemoryBillableStore(), limits: { minuteRequests: 20, dailyMicroUsd: 10000, monthlyMicroUsd: 10000,
         globalMonthlyMicroUsd: 10000, providerMonthlyMicroUsd: 10000, maxConcurrency: 2, maxReservationMicroUsd: 99,
         longitudinalMaxReservationMicroUsd: 99, alertThresholds: [50, 80, 100] },
