@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { generateLunaInterpretation, LunaClientError, OPEN_ENA_AI_MAX_COMPLETION_TOKENS } from "../lib/server/deepseek-client";
 import {
+  OPEN_ENA_PROVIDER_DISCLOSURE_KEYS,
+  OPEN_ENA_PROVIDER_METADATA_ECHO_KEYS,
+  projectOpenEnaProviderInterpretation,
+} from "../lib/server/open-ena-ai-provider-projection";
+import {
   collectOpenEnaAiEvidenceIds,
   OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
   parseOpenEnaAiInterpretationResponse,
@@ -83,6 +88,39 @@ function wrapped(request: OpenEnaAiInterpretationRequestV2, interpretation: unkn
     interpretation,
   };
 }
+
+test("provider repair allowlists stay closed", () => {
+  assert.deepEqual([...OPEN_ENA_PROVIDER_METADATA_ECHO_KEYS], [
+    "$schema",
+    "additionalProperties",
+    "name",
+    "promptVersion",
+    "responseFormatNote",
+    "schemaVersion",
+    "type",
+  ]);
+  assert.deepEqual([...OPEN_ENA_PROVIDER_DISCLOSURE_KEYS], [
+    "disclosure",
+    "limitationNote",
+    "missingnessDisclosure",
+    "supplementalNote",
+  ]);
+});
+
+test("projection does not mutate provider JSON or duplicate an existing limitation", () => {
+  const ids = new Set(["axis-1"]);
+  const input = {
+    ...clean,
+    schemaVersion: "echo",
+    supplementalNote: clean.limitations[0],
+    observedPatterns: [{ statement: "合成观察。", evidenceRefs: ["axis-1"], schemaVersion: "echo" }],
+  };
+  const frozen = structuredClone(input);
+  const projected = projectOpenEnaProviderInterpretation(input, ids);
+  assert.deepEqual(input, frozen);
+  assert.deepEqual(projected, clean);
+  assert.deepEqual(projectOpenEnaProviderInterpretation({ ...clean, supplementalNote: " \n\t" }, ids), clean);
+});
 
 test("approved v2 prompt bytes and hashes stay bound", () => {
   assert.equal(OPEN_ENA_AI_MAX_COMPLETION_TOKENS, 1_800);

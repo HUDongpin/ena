@@ -11,6 +11,7 @@ import {
   getApprovedOpenEnaAiPromptArtifact,
   instantiateOpenEnaAiResponseSchema,
 } from "./open-ena-ai-prompt-governance";
+import { projectOpenEnaProviderInterpretation } from "./open-ena-ai-provider-projection";
 import { OPEN_ENA_BILLABLE_MAX_PROVIDER_REQUEST_MS } from "./open-ena-billable";
 
 export const OPEN_ENA_AI_DEFAULT_MODEL = "deepseek-flash";
@@ -179,7 +180,7 @@ function contractFailureDetail(error: unknown, interpretation: unknown): Pick<Fa
   else if (/must be an array/iu.test(message)) rule = "array-type";
   else if (/must be an object/iu.test(message)) rule = "object-type";
   else if (/exceeds its allowed length/iu.test(message)) rule = "array-length";
-  else if (/was not supplied/iu.test(message)) rule = "evidence-reference";
+  else if (/was not supplied|evidence ref \d+ is invalid/iu.test(message)) rule = "evidence-reference";
   else if (/must cite aggregate|at least one limitation/iu.test(message)) rule = "empty-array";
   else if (/must be unique/iu.test(message)) rule = "duplicate";
   else if (/must be nonempty/iu.test(message)) rule = "empty-text";
@@ -378,7 +379,14 @@ export async function generateLunaInterpretation(
     let interpretation: unknown;
     try {
       interpretation = JSON.parse(texts[0]);
-      assertGeneratedProseTypes(interpretation);
+      // Completed output can still echo schema keys or cite more than eight
+      // supplied ids. Repair only those closed-schema cases, then require the
+      // unchanged strict parser to accept the projection.
+      const projected = projectOpenEnaProviderInterpretation(
+        interpretation,
+        collectOpenEnaAiEvidenceIds(normalized.evidence),
+      );
+      assertGeneratedProseTypes(projected);
       const response = parseOpenEnaAiInterpretationResponse({
         schemaVersion: OPEN_ENA_AI_RESPONSE_SCHEMA_VERSION_V2,
         promptVersion: normalized.promptVersion,
@@ -386,12 +394,17 @@ export async function generateLunaInterpretation(
         provider: "deepseek",
         model,
         generatedAt: (options.clock ?? (() => new Date()))().toISOString(),
-        interpretation,
+        interpretation: projected,
       }, normalized);
       return { response, usage, providerDispatched: true };
     } catch (error) {
       Object.assign(diagnostic, contractFailureDetail(error, interpretation));
-      report(contractFailureStage(error));
+      if (diagnostic.rule === "json-syntax"
+        && diagnostic.outputTokens !== null
+        && diagnostic.outputTokens >= OPEN_ENA_AI_MAX_COMPLETION_TOKENS) {
+        diagnostic.rule = "truncation";
+      }
+      report(diagnostic.rule === "truncation" ? "responses-shape" : contractFailureStage(error));
       throw new LunaClientError("upstream-malformed", "AI interpretation returned an invalid response.", true, usage);
     }
   } finally {
