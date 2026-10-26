@@ -11,6 +11,7 @@ import {
   isOpenEnaLocalizedLocale,
 } from "../lib/open-ena-i18n";
 import * as openEnaLoginModule from "../components/open-ena/OpenEnaLogin";
+import OpenEnaPasswordInput from "../components/open-ena/OpenEnaPasswordInput";
 
 const projectRoot = process.cwd();
 
@@ -265,7 +266,12 @@ test("the login form is accessible and never exposes the default account or pass
   assert.match(login, /name="username"/);
   assert.match(login, /autoComplete="username"/);
   assert.match(login, /name="password"/);
-  assert.match(login, /type="password"/);
+  const passwordInput = renderToStaticMarkup(createElement(OpenEnaPasswordInput, {
+    id: "open-ena-password",
+    showPasswordLabel: "Show password",
+    hidePasswordLabel: "Hide password",
+  }));
+  assert.match(passwordInput, /type="password"/);
   assert.match(login, /autoComplete="current-password"/);
   assert.match(login, /aria-invalid=\{invalidCredentials\}/);
   assert.match(login, /aria-describedby=\{alertText \? "open-ena-login-error" : undefined\}/);

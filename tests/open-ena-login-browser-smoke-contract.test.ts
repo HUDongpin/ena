@@ -75,7 +75,7 @@ test("the login browser gate covers responsive branding and authentication witho
     "Next also owns a route-announcer alert, so the login gate must target the application alert exactly",
   );
   assert.match(source, /getByLabel\("Account name"\)\.fill\(username\)/u);
-  assert.match(source, /getByLabel\("Password"\)\.fill\(password\)/u);
+  assert.match(source, /getByLabel\("Password", \{ exact: true \}\)\.fill\(password\)/u);
   assert.match(source, /locator\("\.open-ena-workbench"\)\.waitFor\(\{ state: "visible", timeout: 30_000 \}\)/u);
   assert.match(source, /getByRole\("button", \{ name: "Sign out" \}\)\.click\(\{ noWaitAfter: true \}\)/u);
   assert.match(source, /locator\("\.open-ena-login-form"\)\.waitFor\(\{ state: "visible", timeout: 30_000 \}\)/u);
