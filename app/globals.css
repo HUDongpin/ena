@@ -2051,6 +2051,47 @@ body:has(.open-ena-login-page) .back-to-top {
   border-color: #a64b55;
 }
 
+.open-ena-password-field {
+  position: relative;
+  min-width: 0;
+}
+
+.open-ena-login-form .open-ena-password-field input {
+  display: block;
+  padding-inline-end: 54px;
+}
+
+.open-ena-password-field input::-ms-reveal {
+  display: none;
+}
+
+.open-ena-password-toggle {
+  position: absolute;
+  inset-inline-end: 2px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 2px;
+  padding: 0;
+  color: #566376;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.open-ena-password-toggle:hover {
+  color: var(--accent-strong);
+}
+
+.open-ena-password-toggle:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -3px;
+}
+
 .open-ena-login-error {
   margin: 2px 0 0;
   border-inline-start: 3px solid #a64b55;

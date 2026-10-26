@@ -10,6 +10,8 @@ export interface OpenEnaAuthCopy {
   usernamePlaceholder: string;
   password: string;
   passwordPlaceholder: string;
+  showPassword: string;
+  hidePassword: string;
   signIn: string;
   signOut: string;
   invalidCredentials: string;
@@ -37,6 +39,8 @@ const en: OpenEnaAuthCopy = {
   usernamePlaceholder: "Enter your account name",
   password: "Password",
   passwordPlaceholder: "Enter your password",
+  showPassword: "Show password",
+  hidePassword: "Hide password",
   signIn: "Sign in",
   signOut: "Sign out",
   invalidCredentials: "The account name or password is incorrect. Please try again.",
@@ -69,6 +73,8 @@ const zhHant: OpenEnaAuthCopy = {
   usernamePlaceholder: "請輸入帳戶名稱",
   password: "密碼",
   passwordPlaceholder: "請輸入密碼",
+  showPassword: "顯示密碼",
+  hidePassword: "隱藏密碼",
   signIn: "登入",
   signOut: "登出",
   invalidCredentials: "帳戶名稱或密碼不正確，請重試。",
@@ -97,6 +103,8 @@ const zhHans: OpenEnaAuthCopy = {
   usernamePlaceholder: "请输入账户名称",
   password: "密码",
   passwordPlaceholder: "请输入密码",
+  showPassword: "显示密码",
+  hidePassword: "隐藏密码",
   signIn: "登录",
   signOut: "退出登录",
   invalidCredentials: "账户名称或密码不正确，请重试。",

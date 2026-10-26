@@ -10,6 +10,7 @@ import {
 } from "@/lib/open-ena-auth-copy";
 import { isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
+import OpenEnaPasswordInput from "./OpenEnaPasswordInput";
 import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 import { getOpenEnaCloudCopy } from "@/lib/open-ena/cloud-copy";
 
@@ -129,12 +130,13 @@ export default function OpenEnaLogin({ locale, notice, configurationReady, cloud
             />
 
             <label htmlFor="open-ena-password">{copy.password}</label>
-            <input
+            <OpenEnaPasswordInput
               id="open-ena-password"
               name="password"
-              type="password"
               autoComplete="current-password"
               placeholder={copy.passwordPlaceholder}
+              showPasswordLabel={copy.showPassword}
+              hidePasswordLabel={copy.hidePassword}
               aria-invalid={invalidCredentials}
               aria-describedby={alertText ? "open-ena-login-error" : undefined}
               required

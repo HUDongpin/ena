@@ -310,12 +310,12 @@ async function auditAuthentication(browser, { loginUrl, password, redact, userna
   try {
     await page.goto(loginUrl, { waitUntil: "networkidle" });
     await page.getByLabel("Account name").fill("invalid-local-account");
-    await page.getByLabel("Password").fill("invalid-local-password");
+    await page.getByLabel("Password", { exact: true }).fill("invalid-local-password");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.locator("#open-ena-login-error").waitFor({ state: "visible" });
 
     await page.getByLabel("Account name").fill(username);
-    await page.getByLabel("Password").fill(password);
+    await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.locator(".open-ena-workbench").waitFor({ state: "visible", timeout: 30_000 });
 
