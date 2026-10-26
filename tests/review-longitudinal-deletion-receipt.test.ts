@@ -33,12 +33,15 @@ const pending = {
 
 // Real HTTP/native fetch and an actual SDK scientific artifact: malformed
 // deletion facts must never authorize publishing or caching the result.
+// These cases verify deletion facts and result ownership, not timeout edges.
+// Reconciliation waits 250 ms per pending receipt; leave room for HTTP and
+// scheduling under the full parallel suite while staying below the 10 s default.
 async function withService(run: (context: {
   execute: () => ReturnType<typeof executeOpenEnaLongitudinalPreparedV3>;
   setReceipts: (...receipts: Record<string, unknown>[]) => void;
   sdkDelete: () => Promise<unknown>;
   calls: Array<{ method: string; path: string; deletionKey?: string }>;
-}) => Promise<void>, cleanupDeadlineMilliseconds = 600) {
+}) => Promise<void>, cleanupDeadlineMilliseconds = 5_000) {
   clearOpenEnaLongitudinalExecutionCacheV3();
   const { original, artifact, sha256 } = await fixture;
   let origin = "";
@@ -69,7 +72,7 @@ async function withService(run: (context: {
     assert.ok(address && typeof address !== "string");
     origin = `http://127.0.0.1:${address.port}`;
     await run({
-      execute: () => executeOpenEnaLongitudinalPreparedV3(original, { allowRemote: true, remoteEndpoint: `${origin}/submit`, remotePollIntervalMilliseconds: 1, remoteCleanupDeadlineMilliseconds: cleanupDeadlineMilliseconds, remoteDeadlineMilliseconds: 3_000 }),
+      execute: () => executeOpenEnaLongitudinalPreparedV3(original, { allowRemote: true, remoteEndpoint: `${origin}/submit`, remotePollIntervalMilliseconds: 1, remoteCleanupDeadlineMilliseconds: cleanupDeadlineMilliseconds, remoteDeadlineMilliseconds: 15_000 }),
       setReceipts: (...values) => { receipts = values; }, calls,
       sdkDelete: () => createAnalysisClient({ baseUrl: origin, retryMaxAttempts: 1 }).deleteJobV2({ jobId, capabilityToken: "synthetic-job-bound-token" }, "synthetic-oracle-key"),
     });
@@ -150,5 +153,5 @@ test("deleted objects still wait for pending termination and held capacity", asy
     const deletions = calls.filter(call => call.method === "DELETE");
     assert.equal(deletions.length, 4);
     assert.equal(new Set(deletions.map(call => call.deletionKey)).size, 1);
-  }, 1_500);
+  }, 5_000);
 });
