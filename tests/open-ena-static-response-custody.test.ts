@@ -1,21 +1,21 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib";
 // @ts-expect-error Dependency-free Node ESM browser harness helper.
-import { installOwnedStaticResponseCaptureV3, readOwnedStaticResponseRecordsV3, verifyOriginalStaticResponseV3, STATIC_RESPONSE_CUSTODY_HEADER_V3, STATIC_RESPONSE_CUSTODY_LIMITS_V3 } from "./helpers/open-ena-static-response-custody-v3.mjs";
+import { installOwnedStaticResponseCaptureV3, prepareOwnedStaticResponseCaptureV3, readOwnedStaticResponseRecordsV3, verifyBrowserStaticRequestCompletionV3, verifyOriginalStaticResponseV3, STATIC_RESPONSE_CUSTODY_HEADER_V3, STATIC_RESPONSE_CUSTODY_LIMITS_V3 } from "./helpers/open-ena-static-response-custody-v3.mjs";
 
 const bytes = Buffer.from("original immutable worker import\n".repeat(30));
 const sha256 = createHash("sha256").update(bytes).digest("hex");
-type CaptureOptions = { encoding?: string; status?: number; payload?: Buffer; limits?: Partial<Record<"encodedBytes" | "inFlightBytes" | "decodedBytes" | "records" | "journalBytes", number>>; requests?: number };
+type CaptureOptions = { encoding?: string; status?: number; payload?: Buffer; limits?: Partial<Record<"encodedBytes" | "inFlightBytes" | "decodedBytes" | "records" | "journalBytes", number>>; requests?: number; journal?: string };
 
 async function capture(options: CaptureOptions = {}) {
-  const directory = mkdtempSync(join(tmpdir(), "ena-static-custody-"));
-  const journal = join(directory, "responses.ndjson");
+  const directory = options.journal ? dirname(options.journal) : mkdtempSync(join(tmpdir(), "ena-static-custody-"));
+  const journal = options.journal ?? join(directory, "responses.ndjson");
   const restore = installOwnedStaticResponseCaptureV3(journal, { ...STATIC_RESPONSE_CUSTODY_LIMITS_V3, ...options.limits });
   let requests = 0;
   const server = http.createServer((_, response) => {
@@ -38,10 +38,11 @@ async function capture(options: CaptureOptions = {}) {
       assert.equal(response.headers.get("cache-control"), "public, max-age=31536000, immutable");
       assert.deepEqual(Buffer.from(await response.arrayBuffer()), options.encoding ? bytes : options.payload ?? bytes);
     }
-    return { records: readOwnedStaticResponseRecordsV3(journal), id, status, requestTarget: "/_next/static/worker.js", expectedSha256: sha256, requests };
+    // Unit requestfinished fixture; the browser companion records the real events.
+    return { records: readOwnedStaticResponseRecordsV3(journal), id, status, requestTarget: "/_next/static/worker.js", expectedSha256: sha256, requests, request: { requestFinishedAt: new Date().toISOString() } };
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
-    restore(); rmSync(directory, { recursive: true, force: true });
+    restore(); if (!options.journal) rmSync(directory, { recursive: true, force: true });
   }
 }
 
@@ -55,6 +56,52 @@ test("original streamed responses retain exact decoded bytes and unchanged cache
     assert.equal(proof.encodedBytes, payload.length);
     assert.equal(captured.requests, 1);
   }
+});
+
+test("a matching successful server response requires confirmed browser completion without failure", async () => {
+  const captured = await capture();
+  for (const request of [
+    undefined, {}, { requestFinishedAt: "" },
+    { requestFailedAt: new Date().toISOString(), requestFailure: "net::ERR_ABORTED" },
+    { ...captured.request, requestFailedAt: new Date().toISOString(), requestFailure: "net::ERR_ABORTED" },
+    { ...captured.request, requestFailure: "net::ERR_FAILED" },
+  ]) assert.throws(() => verifyOriginalStaticResponseV3({ ...captured, request }), /Browser static request/u);
+});
+
+test("a later failure on the shared browser request invalidates an earlier original-response proof", async () => {
+  const captured = await capture();
+  verifyOriginalStaticResponseV3(captured);
+  verifyBrowserStaticRequestCompletionV3(captured.request);
+  Object.assign(captured.request, { requestFailedAt: new Date().toISOString(), requestFailure: "net::ERR_ABORTED" });
+  assert.throws(() => verifyOriginalStaticResponseV3(captured), /Browser static request/u);
+  assert.throws(() => verifyBrowserStaticRequestCompletionV3(captured.request), /Browser static request/u);
+});
+
+test("capture runs under one output parent preserve separate exclusive journals and preloads", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "ena-repeat-custody-"));
+  try {
+    writeFileSync(join(directory, "static-response-preload.mjs"), "earlier preload\n", { flag: "wx" });
+    writeFileSync(join(directory, "original-static-responses.ndjson"), "earlier journal\n", { flag: "wx" });
+    const first = prepareOwnedStaticResponseCaptureV3(directory);
+    const firstRun = await capture({ journal: join(directory, first.journal) });
+    const firstJournal = readFileSync(join(directory, first.journal), "utf8");
+    const second = prepareOwnedStaticResponseCaptureV3(directory);
+    const secondRun = await capture({ journal: join(directory, second.journal) });
+    assert.notEqual(first.directory, second.directory);
+    for (const prepared of [first, second]) {
+      assert.equal(dirname(prepared.journal), prepared.directory);
+      assert.equal(dirname(prepared.preload), prepared.directory);
+      assert.match(readFileSync(join(directory, prepared.preload), "utf8"), /installOwnedStaticResponseCaptureV3/u);
+      assert.throws(() => writeFileSync(join(directory, prepared.preload), "overwrite", { flag: "wx" }), { code: "EEXIST" });
+      assert.throws(() => installOwnedStaticResponseCaptureV3(join(directory, prepared.journal)), { code: "EEXIST" });
+    }
+    assert.notEqual(firstRun.id, secondRun.id);
+    assert.equal(firstRun.records.length, 1);
+    assert.equal(secondRun.records.length, 1);
+    assert.equal(readFileSync(join(directory, first.journal), "utf8"), firstJournal);
+    assert.equal(readFileSync(join(directory, "static-response-preload.mjs"), "utf8"), "earlier preload\n");
+    assert.equal(readFileSync(join(directory, "original-static-responses.ndjson"), "utf8"), "earlier journal\n");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test("missing, wrong, duplicate or mismatched original responses cannot replace a browser body", async () => {

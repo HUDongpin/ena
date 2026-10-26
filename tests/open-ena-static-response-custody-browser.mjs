@@ -24,7 +24,10 @@ let browser;
 try {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage(), responses = [], closures = [];
+  const page = await browser.newPage(), responses = [], closures = [], requests = new WeakMap();
+  page.on("request", request => { if (new URL(request.url()).pathname.startsWith("/_next/static/")) requests.set(request, {}); });
+  page.on("requestfinished", request => { const entry = requests.get(request); if (entry) entry.requestFinishedAt = new Date().toISOString(); });
+  page.on("requestfailed", request => { const entry = requests.get(request); if (entry) Object.assign(entry, { requestFailedAt: new Date().toISOString(), requestFailure: request.failure()?.errorText ?? "unknown" }); });
   page.on("worker", worker => closures.push(new Promise(resolve => worker.once("close", resolve))));
   page.on("response", response => { if (new URL(response.url()).pathname.startsWith("/_next/static/")) responses.push(response); });
   await page.goto(`http://127.0.0.1:${server.address().port}`);
@@ -38,7 +41,11 @@ try {
     catch (error) {
       assert.match(error.message, /Target page, context or browser has been closed|No resource with given identifier|Response body is unavailable/u);
       failures.push(error.message);
-      proofs.push(verifyOriginalStaticResponseV3({ records, id: response.headers()[STATIC_RESPONSE_CUSTODY_HEADER_V3], requestTarget: url.pathname + url.search, status: response.status(), expectedSha256: hashes.get(url.pathname) }));
+      const request = requests.get(response.request());
+      assert.ok(request?.requestFinishedAt, `No browser requestfinished event for ${url.pathname}`);
+      assert.equal(request.requestFailedAt, undefined);
+      assert.equal(request.requestFailure, undefined);
+      proofs.push(verifyOriginalStaticResponseV3({ records, request, id: response.headers()[STATIC_RESPONSE_CUSTODY_HEADER_V3], requestTarget: url.pathname + url.search, status: response.status(), expectedSha256: hashes.get(url.pathname) }));
     }
   }
   assert.equal(page.isClosed(), false);
@@ -47,7 +54,7 @@ try {
   assert.ok(records.length < responses.length, "The Worker regression must actually reuse cached original responses");
   assert.ok(failures.length > 0, "The fixture did not reproduce the closed Worker CDP response-body failure");
   assert.equal(readOwnedStaticResponseRecordsV3(journal).length, records.length, "Verifying original responses must not refetch any asset");
-  console.log(JSON.stringify({ status: "PASS", workersClosed: closures.length, pageClosed: page.isClosed(), browserResponses: responses.length, originalResponses: records.length, browserBodyFailures: failures.length, verifiedOriginalResponses: proofs.length, captureSource: proofs[0].source, exampleBodyFailure: failures[0], cachePolicy: "browser-default", assetRefetches: 0 }, null, 2));
+  console.log(JSON.stringify({ status: "PASS", workersClosed: closures.length, pageClosed: page.isClosed(), browserResponses: responses.length, browserRequestsFinished: responses.filter(response => requests.get(response.request())?.requestFinishedAt).length, browserRequestsFailed: responses.filter(response => requests.get(response.request())?.requestFailedAt).length, originalResponses: records.length, browserBodyFailures: failures.length, verifiedOriginalResponses: proofs.length, captureSource: proofs[0].source, exampleBodyFailure: failures[0], cachePolicy: "browser-default", assetRefetches: 0 }, null, 2));
 } finally {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));

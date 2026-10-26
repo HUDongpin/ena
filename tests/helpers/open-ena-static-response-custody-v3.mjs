@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import { appendFileSync, closeSync, openSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, mkdtempSync, openSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { syncBuiltinESMExports } from "node:module";
+import { join, relative, resolve } from "node:path";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 
 export const STATIC_RESPONSE_CUSTODY_HEADER_V3 = "x-open-ena-smoke-asset-custody";
@@ -11,6 +12,15 @@ export const STATIC_RESPONSE_CUSTODY_LIMITS_V3 = Object.freeze({
   inFlightBytes: 64 * 1024 * 1024, records: 10000, journalBytes: 16 * 1024 * 1024,
 });
 const digest = bytes => createHash("sha256").update(bytes).digest("hex");
+
+/** Keep each invocation's exclusive files beneath its own evidence directory. */
+export function prepareOwnedStaticResponseCaptureV3(directory) {
+  const captureDirectory = mkdtempSync(join(resolve(directory), "static-response-capture-"));
+  const journal = join(captureDirectory, "original-static-responses.ndjson");
+  const preload = join(captureDirectory, "static-response-preload.mjs");
+  writeFileSync(preload, `import { installOwnedStaticResponseCaptureV3 } from ${JSON.stringify(import.meta.url)};\ninstallOwnedStaticResponseCaptureV3(${JSON.stringify(journal)});\n`, { flag: "wx" });
+  return { directory: relative(directory, captureDirectory), journal: relative(directory, journal), preload: relative(directory, preload) };
+}
 
 /** Observe original writes only. No refetch, routing, cache or Worker changes. */
 export function installOwnedStaticResponseCaptureV3(journalPath, limits = STATIC_RESPONSE_CUSTODY_LIMITS_V3) {
@@ -81,8 +91,16 @@ export function readOwnedStaticResponseRecordsV3(journalPath) {
   return lines.map(line => JSON.parse(line));
 }
 
-/** The browser-observed ID binds a lost Worker body to the original response. */
-export function verifyOriginalStaticResponseV3({ records, id, requestTarget, status, expectedSha256 }) {
+/** Inspect the live request record again at drains/cleanup to catch later failures. */
+export function verifyBrowserStaticRequestCompletionV3(request) {
+  assert.equal(request?.requestFailedAt, undefined, "Browser static request failed");
+  assert.equal(request?.requestFailure, undefined, "Browser static request failed");
+  assert.ok(typeof request?.requestFinishedAt === "string" && request.requestFinishedAt.length > 0, "Browser static request completion was not confirmed by requestfinished");
+}
+
+/** Browser completion and the observed ID bind a lost body to the original response. */
+export function verifyOriginalStaticResponseV3({ records, request, id, requestTarget, status, expectedSha256 }) {
+  verifyBrowserStaticRequestCompletionV3(request);
   assert.match(id ?? "", /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u, "Missing or invalid browser-observed static response custody ID");
   const matches = records.filter(record => record.id === id);
   assert.equal(matches.length, 1, "Original static response custody record is missing or duplicated");
@@ -96,5 +114,5 @@ export function verifyOriginalStaticResponseV3({ records, id, requestTarget, sta
   assert.equal(record.status, status, "Original static response status does not match the browser response");
   assert.match(expectedSha256 ?? "", /^[0-9a-f]{64}$/u, "Static response is absent from the immutable build");
   assert.equal(record.sha256, expectedSha256, "Original static response bytes differ from the immutable build");
-  return { source: "owned-server-original-response", id, sha256: record.sha256, contentEncoding: record.contentEncoding, encodedBytes: record.encodedBytes, decodedBytes: record.decodedBytes, capturedAt: record.capturedAt };
+  return { source: "owned-server-original-response", id, sha256: record.sha256, contentEncoding: record.contentEncoding, encodedBytes: record.encodedBytes, decodedBytes: record.decodedBytes, capturedAt: record.capturedAt, requestFinishedAt: request.requestFinishedAt };
 }
