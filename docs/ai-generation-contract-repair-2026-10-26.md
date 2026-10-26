@@ -149,7 +149,9 @@ adding `strict: true` to the request envelope. The #118 merge-build test correct
 rejected that change because the fixed candidate uses the unchanged V2 request.
 The correction is prepared in #122 and integrated into this draft; the assertion
 was not relaxed. That integration also retains the reviewed test cleanup and
-browser-response evidence repairs.
+bounded scheduling budgets. Shared browser-response capture changes are owned
+solely by #119 and are excluded from the #122/#118 diffs, so its completed-request
+and repeat-run safeguards cannot be replaced by an older copied helper.
 
 The DeepSeek client, projection, live runner, fixed fixture, and complete nine-call
 receipt remain byte-for-byte identical to evidence commit
