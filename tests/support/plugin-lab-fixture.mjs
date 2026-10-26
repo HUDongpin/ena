@@ -35,6 +35,7 @@ export async function startPluginLabFixture({ evidenceDirectory, distDirectory =
   const smtpStatistics = { connections: 0, authenticatedTls: 0, accepted: 0, rejected: 0 };
   let database, smtp, app, appLog, startAttempted = false, closing = null;
   let rejectMail = false;
+  const databaseClients = new Set();
   const cleanup = () => closing ??= (async () => {
     if (app && (app.exitCode === null && app.signalCode === null)) {
       app.kill("SIGTERM");
@@ -46,7 +47,18 @@ export async function startPluginLabFixture({ evidenceDirectory, distDirectory =
       if ((app.exitCode === null && app.signalCode === null)) throw new Error("Owned Next child could not be stopped; temporary root retained.");
     }
     if (smtp) await new Promise(r => smtp.close(r));
-    if (database) await database.end();
+    if (database) {
+      // pg-pool can resolve end() before client sockets finish closing. Drain
+      // those clients before synchronous pg_ctl shutdown can race their errors.
+      const clientsClosed = Promise.all([...databaseClients].map(client => new Promise(resolveEnd => client.once("end", resolveEnd))));
+      let timeout;
+      try {
+        await Promise.race([
+          Promise.all([database.end(), clientsClosed]),
+          new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("Owned PostgreSQL clients did not finish closing; temporary root retained.")), 5_000); }),
+        ]);
+      } finally { clearTimeout(timeout); }
+    }
     if (appLog !== undefined) closeSync(appLog);
     const result = await cleanupOwnedEphemeralPostgres({ rootDirectory: root, dataDirectory, rootPrefix: prefix, startAttempted });
     writeFileSync(join(evidence, "cleanup.json"), JSON.stringify({ status: "PASS", ...result, finishedAt: new Date().toISOString() }, null, 2));
@@ -57,6 +69,10 @@ export async function startPluginLabFixture({ evidenceDirectory, distDirectory =
     startAttempted = true;
     execFileSync("pg_ctl", ["--pgdata", dataDirectory, "--log", join(root, "postgres.log"), "--options", `-h 127.0.0.1 -p ${pgPort} -c unix_socket_directories=''`, "--wait", "start"], { stdio: "pipe", timeout: 30_000 });
     database = new Pool({ host: "127.0.0.1", port: pgPort, user: "postgres", database: "postgres", max: 4, statement_timeout: 5_000 });
+    database.on("connect", client => {
+      databaseClients.add(client);
+      client.once("end", () => databaseClients.delete(client));
+    });
     await database.query("CREATE ROLE pluginfixture LOGIN NOSUPERUSER NOBYPASSRLS; GRANT USAGE ON SCHEMA public TO pluginfixture");
     for (const migration of ["002_open_ena_auth_security.sql", "005_ena_plugin_lab.sql", "011_ena_plugin_workflow.sql"]) {
       await database.query(readFileSync(join(repository, "migrations", migration), "utf8"));

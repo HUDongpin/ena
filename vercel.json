@@ -4,7 +4,9 @@
   "git": {
     "deploymentEnabled": {
       "codex/ena-2d-parity": false,
-      "cursor/repair-multilingual-response-contract-424b": false
+      "cursor/repair-multilingual-response-contract-424b": false,
+      "codex/open-ena-p01-audit": false,
+      "codex/ena-pr117-test-stability-followup": false
     }
   }
 }
