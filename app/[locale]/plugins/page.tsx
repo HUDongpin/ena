@@ -47,7 +47,7 @@ export default async function PluginLabPage({ params }: { params: Promise<{ loca
         <h2 id="plugin-cocreate-title">{copy.coCreateEyebrow}</h2>
         <p><strong>{copy.coCreateTitle}</strong> {copy.coCreateText}</p>
         <ul className="plugin-lab-tracks"><li>{copy.publicTrack}</li><li>{copy.privateTrack}</li></ul>
-        <details className="plugin-lab-process">
+        <details className="plugin-lab-process" open>
           <summary>{copy.processTitle}</summary>
           <ol>{copy.process.map((step, index) => <li key={step}><span>{String(index + 1).padStart(2, "0")}</span>{step}</li>)}</ol>
         </details>
