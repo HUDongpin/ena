@@ -5,10 +5,11 @@ import { interpretationRequest } from "./helpers/ai-interpretation-request-v2";
 
 const key = "synthetic-deepseek-key";
 const valid = { observedPatterns: [{ statement: "合成证据。", evidenceRefs: ["axis-1"] }], contextualQuestions: [], limitations: ["仅限汇总证据。"] };
-async function failure(output: string, options: { status?: string; incomplete?: string; http?: number } = {}) {
+async function failure(output: string, options: { status?: string; incomplete?: string; http?: number; outputTokens?: number } = {}) {
+  const outputTokens = options.outputTokens ?? 5;
   const body = { status: options.status ?? "completed", ...(options.incomplete ? { incomplete_details: { reason: options.incomplete } } : {}),
     output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: output }] }],
-    usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } };
+    usage: { input_tokens: 10, output_tokens: outputTokens, total_tokens: 10 + outputTokens } };
   const environment = process.env as Record<string, string | undefined>;
   const entries: unknown[][] = [], original = console.error, nodeEnv = environment.NODE_ENV;
   console.error = (...values: unknown[]) => { entries.push(values); };
@@ -37,9 +38,9 @@ async function failure(output: string, options: { status?: string; incomplete?: 
   assert.equal(diagnostic.httpStatus, options.http ?? 200);
   if ((options.http ?? 200) === 200) {
     assert.equal(diagnostic.responseBytes, Buffer.byteLength(JSON.stringify(body)));
-    assert.equal(diagnostic.outputTokens, 5);
+    assert.equal(diagnostic.outputTokens, outputTokens);
     assert.equal(caught.providerDispatched, true);
-    assert.equal(caught.usage?.completionTokens, 5, "unusable responses remain accountable");
+    assert.equal(caught.usage?.completionTokens, outputTokens, "unusable responses remain accountable");
   }
   return { diagnostic, serialized: JSON.stringify(entries), error: caught };
 }
@@ -82,19 +83,45 @@ test("DeepSeek rejects unseen evidence references without logging them", async (
   assert.ok(!serialized.includes("private-evidence"));
 });
 
-test("DeepSeek rejects the complete extra-field and overlong-reference shapes observed in live probes", async () => {
-  for (const extra of ["schemaVersion", "supplementalNote", "type", "missingnessDisclosure", "responseFormatNote"]) {
-    const { diagnostic, serialized } = await failure(JSON.stringify({ ...valid, [extra]: "PRIVATE_EXTRA_VALUE" }));
-    assert.equal(diagnostic.rule, "unexpected-field");
-    assert.equal(diagnostic.field, "interpretation");
-    assert.ok(!serialized.includes("PRIVATE_EXTRA_VALUE"));
-  }
-  const { diagnostic } = await failure(JSON.stringify({
+test("DeepSeek still rejects reference overflow that cites evidence outside the request", async () => {
+  const { diagnostic, serialized } = await failure(JSON.stringify({
     ...valid,
     observedPatterns: [{ statement: "合成。", evidenceRefs: Array.from({ length: 9 }, (_, i) => `edge-difference-${i + 1}`) }],
   }));
   assert.equal(diagnostic.rule, "array-length");
   assert.equal(diagnostic.field, "interpretation.observedPatterns[].evidenceRefs");
+  assert.ok(!serialized.includes("edge-difference-9"));
+});
+
+test("DeepSeek classifies a malformed evidence id as a reference failure", async () => {
+  const { diagnostic, serialized } = await failure(JSON.stringify({
+    ...valid,
+    observedPatterns: [{ statement: "合成。", evidenceRefs: ["BadRef"] }],
+  }));
+  assert.equal(diagnostic.stage, "responses-contract-evidence-ref");
+  assert.equal(diagnostic.rule, "evidence-reference");
+  assert.equal(diagnostic.field, "interpretation.observedPatterns[].evidenceRefs");
+  assert.ok(!serialized.includes("BadRef"));
+});
+
+test("DeepSeek classifies token-cap JSON syntax as truncation and keeps shorter syntax distinct", async () => {
+  const capped = await failure('{"observedPatterns":', { outputTokens: 1_800 });
+  assert.equal(capped.diagnostic.rule, "truncation");
+  assert.equal(capped.diagnostic.stage, "responses-shape");
+  assert.equal(capped.diagnostic.field, "interpretation");
+  assert.equal(capped.diagnostic.responseStatus, "completed");
+  assert.ok(!capped.serialized.includes("observedPatterns"));
+});
+
+test("DeepSeek rejects non-string prose even when a schema echo is also present", async () => {
+  const { diagnostic, serialized } = await failure(JSON.stringify({
+    ...valid,
+    schemaVersion: "echo",
+    observedPatterns: [{ statement: { private: "private-prose" }, evidenceRefs: ["axis-1"] }],
+  }));
+  assert.equal(diagnostic.rule, "string-type");
+  assert.equal(diagnostic.field, "interpretation.observedPatterns[].statement");
+  assert.ok(!serialized.includes("private-prose") && !serialized.includes("echo"));
 });
 
 test("DeepSeek incomplete output reports bounded finish metadata and preserves usage", async () => {

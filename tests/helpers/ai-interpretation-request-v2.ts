@@ -17,7 +17,9 @@ function stableEvidenceKey(evidence: unknown) {
 
 export function interpretationRequest(
   locale: OpenEnaAiInterpretationRequestV2["locale"] = "en",
+  options: { readonly edgeCount?: number } = {},
 ): OpenEnaAiInterpretationRequestV2 {
+  const edgeCount = options.edgeCount ?? 1;
   const request: OpenEnaAiInterpretationRequestV2 = {
     schemaVersion: OPEN_ENA_AI_REQUEST_SCHEMA_VERSION_V2,
     promptVersion: OPEN_ENA_AI_PROMPT_VERSION_V2,
@@ -56,14 +58,14 @@ export function interpretationRequest(
             meanCoordinates: { "axis-1": -0.2, "axis-2": 0.1 },
           },
         ],
-        edges: [{
-          id: "edge-difference-1",
+        edges: Array.from({ length: edgeCount }, (_, index) => ({
+          id: `edge-difference-${index + 1}`,
           sourceCodeRole: "code-1",
           targetCodeRole: "code-2",
           primaryWeight: 0.4,
           secondaryWeight: 0.2,
           signedDifference: 0.2,
-        }],
+        })),
         trajectory: null,
       },
       inference: [{
