@@ -324,7 +324,7 @@ export async function generateLunaInterpretation(
             { role: "system", content: prompt.systemPrompt },
             { role: "user", content: userContent },
           ],
-          text: { format: { type: "json_schema", name: "open_ena_ai_interpretation", schema } },
+          text: { format: { type: "json_schema", name: "open_ena_ai_interpretation", strict: true, schema } },
         }),
         signal: controller.signal,
       });
