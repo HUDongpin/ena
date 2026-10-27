@@ -14512,7 +14512,7 @@ html:has(.open-ena-page) {
 }
 
 .open-ena-attribution-workspace .open-ena-attribution-purpose { margin-block-start: 2px; }
-.open-ena-attribution-workspace a { padding-block: 3px; }
+.open-ena-attribution-workspace a.open-ena-attribution-link { padding-block: 3px; }
 
 @media (max-width: 480px) {
   .open-ena-attribution-home { width: calc(100% - 32px); }
