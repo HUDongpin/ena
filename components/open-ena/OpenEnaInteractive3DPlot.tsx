@@ -235,15 +235,36 @@ function pngBlobFromDataUrl(dataUrl: string) {
   return new Blob([bytes], { type: "image/png" });
 }
 
-function fallbackFullscreenFocusables(target: HTMLElement) {
+export function fallbackFullscreenFocusables(target: HTMLElement) {
   return [...target.querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, '
     + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  )].filter((element) => (
-    element.getAttribute("aria-hidden") !== "true"
-    && !element.hasAttribute("hidden")
-    && element.getClientRects().length > 0
-  ));
+  )].filter((element) => {
+    if (element.tabIndex < 0 || element.matches(":disabled")
+      || element.closest('[hidden], [inert], [aria-hidden="true"]')
+      || element.getClientRects().length === 0) return false;
+    const nativeVisibility = typeof element.checkVisibility === "function";
+    if (nativeVisibility && !element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false;
+    if (!nativeVisibility && ["hidden", "collapse"].includes(getComputedStyle(element).visibility)) return false;
+    // Chromium can report a nonempty client rect for descendants of a closed
+    // details element even though they cannot receive focus. Only its first
+    // summary (and visible controls inside that summary) remains in the ring.
+    for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
+      if (ancestor !== element && ancestor.tagName === "DETAILS" && !ancestor.hasAttribute("open")) {
+        const summary = [...ancestor.children].find(child => child.tagName === "SUMMARY");
+        if (!summary?.contains(element)) return false;
+      }
+      if (!nativeVisibility) {
+        const style = getComputedStyle(ancestor);
+        if (style.display === "none" || style.contentVisibility === "hidden" || style.opacity === "0") return false;
+      }
+    }
+    if (element.tagName === "SUMMARY" && !element.hasAttribute("tabindex")) {
+      const details = element.parentElement;
+      if (details?.tagName !== "DETAILS" || [...details.children].find(child => child.tagName === "SUMMARY") !== element) return false;
+    }
+    return true;
+  });
 }
 
 function restoreAttribute(target: HTMLElement, name: string, value: string | null) {

@@ -1553,6 +1553,9 @@ async function readFullscreenPlotLayout(page) {
     const shellBox = boxFor(shell);
     const plotBox = boxFor(root);
     const toolbarBox = boxFor(toolbar);
+    const labelDetailsElement = shell?.querySelector("[data-ena-label-details]");
+    const labelDetailsStyle = labelDetailsElement ? getComputedStyle(labelDetailsElement) : null;
+    const labelDetailsBox = labelDetailsElement?.checkVisibility({ visibilityProperty: true }) ? boxFor(labelDetailsElement) : null;
     const toolbarStyle = toolbar ? getComputedStyle(toolbar) : null;
     const buttonBoxes = toolbar
       ? [...toolbar.querySelectorAll("button")]
@@ -1617,6 +1620,10 @@ async function readFullscreenPlotLayout(page) {
           ? "fallback"
           : "none",
       shell: shellBox,
+      rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+      labelDetails: labelDetailsBox ? { ...labelDetailsBox, open: labelDetailsElement.open,
+        marginTop: Number.parseFloat(labelDetailsStyle.marginTop), marginBottom: Number.parseFloat(labelDetailsStyle.marginBottom),
+        maxHeight: Number.parseFloat(labelDetailsStyle.maxHeight) } : null,
       camera: structuredClone(scene?._scene?.getCamera?.() ?? scene?.camera ?? null),
       renderedLayout: { width: root._fullLayout?.width, height: root._fullLayout?.height, autosize: root._fullLayout?.autosize, declaredAutosize: root.layout?.autosize, declaredWidth: root.layout?.width, declaredHeight: root.layout?.height, sceneArea: structuredClone(root._fullLayout?._size ?? null), margin: structuredClone(root._fullLayout?.margin ?? null), legend: { x: root._fullLayout?.legend?.x, y: root._fullLayout?.legend?.y }, annotationTexts: root._fullLayout?.annotations?.map(annotation => annotation.text) ?? [] },
       plot: plotBox,
@@ -1683,11 +1690,27 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
   assertLayout(audit.buttonBoxes.length === 5, "fullscreen does not expose exactly five plot actions");
   assertLayout(audit.toolbar.position === "absolute", "the action toolbar still consumes a layout row");
   assertLayout(audit.toolbar.flexDirection === "column", "the five actions are not vertically stacked");
+  const labelDetails = audit.labelDetails;
+  let reservedDetailsHeight = 0;
+  if (labelDetails) {
+    assertLayout(Number.isFinite(audit.rootFontSize) && audit.rootFontSize > 0
+      && Number.isFinite(labelDetails.maxHeight) && labelDetails.maxHeight <= 12 * audit.rootFontSize + 1
+      && labelDetails.height > 0 && labelDetails.height <= labelDetails.maxHeight + 1,
+    "the label details row is not visibly capped at 12rem");
+    assertLayout([labelDetails.marginTop, labelDetails.marginBottom].every(value => Number.isFinite(value) && value >= 0 && value <= 16),
+      "the label details row has unbounded outside spacing");
+    assertLayout(Math.abs(labelDetails.bottom + labelDetails.marginBottom - audit.shell.bottom) <= 2,
+      "the label details row does not occupy the bottom of fullscreen");
+    reservedDetailsHeight = labelDetails.height + labelDetails.marginTop + labelDetails.marginBottom;
+  }
+  const availablePlotHeight = audit.shell.height - reservedDetailsHeight;
+  const availablePlotBottom = audit.shell.bottom - reservedDetailsHeight;
+  assertLayout(availablePlotHeight > 0, "label details consumed the complete plot");
   const rightInset = audit.shell.right - audit.toolbar.right;
   const toolbarCenter = (audit.toolbar.top + audit.toolbar.bottom) / 2;
-  const shellCenter = (audit.shell.top + audit.shell.bottom) / 2;
+  const plotCenter = (audit.plot.top + audit.plot.bottom) / 2;
   assertLayout(rightInset >= 6 && rightInset <= 22, "the action toolbar is not at the far-right edge");
-  assertLayout(Math.abs(toolbarCenter - shellCenter) <= 2, "the action toolbar is not vertically centered");
+  assertLayout(Math.abs(toolbarCenter - plotCenter) <= 2, "the action toolbar is not vertically centered on the available plot");
   assertLayout(
     audit.toolbar.top >= audit.shell.top - 1
       && audit.toolbar.bottom <= audit.shell.bottom + 1
@@ -1709,11 +1732,13 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
   );
   assertLayout(
     Math.abs(audit.plot.top - audit.shell.top) <= 2
-      && Math.abs(audit.plot.bottom - audit.shell.bottom) <= 2
+      && Math.abs(audit.plot.bottom - availablePlotBottom) <= 2
       && audit.plot.width >= audit.shell.width * 0.96
-      && audit.plot.height >= audit.shell.height * 0.96,
-    "the Plotly root does not reclaim the former toolbar row",
+      && audit.plot.height >= availablePlotHeight * 0.96,
+    "the Plotly root does not fill the available plot after the measured label-details row",
   );
+  if (labelDetails) assertLayout(Math.abs(audit.plot.bottom + labelDetails.marginTop - labelDetails.top) <= 2,
+    "fullscreen has a gap or overlap between the plot and label details");
   assertLayout(
     audit.toolbar.top > audit.plot.top && audit.toolbar.bottom < audit.plot.bottom,
     "the toolbar is not an in-canvas overlay",
@@ -1837,11 +1862,13 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       "input:not([disabled])",
       "select:not([disabled])",
       "textarea:not([disabled])",
+      "summary",
       '[tabindex]:not([tabindex="-1"])',
     ].join(",");
     const focusables = [...audit.shell.querySelectorAll(focusableSelector)]
-      .filter((element) => !element.hasAttribute("hidden") && element.getAttribute("aria-hidden") !== "true"
-        && element.getClientRects().length > 0);
+      .filter((element) => element.tabIndex >= 0 && !element.matches(":disabled")
+        && !element.closest('[hidden], [inert], [aria-hidden="true"]')
+        && element.checkVisibility({ visibilityProperty: true }) && element.getClientRects().length > 0);
     const actionFor = (element) => {
       if (element === audit.exitButton) return "fullscreen";
       return element?.getAttribute?.("data-ena-plot-action") ?? null;
@@ -1853,6 +1880,8 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       role: element.getAttribute("role"),
       testId: element.getAttribute("data-testid"),
       ariaLabel: element.getAttribute("aria-label"),
+      labelDetail: element.hasAttribute("data-ena-label-detail-id"),
+      labelDetailsSummary: element.matches("[data-ena-label-details] > summary"),
       insideShell: audit.shell.contains(element),
       active: document.activeElement === element,
     });
@@ -1867,9 +1896,14 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
     const dataActionControls = controls.filter((control) => control.action !== "fullscreen");
     const focusableDescriptors = focusables.map(descriptorFor);
     const activeIndex = focusables.indexOf(document.activeElement);
+    const labelDetails = audit.shell.querySelector("[data-ena-label-details]");
     return {
       controls,
       focusableDescriptors,
+      labelDetails: labelDetails ? { open: labelDetails.open,
+        summaryIncluded: focusables.includes(labelDetails.querySelector("summary")),
+        focusableButtonCount: [...labelDetails.querySelectorAll("button")].filter(button => focusables.includes(button)).length,
+        buttonCount: labelDetails.querySelectorAll("button").length } : null,
       currentActiveDescriptor: activeIndex >= 0
         ? descriptorFor(document.activeElement, activeIndex)
         : null,
@@ -1962,14 +1996,15 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
         pendingActions.every((control) => !entryState.focusableDescriptors.some((descriptor) => descriptor.action === control.action)),
         "fallback pending focusables included a disabled data action",
       );
-      const pendingRuntimeLast = entryState.focusableDescriptors.at(-1);
-      assertBrowser(Boolean(pendingRuntimeLast), "fallback pending state has no runtime focusable");
+      const pendingExitIndex = entryState.focusableDescriptors.findIndex(descriptor => descriptor.action === "fullscreen");
+      const pendingRuntimePrevious = entryState.focusableDescriptors[(pendingExitIndex - 1 + entryState.focusableDescriptors.length) % entryState.focusableDescriptors.length];
+      assertBrowser(pendingExitIndex >= 0 && Boolean(pendingRuntimePrevious), "fallback pending state has no reachable Exit or preceding focusable");
       await page.keyboard.press("Shift+Tab");
       const pendingAfterShiftTab = await readFallbackControlSnapshot();
       pendingShiftTabDestination = pendingAfterShiftTab.currentActiveDescriptor;
       assertBrowser(
-        sameFocusableDescriptor(pendingShiftTabDestination, pendingRuntimeLast),
-        "Shift+Tab from pending Exit did not reach the runtime last focusable",
+        sameFocusableDescriptor(pendingShiftTabDestination, pendingRuntimePrevious),
+        "Shift+Tab from pending Exit did not reach its actual preceding focusable",
       );
       assertBrowser(
         pendingShiftTabDestination?.insideShell,
@@ -2012,10 +2047,13 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       settledState.focusableDescriptors.every((descriptor) => descriptor.insideShell),
       "settled fallback focusables escaped the dialog shell",
     );
-    assertBrowser(
-      settledState.focusableDescriptors.at(-1)?.action === "fullscreen",
-      "Exit fullscreen is not the last runtime focusable",
-    );
+    const settledExitIndex = settledState.focusableDescriptors.findIndex(descriptor => descriptor.action === "fullscreen");
+    const settledRuntimeFirst = settledState.focusableDescriptors[0];
+    const settledRuntimeLast = settledState.focusableDescriptors.at(-1);
+    assertBrowser(settledExitIndex >= 0 && Boolean(settledRuntimeFirst) && Boolean(settledRuntimeLast), "Exit fullscreen is not keyboard reachable");
+    assertBrowser(settledState.labelDetails?.summaryIncluded, "visible label details summary is missing from keyboard traversal");
+    assertBrowser(!settledState.labelDetails.open && settledState.labelDetails.focusableButtonCount === 0,
+      "closed label details leaked buttons into keyboard traversal");
     assertBrowser(
       settledState.currentActiveDescriptor?.action === "fullscreen",
       "settling Plotly relayout moved focus away from Exit fullscreen",
@@ -2030,14 +2068,13 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
     await shellLocator.screenshot({ path: join(artifactDirectory, "fallback-fullscreen-before-assert.png") });
     assertFullscreenPlotLayout(fallbackLayoutAudit, "fallback fullscreen layout", "fallback");
 
-    const settledRuntimeLast = settledState.focusableDescriptors.at(-2);
-    assertBrowser(Boolean(settledRuntimeLast), "settled fallback has no runtime focusable");
+    const settledRuntimePrevious = settledState.focusableDescriptors[(settledExitIndex - 1 + settledState.focusableDescriptors.length) % settledState.focusableDescriptors.length];
     await page.keyboard.press("Shift+Tab");
     const settledAfterShiftTab = await readFallbackControlSnapshot();
     const settledShiftTabDestination = settledAfterShiftTab.currentActiveDescriptor;
     assertBrowser(
-      sameFocusableDescriptor(settledShiftTabDestination, settledRuntimeLast),
-      "Shift+Tab from Exit fullscreen did not reach the runtime last focusable",
+      sameFocusableDescriptor(settledShiftTabDestination, settledRuntimePrevious),
+      "Shift+Tab from Exit fullscreen did not reach its actual preceding focusable",
     );
     assertBrowser(
       settledShiftTabDestination?.insideShell,
@@ -2046,7 +2083,7 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
 
     await page.keyboard.press("Tab");
     const tabToExit = (await readFallbackControlSnapshot()).currentActiveDescriptor?.action === "fullscreen";
-    assertBrowser(tabToExit, "Tab from the penultimate focusable did not reach Exit fullscreen");
+    assertBrowser(tabToExit, "Tab from Exit's preceding focusable did not reach Exit fullscreen");
 
     const traversal = [];
     for (let step = 0; step < settledState.focusableDescriptors.length; step += 1) {
@@ -2054,6 +2091,8 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       const traversalState = await readFallbackControlSnapshot();
       const descriptor = traversalState.currentActiveDescriptor;
       assertBrowser(descriptor?.insideShell, "Tab traversal escaped the fallback dialog shell");
+      assertBrowser(sameFocusableDescriptor(descriptor, settledState.focusableDescriptors[(settledExitIndex + step + 1) % settledState.focusableDescriptors.length]),
+        "Tab did not visit the next actual focusable, including first/last wrap");
       traversal.push(descriptor);
     }
     assertBrowser(
@@ -2064,6 +2103,42 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       traversal.at(-1)?.action === "fullscreen",
       "one complete Tab traversal did not return to Exit fullscreen",
     );
+    assertBrowser(new Set(traversal.map(descriptor => descriptor.index)).size === settledState.focusableDescriptors.length,
+      "Tab traversal skipped a focusable or remained stuck");
+    for (let step = 0; step < settledState.focusableDescriptors.length && !sameFocusableDescriptor((await readFallbackControlSnapshot()).currentActiveDescriptor, settledRuntimeFirst); step++) {
+      await page.keyboard.press("Tab");
+    }
+    assertBrowser(sameFocusableDescriptor((await readFallbackControlSnapshot()).currentActiveDescriptor, settledRuntimeFirst), "Tab did not reach the first actual focusable");
+    await page.keyboard.press("Shift+Tab");
+    assertBrowser(sameFocusableDescriptor((await readFallbackControlSnapshot()).currentActiveDescriptor, settledRuntimeLast), "Shift+Tab did not wrap from first to last actual focusable");
+    await page.keyboard.press("Tab");
+    assertBrowser(sameFocusableDescriptor((await readFallbackControlSnapshot()).currentActiveDescriptor, settledRuntimeFirst), "Tab did not wrap from last to first actual focusable");
+
+    const labelDetailsLocator = shellLocator.locator("[data-ena-label-details]");
+    await labelDetailsLocator.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector("[data-ena-label-details]")?.open === true);
+    const expandedState = await readFallbackControlSnapshot();
+    assertBrowser(expandedState.labelDetails.open && expandedState.labelDetails.focusableButtonCount === expandedState.labelDetails.buttonCount && expandedState.labelDetails.buttonCount > 0,
+      "expanded label details did not expose their keyboard entries");
+    const expandedStartIndex = expandedState.currentActiveDescriptor.index;
+    const expandedTraversal = [];
+    for (let step = 0; step < expandedState.focusableDescriptors.length; step++) {
+      await page.keyboard.press("Tab");
+      const descriptor = (await readFallbackControlSnapshot()).currentActiveDescriptor;
+      assertBrowser(sameFocusableDescriptor(descriptor, expandedState.focusableDescriptors[(expandedStartIndex + step + 1) % expandedState.focusableDescriptors.length]),
+        "expanded label details broke the actual keyboard cycle");
+      expandedTraversal.push(descriptor);
+    }
+    assertBrowser(expandedTraversal.some(descriptor => descriptor.action === "fullscreen"), "expanded label details made Exit unreachable");
+    await waitForFullscreenCanvas(page);
+    const expandedLayoutAudit = await readFullscreenPlotLayout(page);
+    assertFullscreenPlotLayout(expandedLayoutAudit, "expanded label details fullscreen layout", "fallback");
+    writeFileSync(join(artifactDirectory, "expanded-label-details-fullscreen-layout.json"), JSON.stringify(expandedLayoutAudit, null, 2));
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector("[data-ena-label-details]")?.open === false);
+    assertBrowser((await readFallbackControlSnapshot()).labelDetails.focusableButtonCount === 0, "collapsed label details retained hidden keyboard entries");
+    await fullscreenButton.focus();
 
     const backgroundFocusAudit = await page.evaluate(() => {
       const audit = window.__openEnaFallbackFullscreenA11yAudit;
@@ -2158,6 +2233,9 @@ async function exerciseFallbackFullscreenAccessibility(page, args) {
       beforeFullscreen, restoredLayout,
       entryState,
       settledState,
+      expandedState,
+      expandedTraversal,
+      expandedLayoutAudit,
       pendingShiftTabDestination,
       settledShiftTabDestination,
       tabToExit,
