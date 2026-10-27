@@ -126,7 +126,7 @@ test("full browser summary carries both aggregate and participant standalone rec
   requires(["standaloneDownloads", "aggregate: verifyStandaloneDownloads(downloads.aggregate, aggregate)", "participant: verifyStandaloneDownloads(downloads.participant, participant)"]);
 });
 test("native trajectory geometry retains Codes square centroids black paths direction and zero edges", () => {
-  requires(["codesPresent", "centroidSquares", 't.marker?.symbol === "square" && t.marker?.size === 7', "blackTrajectories", "lineOnlyTrajectories", "directionArrowTraceCount > 0", "networkEdgeTraceCount, 0", "errorBarTraceCount === 0", "unknownTraceRoles.length === 0", "display action changed bound fitted coordinates"]);
+  requires(["codesPresent", "centroidSquares", 't.marker?.symbol === "square" && t.marker?.size === 4.5', "blackTrajectories", "lineOnlyTrajectories", "directionArrowTraceCount > 0", "networkEdgeTraceCount, 0", "errorBarTraceCount === 0", "unknownTraceRoles.length === 0", "display action changed bound fitted coordinates"]);
 });
 test("all seven camera poses and actual mouse orbit preserve bound science", () => {
   requires(['["isometric", "xy", "xz", "yz", "yx", "zx", "zy"]', "cameraMatches", "expectedCameraStates", "readRuntimeCamera", "waitForRuntimeCameraChange", "scene?._scene?.getCamera", 'page.mouse.down({ button: "left" })', "steps: 20", "assertBrowser(dragVerified", "cameraScreenshots", 'assertScientificInvariants("camera preset " + preset)']);

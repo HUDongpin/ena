@@ -532,7 +532,7 @@ async function authenticateAndRunTrajectory(page, args) {
     const allowed = new Set(["axis", "axis-label", "axis-arrowhead", "unit-points", "group-mean", "trajectory-path", "direction-arrow", "code-node", "code-label"]);
     const centroidTraces = traces.filter(trace => trace.meta?.role === "group-mean");
     const paths = traces.filter(trace => trace.meta?.role === "trajectory-path");
-    return { displayedCodes: traces.filter(t => t.meta?.role === "code-node").flatMap(t => t.text ?? []), centroidSquares: centroidTraces.length > 0 && centroidTraces.every(t => t.marker?.symbol === "square" && t.marker?.size === 7), blackTrajectories: paths.length > 0 && paths.every(t => t.line?.color === "black"), lineOnlyTrajectories: paths.every(t => t.mode === "lines" && t.marker === undefined), directionArrowTraceCount: traces.filter(t => t.meta?.role === "direction-arrow").length, participantTraceCount: traces.filter(t => t.meta?.role === "unit-points").length, networkEdgeTraceCount: traces.filter(t => t.meta?.role === "network-edge").length, errorBarTraceCount: traces.filter(t => Object.keys(t).some(k => k.startsWith("error_"))).length, unknownTraceRoles: traces.map(t => t.meta?.role).filter(role => !allowed.has(role)) };
+    return { displayedCodes: traces.filter(t => t.meta?.role === "code-node").flatMap(t => t.text ?? []), centroidSquares: centroidTraces.length > 0 && centroidTraces.every(t => t.marker?.symbol === "square" && t.marker?.size === 4.5), blackTrajectories: paths.length > 0 && paths.every(t => t.line?.color === "black"), lineOnlyTrajectories: paths.every(t => t.mode === "lines" && t.marker === undefined), directionArrowTraceCount: traces.filter(t => t.meta?.role === "direction-arrow").length, participantTraceCount: traces.filter(t => t.meta?.role === "unit-points").length, networkEdgeTraceCount: traces.filter(t => t.meta?.role === "network-edge").length, errorBarTraceCount: traces.filter(t => Object.keys(t).some(k => k.startsWith("error_"))).length, unknownTraceRoles: traces.map(t => t.meta?.role).filter(role => !allowed.has(role)) };
   });
   plotAudit.codesPresent = identities.codes.every(code => plotAudit.displayedCodes.includes(code.displayLabel));
   assert.ok(plotAudit.codesPresent && plotAudit.centroidSquares && plotAudit.blackTrajectories && plotAudit.lineOnlyTrajectories);
@@ -764,7 +764,7 @@ async function exerciseCamerasAndProjections(page, args) {
     await projectionSelect.selectOption(projection);
     projectionStates[projection] = await nativeSvgAudit(page);
     assertBrowser(projectionStates[projection].codeLabels.length === args.expectedCodes.length, "2D omitted fitted Code labels");
-    assertBrowser(projectionStates[projection].centroids.every(value => value.width === "7" && value.height === "7"), "2D centroid glyph changed");
+    assertBrowser(projectionStates[projection].centroids.every(value => value.width === "5" && value.height === "5"), "2D centroid glyph changed");
     assertBrowser(projectionStates[projection].networkEdges === 0, "2D trajectory contains mean-network edges");
     await assertScientificInvariants("2D projection " + projection);
   }

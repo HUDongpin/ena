@@ -62,7 +62,8 @@ test("native labels scale without changing fitted geometry and retain a keyboard
   const firstBase = boxes(base).find((box) => box.id?.startsWith("code:"))!;
   const firstLarger = boxes(larger).find((box) => box.id === firstBase.id)!;
   assert.ok(firstLarger.height > firstBase.height, "text size controls actual label metrics");
-  const geometry = (markup: string) => [...markup.matchAll(/<rect x="([^"]+)" y="([^"]+)" width="7" height="7"/gu)].map((match) => match[0]);
+  const geometry = (markup: string) => [...markup.matchAll(/<rect x="([^"]+)" y="([^"]+)" width="5" height="5"/gu)].map((match) => match[0]);
+  assert.equal(geometry(base).length, props.result.trajectoryPresentation.centroids.length, "every smaller centroid square retains its fitted centre");
   assert.deepEqual(geometry(larger), geometry(base), "label placement cannot change centroid coordinates");
   assert.match(base, /data-ena-label-leader="true"/);
 });
