@@ -82,7 +82,10 @@ test("actual native 2D and 3D rendering shows paths without adding statistics or
 
   assert.ok(spec.data.some((trace) => trace.meta.role === "trajectory-path"));
   assert.equal(suppressed.data.filter((trace) => trace.meta.role === "trajectory-path").length, spec.data.filter((trace) => trace.meta.role === "trajectory-path").length);
-  assert.deepEqual(suppressed.layout.scene, spec.layout.scene);
+  const { annotations: suppressedLabels, ...suppressedGeometry } = suppressed.layout.scene;
+  const { annotations: shownLabels, ...shownGeometry } = spec.layout.scene;
+  assert.deepEqual(suppressedGeometry, shownGeometry, "code-label suppression preserves axes, camera and scaling");
+  assert.deepEqual(suppressedLabels, shownLabels?.filter(label => !label.name.startsWith("code:")));
   assert.equal(suppressed.data.some((trace) => trace.meta.role === "code-node"), false);
 });
 

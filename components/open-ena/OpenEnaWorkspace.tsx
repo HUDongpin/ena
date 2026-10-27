@@ -506,7 +506,13 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const [primaryGroupName, setPrimaryGroupName] = useState(restoredView?.primaryGroupName ?? "");
   const [secondaryGroupName, setSecondaryGroupName] = useState(restoredView?.secondaryGroupName ?? "");
   const [axes, setAxes] = useState<string[]>(restoredView?.axes ?? []);
-  const [showPoints, setShowPoints] = useState(restoredView?.showPoints ?? true), [showNetworks, setShowNetworks] = useState(restoredView?.showNetworks ?? true), [showLabels, setShowLabels] = useState(restoredView?.showLabels ?? true);
+  const [showPoints, setShowPoints] = useState(restoredView?.showPoints ?? true), [showNetworks, setShowNetworks] = useState(restoredView?.showNetworks ?? true);
+  const [codeLabelVisibility, setCodeLabelVisibility] = useState(() => {
+    const restoredResult = initialCloudWorkspace?.result;
+    const restoredTrajectory = restoredResult?.configuration.analysisFamily === "standard" && restoredResult.configuration.analysis.model.type !== "EndPoint";
+    return { other: restoredTrajectory ? true : restoredView?.showLabels ?? true,
+      trajectory: restoredTrajectory ? restoredView?.showLabels ?? false : false };
+  });
   const [showUnitLabels, setShowUnitLabels] = useState(restoredView?.showUnitLabels ?? false), [showVariance, setShowVariance] = useState(restoredView?.showVariance ?? true), [showTrajectories, setShowTrajectories] = useState(restoredView?.showTrajectories ?? false);
   const [showGroupCentroidPaths, setShowGroupCentroidPaths] = useState(restoredView?.showGroupCentroidPaths ?? true);
   const [endpointsOnly, setEndpointsOnly] = useState(restoredView?.endpointsOnly ?? false);
@@ -620,6 +626,9 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const endpointControls: OpenEnaEndpointControlsV3 | null = primary && secondary && primary.token !== secondary.token && twoDAxes.length === 2
     ? { primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, axes: [twoDAxes[0], twoDAxes[1]] } : null;
   const isTrajectory = result?.configuration.analysisFamily === "standard" && result.configuration.analysis.model.type !== "EndPoint";
+  const codeLabelKind = isTrajectory ? "trajectory" : "other";
+  const showLabels = codeLabelVisibility[codeLabelKind];
+  const setShowLabels = (visible: boolean) => setCodeLabelVisibility(previous => ({ ...previous, [codeLabelKind]: visible }));
   // A comparison selection remains inspectable after restore even though the
   // confirmation required for running paired/repeated inference is never restored.
   const trajectorySelection: OpenEnaTrajectoryControlsV3["request"] | null = isTrajectory && twoDAxes.length === 2
@@ -1298,7 +1307,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const plotProps = { ...graph, codeColors, captureImageExport, runtimeDisabledPluginIds, resultIsStale: !current, isPluginResultCurrent, groupDisplay: groupDisplay ?? undefined, groupColumn: presentation?.config.groupColumn ?? null,
     xDimension, yDimension, zDimension, camera: cameraPreset, showPoints: showPoints && !display.allGroupsSuppressed,
     showNetworks: showNetworks && !display.allGroupsSuppressed, showLabels, showUnitLabels, showVariance, showTrajectories,
-    edgeScale, edgeThreshold, pointScale, plotZoom, flipX, flipY, nodeLayout, onNodeMove: moveNode, copy };
+    edgeScale, edgeThreshold, pointScale, textScale, plotZoom, flipX, flipY, nodeLayout, onNodeMove: moveNode, copy };
   const previewUnitsCurrent = previews.units.availability === "available" && sameScientificContextV3(previews.units.context, context);
   const previewHorizonsCurrent = previews.horizons.availability === "available" && sameScientificContextV3(previews.horizons.context, context);
   const modelSummary: OpenEnaModelScientificSummaryV3 = {
@@ -1323,7 +1332,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     onShowUnitLabelsChange={setShowUnitLabels} onShowPointsChange={setShowPoints} onUnitCircleChange={setUnitCircle}
     onFlipXChange={setFlipX} onFlipYChange={setFlipY} onPlotZoomChange={setPlotZoom}
     onResetNodeLayout={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}
-    onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric")); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(true); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
+    onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric")); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(!isTrajectory); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
     settingsOpen={plotSettingsOpen} onSettingsOpenChange={setPlotSettingsOpen} disabled={!result} />;
   const panelHeading = mode === "data"
     ? { kicker: restoredCopy.dataKicker, title: copy.data.title, description: copy.data.description }

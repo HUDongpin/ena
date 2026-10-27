@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { nativePlotGroupSettingsV3, nativePlotSummaryGroupsV3 } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { Row } from "jena-js";
@@ -14,6 +15,7 @@ import {
 import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style";
 import type { CameraPreset, GroupNetwork, OpenEnaResult, OpenEnaView } from "@/lib/open-ena/types";
 import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
+import { useSvgTrajectoryLabels, type SvgTrajectoryLabel } from "./useSvgTrajectoryLabels";
 
 interface OpenEnaPlotProps extends OpenEnaCodeGraphPresentation {
   result: OpenEnaPlotResult;
@@ -33,6 +35,7 @@ interface OpenEnaPlotProps extends OpenEnaCodeGraphPresentation {
   edgeScale: number;
   edgeThreshold: number;
   pointScale: number;
+  textScale?: number;
   plotZoom: number;
   flipX: boolean;
   flipY: boolean;
@@ -319,6 +322,7 @@ export default function OpenEnaPlot({
   edgeScale,
   edgeThreshold,
   pointScale,
+  textScale = 1,
   plotZoom,
   flipX,
   flipY,
@@ -327,6 +331,7 @@ export default function OpenEnaPlot({
   copy,
   svgRef,
 }: OpenEnaPlotProps) {
+  const [activeLabelId, setActiveLabelId] = useState<string | null>(null);
   const codePresentation = { showCodeGraph, codeVisibility, codeSourceByRenderedCode, codeLabelByRenderedCode };
   const canonicalNodes = (result.set.rotation.nodes ?? []).map((row) => ({
     x: numberValue(row, xDimension),
@@ -388,6 +393,8 @@ export default function OpenEnaPlot({
   const varianceX = (result.set.variance[xDimension] ?? 0) * 100;
   const varianceY = (result.set.variance[yDimension] ?? 0) * 100;
   const varianceZ = (result.set.variance[zDimension] ?? 0) * 100;
+  const axisLabelX = `${xDimension}${showVariance ? ` · ${varianceX.toFixed(1)}%` : ""}${flipX ? ` · ${copy.modelV3.workspace.plot.flippedLabel}` : ""}`;
+  const axisLabelY = `${yDimension}${showVariance ? ` · ${varianceY.toFixed(1)}%` : ""}${flipY ? ` · ${copy.modelV3.workspace.plot.flippedLabel}` : ""}`;
   const isComparison = result.groups.length === 2;
   const strongestEdges = result.set.adjacencyKey
     .filter((edge) => openEnaRenderedEdgeIsVisible(codePresentation, edge.source, edge.target))
@@ -415,6 +422,44 @@ export default function OpenEnaPlot({
   const referenceFigureNote = referenceToken && referenceFigureName && referenceFigureCaveat
     ? `Projected into fixed reference: ${referenceToken}. ${referenceFigureName}. ${referenceFigureCaveat}`
     : null;
+
+  const labelScale = Number.isFinite(textScale) ? Math.max(8 / 12, Math.min(20 / 12, textScale)) : 1;
+  const trajectoryLabels: SvgTrajectoryLabel[] = [];
+  const labelObstacles: { x: number; y: number; width: number; height: number }[] = [];
+  if (trajectory) {
+    for (const node of canonicalNodes.filter((item) => openEnaRenderedCodeIsVisible(codePresentation, item.label))) {
+      const point = positions.get(node.key)!;
+      labelObstacles.push({ x: point.x - 11, y: point.y - 11, width: 22, height: 22 });
+      if (!showLabels) continue;
+      const labelPoint = positions.get(`label-${node.label}`)!;
+      const text = openEnaRenderedCodeLabel(codePresentation, node.label);
+      trajectoryLabels.push({ id: `code:${node.label}`, kind: "code", code: node.label, text, detail: `${text} code node`, anchor: point,
+        fontSize: 14 * labelScale, priority: nodeLayout?.has(node.label) ? 100 : 80,
+        preferredOffset: { x: labelPoint.x - point.x, y: labelPoint.y - point.y - 30 } });
+    }
+    for (const [index, centroid] of trajectory.centroids.entries()) {
+      if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) continue;
+      const point = positions.get(`trajectory-centroid-${index}`)!;
+      labelObstacles.push({ x: point.x - 5.5, y: point.y - 5.5, width: 11, height: 11 });
+      trajectoryLabels.push({ id: `centroid:${centroid.key}`, kind: "centroid", text: centroid.horizonShortLabel,
+        detail: `${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`, anchor: point, fontSize: 13 * labelScale, priority: 60,
+        preferredOffset: { x: 28, y: -22 } });
+    }
+    if (showPoints) for (const unit of unitPoints) {
+      const point = positions.get(unit.key)!;
+      if (!visibleTrajectoryPoints?.has(trajectoryPointKey(unit.row))) continue;
+      const group = groupColumn ? result.groups.find((item) => item.name === String(unit.row[groupColumn])) ?? result.groups[0] : result.groups[0];
+      if (!nativePlotGroupSettingsV3(result, group?.name ?? "").showUnitPoints || result.groupPresentation?.hiddenUnits.has(String(unit.row.ENA_UNIT))) continue;
+      const radius = 7.5 * pointScale + 2;
+      labelObstacles.push({ x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2 });
+      if (showUnitLabels) trajectoryLabels.push({ id: `unit:${trajectoryPointKey(unit.row)}`, kind: "unit", text: String(unit.row.ENA_UNIT ?? ""),
+        detail: `${String(unit.row.ENA_UNIT ?? "")} · ${String(unit.row.Horizon ?? "")} · ${group?.name ?? ""}`, anchor: point,
+        fontSize: 11 * labelScale, priority: 20, preferredOffset: { x: radius + 14, y: -radius - 12 } });
+    }
+  }
+  const labelFrameKey = JSON.stringify([result.analyzedAt, result.boundPresentation?.binding, xDimension, yDimension, zDimension, flipX, flipY, plotZoom, axisLabelX, axisLabelY]);
+  const trajectoryLayout = useSvgTrajectoryLabels(trajectoryLabels, { x: 10, y: 10, width: WIDTH - 20, height: referenceFigureNote ? 492 : HEIGHT - 20 }, labelObstacles, labelFrameKey, activeLabelId);
+  const trajectoryTextStyle = (label: SvgTrajectoryLabel) => ({ fontFamily: "Arial, Helvetica, sans-serif", fontSize: `${label.fontSize}px`, fontWeight: label.kind === "code" ? 700 : 600, fill: "#263740", stroke: "none" } as const);
 
   return (
     <figure className="open-ena-plot-figure" tabIndex={0} aria-label={`${copy.workspace.comparison}. Scroll horizontally on small screens.`}>
@@ -450,10 +495,10 @@ export default function OpenEnaPlot({
             <line x1={WIDTH / 2} y1={PAD_Y / 2} x2={WIDTH / 2} y2={HEIGHT - PAD_Y / 2} />
             <line x1={PAD_X / 2} y1={HEIGHT / 2} x2={WIDTH - PAD_X / 2} y2={HEIGHT / 2} />
             <text x={WIDTH - 34} y={HEIGHT / 2 - 12} textAnchor="end">
-              {xDimension}{showVariance ? ` · ${varianceX.toFixed(1)}%` : ""}{flipX ? ` · ${copy.modelV3.workspace.plot.flippedLabel}` : ""}
+              {axisLabelX}
             </text>
             <text x={WIDTH / 2 + 12} y={30}>
-              {yDimension}{showVariance ? ` · ${varianceY.toFixed(1)}%` : ""}{flipY ? ` · ${copy.modelV3.workspace.plot.flippedLabel}` : ""}
+              {axisLabelY}
             </text>
           </g>
         ) : (
@@ -534,7 +579,7 @@ export default function OpenEnaPlot({
         {trajectory?.centroids.map((centroid, index) => {
           if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) return null;
           const point = positions.get(`trajectory-centroid-${index}`);
-          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true"><rect x={point.x - 3.5} y={point.y - 3.5} width={7} height={7} fill="black" /><title>{`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}</title><text x={point.x + 10} y={point.y - 8}>{centroid.horizon} · n={centroid.n}</text></g> : null;
+          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true" tabIndex={0} role="img" aria-label={`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}><rect x={point.x - 3.5} y={point.y - 3.5} width={7} height={7} fill="black" /><title>{`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}</title></g> : null;
         })}
         {showPoints && unitPoints.map((unit) => {
           const point = positions.get(unit.key);
@@ -565,7 +610,7 @@ export default function OpenEnaPlot({
                 stroke="#263740"
                 strokeWidth={1.5}
               />
-              {showUnitLabels ? (
+              {showUnitLabels && !trajectory ? (
                 <text
                   x={point.x + markSize + 4}
                   y={point.y - markSize - 2}
@@ -635,16 +680,20 @@ export default function OpenEnaPlot({
               transform={`translate(${point.x} ${point.y})`}
               filter="url(#ena-node-shadow)"
               data-ena-code-node-position={node.label}
+              tabIndex={trajectory ? 0 : undefined}
+              role={trajectory ? "img" : undefined}
+              aria-label={trajectory ? openEnaRenderedCodeLabel(codePresentation, node.label) : undefined}
             >
+              {trajectory ? <title>{openEnaRenderedCodeLabel(codePresentation, node.label)}</title> : null}
               <circle
-                r={view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
+                r={trajectory && view === "2d" ? 8 : view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
                 className="ena-result-node"
                 data-ena-code={node.label}
                 fill={nodeColor}
                 stroke={nodeColor}
                 style={{ fill: nodeColor, stroke: nodeColor }}
               />
-              {showLabels ? (
+              {showLabels && !trajectory ? (
                 <OpenEnaSvgDraggableNode
                   code={node.label}
                   position={new Map([[xDimension, labelNode.x], [yDimension, labelNode.y]])}
@@ -660,6 +709,34 @@ export default function OpenEnaPlot({
             </g>
           );
         })}
+        {trajectory ? <g ref={trajectoryLayout.layerRef} data-ena-trajectory-label-layer="true">
+          <g visibility="hidden" aria-hidden="true" pointerEvents="none">
+            {trajectoryLabels.map((label) => <text key={label.id} data-ena-label-measure={label.id} x={0} y={0} style={trajectoryTextStyle(label)}>{label.text}</text>)}
+          </g>
+          {trajectoryLabels.map((label) => {
+            const placement = trajectoryLayout.placements.get(label.id)!;
+            const metric = trajectoryLayout.metrics.get(label.id)!;
+            const lineEnd = { x: Math.max(placement.x, Math.min(placement.x + placement.width, label.anchor.x)), y: Math.max(placement.y, Math.min(placement.y + placement.height, label.anchor.y)) };
+            const labelText = <text data-ena-layout-label={label.id} x={placement.x + metric.baselineX} y={placement.y + metric.baselineY} style={trajectoryTextStyle(label)}>{label.text}</text>;
+            // Drag starts at the displayed anchor, including automatic displacement.
+            // Saved anchors still describe only labels; fitted node coordinates stay fixed.
+            const displayAnchor = projection.inverse2d(placement.x + placement.width / 2, placement.y + placement.height / 2 + 30);
+            return <g key={label.id} data-ena-label-box="true" data-label-id={label.id} data-label-visible={placement.visible}
+              data-label-x={placement.x} data-label-y={placement.y} data-label-width={placement.width} data-label-height={placement.height}
+              visibility={placement.visible ? "visible" : "hidden"} tabIndex={placement.visible ? 0 : undefined} role="img" aria-label={label.detail}
+              onFocus={() => setActiveLabelId(label.id)} onBlur={() => setActiveLabelId(current => current === label.id ? null : current)}>
+              <title>{label.detail}</title>
+              {placement.visible && Math.hypot(lineEnd.x - label.anchor.x, lineEnd.y - label.anchor.y) > 9
+                ? <line data-ena-label-leader="true" x1={label.anchor.x} y1={label.anchor.y} x2={lineEnd.x} y2={lineEnd.y} stroke="#7c8a91" strokeWidth={0.8} pointerEvents="none" /> : null}
+              <rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={2} fill="#fff" fillOpacity={0.94} pointerEvents="none" />
+              {label.code && displayAnchor ? <OpenEnaSvgDraggableNode code={label.code} position={new Map([[xDimension, displayAnchor.x], [yDimension, displayAnchor.y]])}
+                offset={{ x: 0, y: 0 }} disabled={view !== "2d" || !onNodeMove} onNodeMove={onNodeMove ?? (() => {})}
+                toDimensions={(clientX, clientY, target) => { const point = clientPointInSvg(target, clientX, clientY); const resolved = point ? projection.inverse2d(point.x, point.y) : null; return resolved ? new Map([[xDimension, resolved.x], [yDimension, resolved.y]]) : null; }}>
+                {labelText}
+              </OpenEnaSvgDraggableNode> : labelText}
+            </g>;
+          })}
+        </g> : null}
         {referenceFigureNote ? (
           <g className="ena-reference-figure-provenance" role="note" aria-label={referenceFigureNote}>
             <rect x="18" y="512" width="884" height="64" rx="8" fill="#ffffff" fillOpacity="0.94" stroke="#8aa8a5" />
@@ -669,6 +746,11 @@ export default function OpenEnaPlot({
           </g>
         ) : null}
       </svg>
+      {trajectory ? <details data-ena-trajectory-label-details="true"><summary>{copy.workspace.plotLabels}</summary><p>{copy.workspace.plotLabelsHelp}</p>
+        <ul>{trajectoryLabels.map((label) => <li key={label.id} tabIndex={0} data-ena-label-detail-id={label.id}
+          onFocus={() => setActiveLabelId(label.id)} onBlur={() => setActiveLabelId(current => current === label.id ? null : current)}>
+          {label.detail}{!trajectoryLayout.placements.get(label.id)?.visible ? ` — ${copy.workspace.deferredPlotLabel}` : ""}</li>)}</ul>
+      </details> : null}
       <div className="open-ena-legend" aria-label={copy.modelV3.workspace.plot.legendAria}>
         {result.groups.map((group, index) => {
           const encoding = getGroupVisualEncoding(index);
