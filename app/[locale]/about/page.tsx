@@ -3,17 +3,17 @@ import { notFound } from "next/navigation";
 import AboutContent from "@/components/about/open-ena/AboutContent";
 import { getDictionary, getLocaleMeta, isLocale, locales } from "@/lib/i18n";
 import { siteConfig } from "@/lib/site";
+import { getOpenEnaAttributionCopy } from "@/lib/open-ena-attribution";
 
 interface AboutPageProps {
   params: Promise<{ locale: string }>;
 }
 
-const description = "Meet the researchers behind Open ENA and explore the project's publications.";
-
 export async function generateMetadata({ params }: AboutPageProps): Promise<Metadata> {
   const { locale } = await params;
   const typedLocale = isLocale(locale) ? locale : "en";
   const dictionary = getDictionary(typedLocale);
+  const description = getOpenEnaAttributionCopy(typedLocale).metaDescription;
   const title = `${dictionary.nav.about} | ${siteConfig.brandName}`;
   const url = `/${typedLocale}/about`;
 
@@ -40,5 +40,5 @@ export async function generateMetadata({ params }: AboutPageProps): Promise<Meta
 export default async function AboutPage({ params }: AboutPageProps) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
-  return <AboutContent homeHref={`/${locale}`} />;
+  return <AboutContent locale={locale} openEnaHref={`/${locale}/open-ena`} />;
 }

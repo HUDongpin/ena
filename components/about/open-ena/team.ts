@@ -24,17 +24,6 @@ export const teamMembers: TeamMember[] = [
     profileLabel: "EdUHK profile",
   },
   {
-    name: "Prof. Eric Hamilton",
-    institution: "Pepperdine University",
-    role: "Jan and Robert Davidson Endowed Professor of Education and Technology",
-    bio: "A learning scientist and technologist whose work connects technology innovation, global collaboration, and quantitative ethnography.",
-    image: "/open-ena-about/team/eric-hamilton.png",
-    imageAlt: "Portrait of Prof. Eric Hamilton",
-    imagePosition: "center 24%",
-    profileUrl: "https://gsep.pepperdine.edu/about/our-people/faculty/eric-hamilton/",
-    profileLabel: "Pepperdine profile",
-  },
-  {
     name: "Ludwig Jianxing Yu",
     institution: "3D ENA Research Group · Hong Kong",
     role: "ENA variants · Dimensionality-reduction algorithms",

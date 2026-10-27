@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Geist } from "next/font/google";
 import Logo from "../Logo";
+import type { Locale } from "@/lib/i18n";
+import OpenEnaAttribution from "@/components/OpenEnaAttribution";
 import styles from "./HubFooter.module.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
@@ -16,8 +18,9 @@ export interface HubFooterCopy {
   resources: { openWebtool: string; browseResources: string; tutorial: string; officialWebtoolUrl: string; officialResourcesUrl: string; tutorialUrl: string };
 }
 
-export default function HubFooter({ copy, homeHref, aboutHref, featureBase, comfortableLinks = false }: {
+export default function HubFooter({ copy, locale, homeHref, aboutHref, featureBase, comfortableLinks = false }: {
   copy: HubFooterCopy;
+  locale: Locale;
   homeHref: string;
   aboutHref: string;
   featureBase: string;
@@ -44,6 +47,7 @@ export default function HubFooter({ copy, homeHref, aboutHref, featureBase, comf
         <div className="footer-brand">
           <Logo href={homeHref} />
           <p>{copy.description}</p>
+          <OpenEnaAttribution locale={locale} aboutHref={aboutHref} variant="footer" />
         </div>
         <div>
           <h2>{copy.navigation}</h2>

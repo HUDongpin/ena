@@ -1,8 +1,10 @@
 import Link from "next/link";
 import NetworkHero from "./NetworkHero";
+import type { Locale } from "@/lib/i18n";
+import OpenEnaAttribution from "@/components/OpenEnaAttribution";
 import styles from "./unified-home/Home.module.css";
 
-export default function UnifiedHome({ aboutHref = "/about", openEnaHref, footer }: { aboutHref?: string; openEnaHref: string; footer: React.ReactNode }) {
+export default function UnifiedHome({ locale, aboutHref = "/about", openEnaHref, footer }: { locale: Locale; aboutHref?: string; openEnaHref: string; footer: React.ReactNode }) {
   return (<>
     <div className={styles.home} lang="en" dir="ltr">
       <main id="main-content">
@@ -18,6 +20,7 @@ export default function UnifiedHome({ aboutHref = "/about", openEnaHref, footer 
           </div>
           <NetworkHero />
         </section>
+        <OpenEnaAttribution locale={locale} aboutHref={aboutHref} />
       </main>
     </div>
     {footer}
