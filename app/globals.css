@@ -14504,15 +14504,35 @@ html:has(.open-ena-page) {
 
 .open-ena-attribution-workspace {
   flex: 0 0 auto;
-  padding: 8px 13px;
+  padding: 6px 13px;
   border-block-end: 1px solid #c9d7df;
   background: #f5f9fc;
   color: #294452;
   font-size: 0.75rem;
 }
 
-.open-ena-attribution-workspace .open-ena-attribution-purpose { margin-block-start: 2px; }
+.open-ena-attribution-workspace .open-ena-attribution-credit,
+.open-ena-attribution-workspace .open-ena-attribution-purpose {
+  display: inline;
+  margin: 0;
+  margin-inline-end: 10px;
+}
 .open-ena-attribution-workspace a.open-ena-attribution-link { padding-block: 3px; }
+
+/* The attribution height varies by language. Keep the existing Data View
+   bottom bar outside the scrolling results so it cannot cover plot actions. */
+@container open-ena-viewport (min-width: 901px) {
+  .ena-visual-workspace:has(> .open-ena-attribution-workspace) {
+    overflow: hidden;
+  }
+  .open-ena-attribution-workspace + div {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-block-end: 44px;
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+}
 
 @media (max-width: 480px) {
   .open-ena-attribution-home { width: calc(100% - 32px); }

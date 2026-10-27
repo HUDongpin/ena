@@ -49,7 +49,7 @@ const values = [[1,2,1,0],[2,1,3,1],[1,3,1,2],[3,1,2,1],[1,1,4,2],[2,4,1,3],[4,2
 const codes = ["A", "B", "C", "D"];
 const dataset = { name: "attribution-synthetic.csv", source: "upload", sizeBytes: 1024,
  headers: ["unit", "horizon", "group", ...codes], rows: values.map((value, index) => ({
- unit: "synthetic-" + index, horizon: "h" + Math.floor(index / 2), group: index % 2 ? "Treatment" : "Control",
+ unit: "synthetic-" + index, horizon: "h" + Math.floor(index / 2), group: index % 2 ? "SYNTHETIC_SCAFFOLDED" : "SYNTHETIC_BASELINE",
  ...Object.fromEntries(codes.map((code, i) => [code, value[i]])) })) };
 const order = { kind: "columns", keys: [{ column: "unit", direction: "ascending", comparator: { type: "text", locale: "en-US", sensitivity: "variant", numeric: false } }] };
 const standard = { unitColumns: ["unit"], horizonColumns: ["horizon"], groupColumn: "group", codes,
@@ -308,7 +308,31 @@ try {
   await checkAttributions("en", "workspace", 1440);
   await screenshot("workspace-result-3d.png", false);
   assert.equal(await page.evaluate(() => JSON.stringify(window.__attributionJobs[0].result.binding)), identity);
-  report.workflow = { displayFrameFallback, realStandardResult: true, dataView: true, twoD: true, threeDSurface: true, popupPreservesResultAndDataView: true, workerJobs: await page.evaluate(() => window.__attributionJobs.length) };
+  const fullscreenChecks = [];
+  for (const locale of ["en", "de", "ar"]) {
+    if (locale !== "en") {
+      await mount(locale, "workspace", 1440, true);
+      await page.getByRole("button", { name: "Model", exact: true }).click();
+      await page.waitForFunction(() => { const button = document.querySelector('[data-testid="open-ena-run-model"]'); return button && !button.disabled; });
+      await page.getByTestId("open-ena-run-model").click();
+      await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current");
+      await page.locator(".ena-visual-toolbar").getByRole("button", { name: "3D ENA", exact: true }).click();
+      await page.getByTestId("open-ena-3d-group-contrast").waitFor();
+    }
+    for (const height of [900, 844, 768]) {
+      await page.setViewportSize({ width: 1440, height });
+      for (const [role, name] of [["comparison", "Comparison"], ["primary", "Primary"], ["secondary", "Secondary"]]) {
+        const panel = page.getByTestId(`open-ena-3d-${role}-plot`);
+        const fullscreen = panel.getByRole("button", { name: `${name} Plot: Enter Fullscreen`, exact: true });
+        await fullscreen.click({ timeout: 5000 });
+        await page.waitForFunction(() => document.fullscreenElement || document.querySelector('[data-fallback-fullscreen="true"]'));
+        await panel.getByRole("button", { name: `${name} Plot: Exit Fullscreen`, exact: true }).click();
+        await page.waitForFunction(() => !document.fullscreenElement && !document.querySelector('[data-fallback-fullscreen="true"]'));
+        fullscreenChecks.push({ locale, height, role });
+      }
+    }
+  }
+  report.workflow = { displayFrameFallback, realStandardResult: true, dataView: true, twoD: true, threeDSurface: true, popupPreservesResultAndDataView: true, fullscreenChecks, workerJobs: await page.evaluate(() => window.__attributionJobs.length) };
   assert.equal(report.workflow.workerJobs, 1);
   assert.deepEqual(report.errors, [], "browser script/React errors");
   report.status = "passed";

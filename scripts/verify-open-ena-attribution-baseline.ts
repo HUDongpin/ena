@@ -42,8 +42,13 @@ test("global styles preserve the complete live prefix and only append scoped att
   assert.ok(added.length > 0);
   for (const match of added.matchAll(/([^{}]+)\{/g)) {
     const selector = match[1].trim();
-    if (selector.startsWith("@")) assert.equal(selector, "@media (max-width: 480px)");
-    else for (const item of selector.split(",")) assert.match(item.trim(), /^\.open-ena-attribution(?:[\s.:-]|$)/);
+    if (selector.startsWith("@")) assert.ok([
+      "@media (max-width: 480px)", "@container open-ena-viewport (min-width: 901px)",
+    ].includes(selector));
+    else for (const item of selector.split(",")) {
+      if (item.trim() === ".ena-visual-workspace:has(> .open-ena-attribution-workspace)") continue;
+      assert.match(item.trim(), /^\.open-ena-attribution(?:[\s.:-]|$)/);
+    }
   }
 });
 
