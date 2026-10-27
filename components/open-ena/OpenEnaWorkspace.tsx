@@ -1227,7 +1227,11 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const trajectorySettings = useMemo(() => ({ showCentroidPaths: showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys,
     groupSettingsByToken: baseDisplay.groups, showDirection: showTrajectoryDirection, showConfidenceIntervals: showTrajectoryConfidenceIntervals }),
     [showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys, baseDisplay.groups, showTrajectoryDirection, showTrajectoryConfidenceIntervals]);
-  const trajectoryUncertainty = useTrajectoryUncertaintyV3(isTrajectory ? result as BoundStandardResultV3 : null, currentPlan, current, trajectorySettings);
+  // A completed fit refreshes the compiler-owned plan. Wait for that plan so
+  // its replacement does not cancel and restart the same bootstrap worker.
+  const trajectoryUncertainty = useTrajectoryUncertaintyV3(
+    isTrajectory && (!current || currentCompilation?.plan === currentPlan) ? result as BoundStandardResultV3 : null,
+    currentPlan, current, trajectorySettings);
   const trajectoryPresentation = useMemo(() => result && isTrajectory ? buildTrajectoryPresentationV3(result as BoundStandardResultV3, trajectorySettings, trajectoryUncertainty) : undefined,
     [result, isTrajectory, trajectorySettings, trajectoryUncertainty]);
   const hasHiddenUnits = hiddenUnitKeys.length > 0;

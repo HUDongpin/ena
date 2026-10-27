@@ -66,6 +66,8 @@ async function loginAndLoad(page, baseUrl) {
     const NativeWorker = window.Worker;
     window.__task38WorkerResponses = [];
     window.__task38WorkerRequests = [];
+    window.__task38CiRequests = [];
+    window.__task38CiResponses = [];
     window.__task38ReadinessSamples = [];
     // Read-only simultaneous readiness: never manufactures Ready or result data.
     window.__task38ReadyPlots = () => {
@@ -81,9 +83,14 @@ async function loginAndLoad(page, baseUrl) {
       return roots;
     };
     window.Worker = class extends NativeWorker {
-      postMessage(message, ...args) { if (message?.kind === "run-open-ena-plan-v3") window.__task38WorkerRequests.push(structuredClone(message)); return super.postMessage(message, ...args); }
+      postMessage(message, ...args) {
+        if (message?.kind === "run-open-ena-plan-v3") window.__task38WorkerRequests.push(structuredClone(message));
+        if (message?.kind === "run" && String(message.id).startsWith("trajectory-uncertainty-")) window.__task38CiRequests.push({ id: message.id, bindingKey: message.input?.bindingKey });
+        return super.postMessage(message, ...args);
+      }
       constructor(...args) { super(...args); this.addEventListener("message", event => {
         if (event.data?.kind === "result-v3") window.__task38WorkerResponses.push(structuredClone(event.data));
+        if (event.data?.kind === "result" && String(event.data.id).startsWith("trajectory-uncertainty-")) window.__task38CiResponses.push({ id: event.data.id, bindingKey: event.data.result?.bindingKey });
       }); }
     };
   });
@@ -994,6 +1001,11 @@ async function auditTrajectoryCodeColorCascade(page, rail) {
   assert.equal(await page.evaluate(() => window.__task38WorkerResponses.at(-1)?.result.configuration.analysis.model.type), "SeparateTrajectory");
   const trajectoryTransition = await page.evaluate(before => ({ requestsAdded: window.__task38WorkerRequests.length - before.requests, responsesAdded: window.__task38WorkerResponses.length - before.responses, elapsedMs: performance.now() - before.mark, freshSourceAndBoundPlan: true }), beforeTrajectory);
   assert.equal(trajectoryTransition.requestsAdded, 1); assert.equal(trajectoryTransition.responsesAdded, 1);
+  await page.waitForFunction(() => window.__task38CiResponses.length > 0, null, { timeout: 30000 });
+  const uncertainty = await page.evaluate(() => ({ requests: window.__task38CiRequests, responses: window.__task38CiResponses }));
+  assert.equal(uncertainty.requests.length, 1, `one fitted result must start only one admitted CI job: ${JSON.stringify(uncertainty)}`);
+  assert.equal(uncertainty.responses.length, 1);
+  assert.equal(uncertainty.responses[0].bindingKey, uncertainty.requests[0].bindingKey);
 
   await rail.getByRole("button", { name: "Model", exact: true }).click();
   const tablist = longitudinalControls.getByRole("tablist", { name: "Model configuration" });
@@ -1157,6 +1169,7 @@ async function auditTrajectoryCodeColorCascade(page, rail) {
     code,
     endpointDownloadEnabled: true,
     trajectoryTransition,
+    uncertainty,
     resultCompleted: true,
     longitudinalAncestor: { panel: true, trigger: true, dialog: true },
     trigger: triggerStyle,
