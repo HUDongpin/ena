@@ -449,3 +449,26 @@ test("real typed result preserves exact mixed visibility and leaves excluded Mea
   const undone = reduce(excluded, { type: "undo-model-edit" });
   assert.deepEqual(undone.drafts.standard, means.drafts.standard);
 });
+
+for (const view of ["2d", "3d"] as const) test(`native trajectory Group CI is operable in ${view} while unsupported outlier guides remain disabled`, async () => {
+  const fixture = await bindingFixtureV3(datasetSha256, (draft, data) => {
+    draft.model = "AccumulatedTrajectory";
+    data.rows = [0, 1, 2, 3].flatMap(unit => [1, 2, 3].map(period => ({
+      unit: `u${unit}`, horizon: `h${period}`, time: period, group: unit < 2 ? "A" : "B",
+      A: 1 + (unit + period) % 3, B: 1 + (period + unit * 2) % 4, C: 1 + (period * 2 + unit) % 5,
+    })));
+  });
+  const result = await bindResultV3(fixture.plan, runStandardPlanV3(fixture.plan), {
+    processedRows: fixture.plan.rows.length, maximumBufferedRows: 0, numericCellsAllocated: 120,
+    peakBytesObservedOrBounded: 10240, observationMethod: "exact-counters-and-conservative-byte-bound",
+  }, fixture.compiled.diagnostics);
+  const state = { ...createModelStateV3(drafts(), result.binding.datasetSha256), result, resultStatus: "current" as const };
+  const markup = renderToStaticMarkup(createElement(OpenEnaUnitsPanelV3, { ...props(state), view }));
+  const confidence = [...markup.matchAll(/<input\b[^>]*aria-label="Show confidence intervals for [^"]+"[^>]*>/gu)].map(match => match[0]);
+  const outliers = [...markup.matchAll(/<input\b[^>]*aria-label="Show outlier intervals for [^"]+"[^>]*>/gu)].map(match => match[0]);
+  assert.ok(confidence.length > 0);
+  assert.ok(confidence.every(input => !input.includes('disabled=""')), "trajectory Bootstrap CI must be available through each Group's saved control");
+  assert.ok(outliers.length > 0 && outliers.every(input => input.includes('disabled=""')));
+  assert.match(markup, /Trajectory outlier intervals are unavailable/u);
+  assert.doesNotMatch(markup, /do not provide confidence|mean ± 1\.5/u);
+});

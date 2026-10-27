@@ -85,3 +85,26 @@ test("measurement or view changes invalidate old positions and cannot emit nonfi
   assert.equal(invalid.get("label")?.visible, false);
   assert.ok(Object.values(invalid.get("label")!).every(value => typeof value !== "number" || Number.isFinite(value)));
 });
+
+test("adjacent labels stay close to their anchor instead of retaining a distant callout", async () => {
+  const { placePlotLabels } = await layoutModule();
+  const label = { id: "TP1", anchor: { x: 120, y: 80 }, width: 22, height: 13, priority: 300, placement: "adjacent" as const };
+  const previous = new Map([[label.id, { id: label.id, x: 240, y: 120, width: 22, height: 13, dx: 131, dy: 46.5, visible: true }]]);
+  const placed = placePlotLabels({ labels: [label], bounds: { x: 0, y: 0, width: 320, height: 180 }, previous }).get(label.id)!;
+  assert.ok(placed.visible);
+  const gapX = Math.max(0, Math.abs(placed.dx) - placed.width / 2), gapY = Math.max(0, Math.abs(placed.dy) - placed.height / 2);
+  assert.ok(Math.hypot(gapX, gapY) <= 20, "period text must remain beside its own centroid");
+});
+
+test("compact labels prefer clear local space but can mask faint CI dots instead of becoming distant callouts", async () => {
+  const { placePlotLabels } = await layoutModule();
+  const labels = [{ id: "TP1", anchor: { x: 120, y: 80 }, width: 20, height: 12, priority: 300, placement: "adjacent" as const }];
+  const bounds = { x: 0, y: 0, width: 240, height: 160 };
+  const obstacles = [{ x: 115, y: 75, width: 10, height: 10 }, { x: 80, y: 40, width: 80, height: 80, soft: true }];
+  const result = placePlotLabels({ labels, bounds, obstacles }).get("TP1")!;
+  assert.ok(result.visible);
+  assert.equal(overlaps(result, obstacles[0]), false, "the actual centroid remains uncovered");
+  assert.ok(Math.abs(result.dx) <= 30 && Math.abs(result.dy) <= 25);
+  const defaultLabel = placePlotLabels({ labels: [{ ...labels[0], placement: undefined }], bounds, obstacles }).get("TP1")!;
+  assert.equal(overlaps(defaultLabel, obstacles[1]), false, "other label types retain the existing strict avoidance");
+});

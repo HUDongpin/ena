@@ -81,7 +81,7 @@ test("node layout is result-bound and reset independently from camera and plot s
   assert.match(v3, /nodeOverrides.hash === resultHash/);
   assert.match(v3, /onResetNodeLayout=\{\(\) => setNodeOverrides/);
   assert.match(v3, /onReset=\{\(\) => \{ setEdgeScale/);
-  assert.match(v3, /setCamera\(cameraForPreset\("isometric"\)\)/);
+  assert.match(v3, /setCamera\(cameraForPreset\("isometric", isTrajectory \? OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM : 1\)\)/);
   assert.match(v3, /codeSourceByRenderedCode/);
 
 });

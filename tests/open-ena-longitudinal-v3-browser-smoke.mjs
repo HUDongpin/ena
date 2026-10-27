@@ -57,7 +57,7 @@ const expectedCameraLabels = {
 const expectedCameraStates = {
   isometric: {
     center: { x: 0, y: 0, z: 0 },
-    eye: { x: 1.45 / 1.5, y: 1.45 / 1.5, z: 1.25 / 1.5 },
+    eye: { x: 1.45 / (1.5 * 1.25), y: 1.45 / (1.5 * 1.25), z: 1.25 / (1.5 * 1.25) },
     up: { x: 0, y: 0, z: 1 },
     projection: { type: "perspective" },
   },
@@ -527,18 +527,34 @@ async function authenticateAndRunTrajectory(page, args) {
   }
   await nativeProjectionControl(page).selectOption("3d");
   const plot = page.locator('[data-ena-plotly-root=true]');
+  await page.waitForFunction(() => !document.querySelector('[data-ena-ci-status="pending"]')
+    && document.querySelector('[data-ena-plotly-root=true]')?.data?.some(trace => trace.meta?.role === "confidence-interval"));
   const plotAudit = await plot.evaluate(root => {
     const traces = root.data;
-    const allowed = new Set(["axis", "axis-label", "axis-arrowhead", "unit-points", "group-mean", "trajectory-path", "direction-arrow", "code-node", "code-label"]);
+    const allowed = new Set(["axis", "axis-label", "axis-arrowhead", "unit-points", "group-mean", "trajectory-path", "direction-arrow", "code-node", "code-label", "confidence-interval"]);
     const centroidTraces = traces.filter(trace => trace.meta?.role === "group-mean");
-    const paths = traces.filter(trace => trace.meta?.role === "trajectory-path");
-    return { displayedCodes: traces.filter(t => t.meta?.role === "code-node").flatMap(t => t.text ?? []), centroidSquares: centroidTraces.length > 0 && centroidTraces.every(t => t.marker?.symbol === "square" && t.marker?.size === 4.5), blackTrajectories: paths.length > 0 && paths.every(t => t.line?.color === "black"), lineOnlyTrajectories: paths.every(t => t.mode === "lines" && t.marker === undefined), directionArrowTraceCount: traces.filter(t => t.meta?.role === "direction-arrow").length, participantTraceCount: traces.filter(t => t.meta?.role === "unit-points").length, networkEdgeTraceCount: traces.filter(t => t.meta?.role === "network-edge").length, errorBarTraceCount: traces.filter(t => Object.keys(t).some(k => k.startsWith("error_"))).length, unknownTraceRoles: traces.map(t => t.meta?.role).filter(role => !allowed.has(role)) };
+    const paths = traces.filter(trace => trace.name === "Observed Group centroid path");
+    const intervals = traces.filter(trace => trace.meta?.role === "confidence-interval");
+    const intervalKeys = [...new Set(intervals.map(trace => trace.meta?.centroidKey))];
+    const confidenceWireframes = intervals.length > 0 && intervalKeys.length === centroidTraces.length
+      && intervals.every(trace => typeof trace.meta?.centroidKey === "string" && trace.type === "scatter3d" && trace.mode === "lines"
+        && trace.line?.dash === "dot" && trace.meta?.confidenceLevel === 0.95 && trace.meta?.jointRegion === false
+        && trace.meta?.intervalMethod === "unit-history-bootstrap-percentile-95" && trace.meta?.sampleSize >= 2
+        && trace.x.length === trace.y.length && trace.x.length === trace.z.length
+        && [trace.x, trace.y, trace.z].every(axis => axis.every(Number.isFinite)))
+      && intervalKeys.every(key => {
+        const box = intervals.filter(trace => trace.meta.centroidKey === key);
+        return box.length === 6 && new Set(box.map(trace => trace.meta.intervalEdge)).size === 6
+          && box.reduce((edges, trace) => edges + trace.x.length - 1, 0) === 12;
+      });
+    return { confidenceWireframes, confidenceCentroidCount: intervalKeys.length, confidenceTraceCount: intervals.length, displayedCodes: traces.filter(t => t.meta?.role === "code-node").flatMap(t => t.text ?? []), centroidSquares: centroidTraces.length > 0 && centroidTraces.every(t => t.marker?.symbol === "square" && t.marker?.size === 4.5), blackTrajectories: paths.length > 0 && paths.every(t => t.line?.color === "black"), lineOnlyTrajectories: paths.every(t => t.mode === "lines" && t.marker === undefined), directionArrowTraceCount: traces.filter(t => t.meta?.role === "direction-arrow").length, participantTraceCount: traces.filter(t => t.meta?.role === "unit-points").length, networkEdgeTraceCount: traces.filter(t => t.meta?.role === "network-edge").length, errorBarTraceCount: traces.filter(t => Object.keys(t).some(k => k.startsWith("error_"))).length, unknownTraceRoles: traces.map(t => t.meta?.role).filter(role => !allowed.has(role)) };
   });
   plotAudit.codesPresent = identities.codes.every(code => plotAudit.displayedCodes.includes(code.displayLabel));
   assert.ok(plotAudit.codesPresent && plotAudit.centroidSquares && plotAudit.blackTrajectories && plotAudit.lineOnlyTrajectories);
   assert.ok(plotAudit.directionArrowTraceCount > 0 && plotAudit.participantTraceCount > 0);
   assert.equal(plotAudit.networkEdgeTraceCount, 0);
   assert.ok(plotAudit.errorBarTraceCount === 0 && plotAudit.unknownTraceRoles.length === 0);
+  assert.ok(plotAudit.confidenceWireframes, "every centroid must have a finite, dotted, twelve-edge pointwise bootstrap CI wireframe");
   await nativeScience(page);
   return { ...plotAudit, ...science, expectedCodes: identities.codes.map(code => code.displayLabel), orderedHorizons, fitted, rankDownloads, pathRows };
 }
@@ -1620,6 +1636,8 @@ async function readFullscreenPlotLayout(page) {
           ? "fallback"
           : "none",
       shell: shellBox,
+      plotRegion: boxFor(root.closest(".open-ena-interactive-3d-region")),
+      trajectoryLegend: boxFor(shell?.querySelector(".ena-trajectory-legend")),
       rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
       labelDetails: labelDetailsBox ? { ...labelDetailsBox, open: labelDetailsElement.open,
         marginTop: Number.parseFloat(labelDetailsStyle.marginTop), marginBottom: Number.parseFloat(labelDetailsStyle.marginBottom),
@@ -1706,7 +1724,18 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
   const availablePlotHeight = audit.shell.height - reservedDetailsHeight;
   const availablePlotBottom = audit.shell.bottom - reservedDetailsHeight;
   assertLayout(availablePlotHeight > 0, "label details consumed the complete plot");
-  const rightInset = audit.shell.right - audit.toolbar.right;
+  const plotRegion = audit.plotRegion ?? audit.shell;
+  const trajectoryLegend = audit.trajectoryLegend;
+  if (trajectoryLegend) {
+    const legendGap = trajectoryLegend.left >= plotRegion.right - 1
+      ? trajectoryLegend.left - plotRegion.right : plotRegion.left - trajectoryLegend.right;
+    assertLayout(trajectoryLegend.width > 0 && legendGap >= -1 && legendGap <= 24
+      && Math.abs(Math.min(plotRegion.left, trajectoryLegend.left) - audit.shell.left) <= 2
+      && Math.abs(Math.max(plotRegion.right, trajectoryLegend.right) - audit.shell.right) <= 2
+      && trajectoryLegend.top >= audit.shell.top - 1 && trajectoryLegend.bottom <= availablePlotBottom + 1,
+    "the separate trajectory legend overlaps the plot or falls outside its allocated fullscreen area");
+  }
+  const rightInset = plotRegion.right - audit.toolbar.right;
   const toolbarCenter = (audit.toolbar.top + audit.toolbar.bottom) / 2;
   const plotCenter = (audit.plot.top + audit.plot.bottom) / 2;
   assertLayout(rightInset >= 6 && rightInset <= 22, "the action toolbar is not at the far-right edge");
@@ -1733,7 +1762,7 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
   assertLayout(
     Math.abs(audit.plot.top - audit.shell.top) <= 2
       && Math.abs(audit.plot.bottom - availablePlotBottom) <= 2
-      && audit.plot.width >= audit.shell.width * 0.96
+      && audit.plot.width >= plotRegion.width * 0.96
       && audit.plot.height >= availablePlotHeight * 0.96,
     "the Plotly root does not fill the available plot after the measured label-details row",
   );
@@ -1751,6 +1780,7 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
       && left.bottom > right.top
   );
   assertLayout(!boxesOverlap(audit.toolbar, audit.legend), "the toolbar covers the Plotly legend");
+  assertLayout(!boxesOverlap(audit.toolbar, trajectoryLegend), "the toolbar covers the separate trajectory legend");
   assertLayout(!boxesOverlap(audit.toolbar, audit.modebar), "the toolbar covers any visible modebar");
   assertLayout(
     audit.webglRuntimeReady

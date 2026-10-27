@@ -22,9 +22,11 @@ import {
 import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
 import type { OpenEnaUnitPointStyle } from "./unit-point-style";
 import { marginalMeanStudentT95 } from "./uncertainty";
+import { trajectoryCentroidDescriptionV3, trajectoryHorizonColorV3 } from "./trajectory-style-v3";
 
 export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
 export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
+export const OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM = 1.25;
 
 export const OPEN_ENA_3D_AXIS_COLORS = ["#e00000", "#0000d0", "#15803d"] as const;
 const AXIS_COLORS = OPEN_ENA_3D_AXIS_COLORS;
@@ -67,12 +69,13 @@ export interface OpenEna3dTraceMeta {
   edgeValue?: number;
   edgeScaleDenominator?: number;
   confidenceLevel?: number;
-  intervalMethod?: "marginal-student-t-95";
+  intervalMethod?: "marginal-student-t-95" | "unit-history-bootstrap-percentile-95";
   intervalInterpretation?: "three-separate-marginal-confidence-interval-wireframe";
   jointRegion?: false;
   sampleSize?: number;
   degreesFreedom?: number;
   intervalEdge?: string;
+  centroidKey?: string;
   pointStyle?: OpenEnaUnitPointStyle;
   groupColor?: string;
   ground?: string;
@@ -106,7 +109,7 @@ export interface OpenEna3dTrace {
   u?: number[];
   v?: number[];
   w?: number[];
-  anchor?: "tip";
+  anchor?: "tip" | "center";
   sizemode?: "absolute" | "raw";
   sizeref?: number;
   colorscale?: Array<[number, string]>;
@@ -128,7 +131,7 @@ export interface OpenEna3dTrace {
 }
 
 /** Display-only annotations. Their x/y/z remain scientific fitted anchors;
- * automatic collision avoidance changes only the detached runtime ax/ay. */
+ * automatic collision avoidance changes only detached runtime pixel offsets. */
 export interface OpenEna3dSceneAnnotation {
   name: string;
   x: number;
@@ -136,7 +139,7 @@ export interface OpenEna3dSceneAnnotation {
   z: number;
   text: string;
   hovertext: string;
-  showarrow: true;
+  showarrow: boolean;
   arrowhead: 0;
   arrowwidth: number;
   arrowcolor: string;
@@ -300,6 +303,7 @@ export interface OpenEna3dPlotLayout {
   plot_bgcolor: string;
   font: { family: string; color: string; size: number };
   legend: { orientation: "h"; x: number; y: number };
+  showlegend?: boolean;
   hoverlabel: { bgcolor: string; font: { color: string } };
   uirevision: typeof OPEN_ENA_3D_UI_REVISION;
   annotations: Array<{
@@ -424,11 +428,12 @@ const CAMERA_PRESETS: Record<CameraPreset, OpenEna3dCamera> = {
 };
 
 /** Returns a fresh display-only Plotly camera for the selected preset. */
-export function cameraForPreset(preset: CameraPreset): OpenEna3dCamera {
+export function cameraForPreset(preset: CameraPreset, defaultZoom = 1): OpenEna3dCamera {
   const camera = CAMERA_PRESETS[preset];
+  const distance = camera.projection.type === "perspective" ? 1 / clamp(defaultZoom, .35, 3, 1) : 1;
   return {
     center: { ...camera.center },
-    eye: { ...camera.eye },
+    eye: { x: camera.eye.x * distance, y: camera.eye.y * distance, z: camera.eye.z * distance },
     up: { ...camera.up },
     projection: { ...camera.projection },
   };
@@ -530,8 +535,8 @@ function edgeWeight(groups: GroupNetwork[], edgeName: string) {
   return { value, groupIndex, comparison: false };
 }
 
-export function scaledCamera(preset: CameraPreset, plotZoom: number) {
-  const camera = cameraForPreset(preset);
+export function scaledCamera(preset: CameraPreset, plotZoom: number, defaultZoom = 1) {
+  const camera = cameraForPreset(preset, defaultZoom);
   if (camera.projection.type === "orthographic") return camera;
   const distanceScale = 1 / clamp(plotZoom, 0.35, 3, 1);
   return {
@@ -553,6 +558,7 @@ export function displayAspectRatio(preset: CameraPreset, plotZoom: number) {
 export function axisTraces(
   extent: number,
   dimensions: readonly [string, string, string],
+  colors: readonly [string, string, string] = AXIS_COLORS,
 ): OpenEna3dTrace[] {
   const safeExtent = Math.max(0.001, Math.abs(extent));
   const shaftExtent = safeExtent * 0.88;
@@ -568,7 +574,7 @@ export function axisTraces(
     dimension,
     direction: directions[index],
     physicalAxis: physicalAxes[index],
-    color: AXIS_COLORS[index],
+    color: colors[index],
   }));
 
   const shafts = axes.map(({ dimension, direction, physicalAxis, color }) => ({
@@ -633,20 +639,8 @@ export function axisTraces(
   return [...shafts, ...arrowheads, ...labels];
 }
 
-function confidenceIntervalBoxTraces(
-  side: OpenEnaPairwiseContrastSide,
-  groupIndex: number,
-  dimensions: readonly [string, string, string],
-  color: string,
-): OpenEna3dTrace[] {
-  const stored = side.meanConfidenceIntervalsByDimension;
-  const intervals = dimensions.map((dimension) => stored?.[dimension]);
-  if (intervals.some((interval) => interval?.status !== "estimable")) return [];
+function confidenceIntervalBoxPaths(intervals: readonly { lower: number; upper: number }[]) {
   const [xInterval, yInterval, zInterval] = intervals;
-  if (xInterval?.status !== "estimable"
-    || yInterval?.status !== "estimable"
-    || zInterval?.status !== "estimable") return [];
-
   type Point3 = readonly [number, number, number];
   const point = (x: number, y: number, z: number): Point3 => [x, y, z];
   const lowerLowerLower = point(xInterval.lower, yInterval.lower, zInterval.lower);
@@ -671,6 +665,22 @@ function confidenceIntervalBoxTraces(
     { edge: "upper-x-upper-y", points: [upperUpperLower, upperUpperUpper] },
     { edge: "lower-x-upper-y", points: [lowerUpperLower, lowerUpperUpper] },
   ];
+  return paths;
+}
+
+function confidenceIntervalBoxTraces(
+  side: OpenEnaPairwiseContrastSide,
+  groupIndex: number,
+  dimensions: readonly [string, string, string],
+  color: string,
+): OpenEna3dTrace[] {
+  const stored = side.meanConfidenceIntervalsByDimension;
+  const intervals = dimensions.map((dimension) => stored?.[dimension]);
+  const [xInterval, yInterval, zInterval] = intervals;
+  if (xInterval?.status !== "estimable"
+    || yInterval?.status !== "estimable"
+    || zInterval?.status !== "estimable") return [];
+  const paths = confidenceIntervalBoxPaths([xInterval, yInterval, zInterval]);
   const hover = [
     `<b>${escapeHoverText(side.name)} mean uncertainty</b>`,
     `Separate marginal 95% Student-t intervals`,
@@ -704,6 +714,28 @@ function confidenceIntervalBoxTraces(
       degreesFreedom: xInterval.degreesFreedom,
       intervalEdge: edge,
     },
+  }));
+}
+
+function trajectoryConfidenceBoxTraces(
+  centroid: NonNullable<OpenEnaPlotResult["trajectoryPresentation"]>["centroids"][number],
+  dimensions: readonly [string, string, string],
+  color: string,
+): OpenEna3dTrace[] {
+  const intervals = dimensions.map(dimension => centroid.intervals?.[dimension]);
+  const usable = intervals.filter(interval => interval && interval.status !== "not-estimable"
+    && Number.isFinite(interval.lower) && Number.isFinite(interval.upper) && interval.lower <= interval.upper);
+  if (usable.length !== 3) return [];
+  const hover = escapeHoverText(trajectoryCentroidDescriptionV3(centroid));
+  return confidenceIntervalBoxPaths(usable as { lower: number; upper: number }[]).map(({ edge, points }) => ({
+    type: "scatter3d", mode: "lines", name: `${centroid.group} · ${centroid.horizonShortLabel} pointwise 95% CI`,
+    x: points.map(point => point[0]), y: points.map(point => point[1]), z: points.map(point => point[2]),
+    customdata: points.map(() => hover), line: { color, width: 1.5, dash: "dot" },
+    hovertemplate: "%{customdata}<extra></extra>", showlegend: false,
+    meta: { role: "confidence-interval", groupName: centroid.group, centroidKey: centroid.key,
+      confidenceLevel: 0.95, intervalMethod: "unit-history-bootstrap-percentile-95",
+      intervalInterpretation: "three-separate-marginal-confidence-interval-wireframe", jointRegion: false,
+      sampleSize: centroid.n, intervalEdge: edge },
   }));
 }
 
@@ -767,6 +799,11 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   ));
   const points = result.set.points;
   const trajectory = result.trajectoryPresentation;
+  const trajectoryGroupColor = (name: string) => {
+    const index = result.groups.findIndex(group => group.name === name);
+    return index >= 0 ? groupColor(result.groups[index], index) : JENA_GROUP_COLORS[0];
+  };
+  const axisColors = trajectory ? [AXIS_COLORS[0], AXIS_COLORS[1], "#008B00"] as const : AXIS_COLORS;
   const trajectoryAnnotations: OpenEna3dSceneAnnotation[] = [];
   const trajectoryLabelAnnotations: OpenEna3dLabelAnnotation[] = [];
   const labelSize = 12 * clamp(textScale, 0.65, 1.8, 1);
@@ -781,10 +818,10 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       name: label.id,
       x: coordinate(point, xDimension), y: coordinate(point, yDimension), z: coordinate(point, zDimension),
       text: escapeHoverText(label.text), hovertext: escapeHoverText(label.description),
-      showarrow: true, arrowhead: 0, arrowwidth: 0.8, arrowcolor: color,
+      showarrow: label.role !== "centroid", arrowhead: 0, arrowwidth: 0.8, arrowcolor: label.role === "code" ? "rgba(0,0,0,0)" : color,
       ax: 0, ay: 0, xanchor: "center", yanchor: "middle", xshift: 0, yshift: 0, textangle: 0,
-      opacity: 0, captureevents: false, borderpad: 2, borderwidth: 0,
-      bgcolor: "rgba(255,255,255,0.9)", font: { color, size: labelSize },
+      opacity: 0, captureevents: false, borderpad: label.role === "centroid" ? 1 : 2, borderwidth: 0,
+      bgcolor: "rgba(255,255,255,0.9)", font: { color, size: label.role === "centroid" ? labelSize * 2 / 3 : label.role === "code" ? labelSize * 5 / 6 : labelSize },
     });
   };
   const trajectoryPointKey = (row: Row) => JSON.stringify([row.Unit, row.Horizon]);
@@ -871,8 +908,27 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     ...result.groups.flatMap((group) => dimensions.map((dimension) => Math.abs(finiteNumber(group.meanPoint[dimension])))),
     ...canonicalConfidenceMagnitudes,
     ...displayedConfidenceMagnitudes,
+    ...(trajectory?.showConfidenceIntervals ? trajectory.centroids.flatMap(centroid => {
+      const display = nativePlotGroupSettingsV3(result, centroid.group);
+      if (!display.showMean || !display.showConfidenceIntervals) return [];
+      return dimensions.flatMap(dimension => {
+        const interval = centroid.intervals?.[dimension];
+        return interval && interval.status !== "not-estimable" && Number.isFinite(interval.lower) && Number.isFinite(interval.upper)
+          ? [Math.abs(interval.lower), Math.abs(interval.upper)] : [];
+      });
+    }) : []),
   ];
-  const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
+  // Keep trajectory framing close to the complete node/interval extent;
+  // sceneExtent below still reserves room for axis heads and labels.
+  const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * (trajectory ? 1 : 1.15);
+
+  // Draw the uncertainty wireframe before points, cones and labels. Plotly owns
+  // axis reversal, so lower/upper remain the fitted-frame scientific bounds.
+  if (trajectory?.showConfidenceIntervals) for (const centroid of trajectory.centroids) {
+    const display = nativePlotGroupSettingsV3(result, centroid.group);
+    if (!display.showMean || !display.showConfidenceIntervals) continue;
+    traces.push(...trajectoryConfidenceBoxTraces(centroid, dimensions, trajectoryGroupColor(centroid.group)));
+  }
 
   if (showNetworks && showCodeGraph && !trajectory) {
     const weightedEdges = contrast
@@ -973,10 +1029,10 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       ));
       if (selected.length === 0) return;
       const color = groupColor(group, groupIndex);
-      const markerSymbol = contrast
+      const markerSymbol = contrast || trajectory
         ? "circle"
         : GROUP_MARKER_SYMBOLS[groupIndex % GROUP_MARKER_SYMBOLS.length];
-      const markerLabel = contrast
+      const markerLabel = contrast || trajectory
         ? "circle"
         : GROUP_MARKER_LABELS[groupIndex % GROUP_MARKER_LABELS.length];
       unitLegendGroupIndices.add(groupIndex);
@@ -991,15 +1047,16 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         customdata: selected.map((row, index) => {
           const label = String(row.ENA_UNIT ?? `unit-${index + 1}`);
           const point = dimensions.map((dimension) => coordinate(row, dimension)) as [number, number, number];
-          return pointHover(label, group.name, point, dimensions);
+          const period = trajectoryPointsByKey?.get(trajectoryPointKey(row));
+          return pointHover(label, group.name, point, dimensions) + (period ? `<br>${escapeHoverText(period.horizon)}` : "");
         }),
         textposition: "top center",
         marker: {
-          color,
-          size: 6 * safePointScale,
+          color: trajectory ? selected.map(row => trajectoryHorizonColorV3(trajectory, trajectoryPointsByKey?.get(trajectoryPointKey(row))?.horizonKey ?? "")) : color,
+          size: (trajectory ? 4 : 6) * safePointScale,
           symbol: markerSymbol,
-          opacity: 0.68,
-          line: { color: "#263740", width: 0.8 },
+          opacity: trajectory ? 0.88 : 0.68,
+          line: { color: trajectory ? "#ffffff" : "#263740", width: trajectory ? 0.5 : 0.8 },
         },
         hovertemplate: "%{customdata}<extra></extra>",
         legendgroup: `open-ena-group-${groupIndex}`,
@@ -1075,30 +1132,36 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     if (!nativePlotGroupSettingsV3(result, path.group).showUnitPoints || result.groupPresentation?.hiddenUnits.has(path.unitLabel)) continue;
     traces.push({ type: "scatter3d", mode: "lines", name: "Observed fitted Unit path",
       x: [coordinate(path.from, xDimension), coordinate(path.to, xDimension)], y: [coordinate(path.from, yDimension), coordinate(path.to, yDimension)], z: [coordinate(path.from, zDimension), coordinate(path.to, zDimension)],
-      line: { color: "black", width: 2 }, showlegend: false, hovertemplate: `Fitted ordinals ${path.fromOrdinal} → ${path.toOrdinal}<extra></extra>`, meta: { role: "trajectory-path", groupName: path.group } });
+      line: { color: trajectoryGroupColor(path.group), width: 3 }, showlegend: false, hovertemplate: `Fitted ordinals ${path.fromOrdinal} → ${path.toOrdinal}<extra></extra>`, meta: { role: "trajectory-path", groupName: path.group } });
   }
   if (trajectory) {
     for (const path of trajectory.centroidPaths) {
       if (!nativePlotGroupSettingsV3(result, path.from.group).showMean) continue;
+      const color = "black";
       traces.push({ type: "scatter3d", mode: "lines", name: "Observed Group centroid path",
         x: [coordinate(path.from.point, xDimension), coordinate(path.to.point, xDimension)], y: [coordinate(path.from.point, yDimension), coordinate(path.to.point, yDimension)], z: [coordinate(path.from.point, zDimension), coordinate(path.to.point, zDimension)],
-        line: { color: "black", width: 5 }, showlegend: false, hovertemplate: `${path.sharedContributorCount} actual shared contributors; available-population centroids, not matched change<extra></extra>`, meta: { role: "trajectory-path", groupName: path.from.group } });
+        line: { color, width: 3 }, showlegend: false, hovertemplate: `${path.sharedContributorCount} actual shared contributors; available-population centroids, not matched change<extra></extra>`, meta: { role: "trajectory-path", groupName: path.from.group } });
       // Same mid-segment cone grammar as the pinned longitudinal renderer;
       // only native observed fitted connectors supply direction and endpoints.
       const from = dimensions.map(axis => coordinate(path.from.point, axis));
       const to = dimensions.map(axis => coordinate(path.to.point, axis));
       const delta = to.map((value, index) => value - from[index]);
-      if (Math.hypot(...delta) > 0) traces.push({ type: "cone", name: "Observed fitted direction", x: [(from[0] + to[0]) / 2], y: [(from[1] + to[1]) / 2], z: [(from[2] + to[2]) / 2], u: [delta[0]], v: [delta[1]], w: [delta[2]], anchor: "tip", sizemode: "absolute", sizeref: Math.max(0.06, axisExtent * 0.06), colorscale: [[0, "black"], [1, "black"]], showscale: false, showlegend: false, hoverinfo: "skip", meta: { role: "direction-arrow", groupName: path.from.group } });
+      const length = Math.hypot(...delta);
+      if (trajectory.showDirection !== false && length > 0) traces.push({ type: "cone", name: "Observed fitted direction",
+        x: [from[0] + delta[0] * 0.62], y: [from[1] + delta[1] * 0.62], z: [from[2] + delta[2] * 0.62],
+        u: [delta[0] / length], v: [delta[1] / length], w: [delta[2] / length], anchor: "center", sizemode: "absolute", sizeref: 0.13,
+        colorscale: [[0, color], [1, color]], showscale: false, showlegend: false, hoverinfo: "skip", meta: { role: "direction-arrow", groupName: path.from.group } });
     }
     for (const centroid of trajectory.centroids) {
       if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) continue;
-      const description = `${centroid.group} · ${centroid.horizon} · n=${centroid.n}`;
+      const description = trajectoryCentroidDescriptionV3(centroid);
+      const color = trajectoryGroupColor(centroid.group);
       traces.push({ type: "scatter3d", mode: "markers", name: "Observed Group centroid",
         x: [coordinate(centroid.point, xDimension)], y: [coordinate(centroid.point, yDimension)], z: [coordinate(centroid.point, zDimension)],
-        text: [literalGlText(description)], marker: { color: "black", size: 4.5, symbol: "square" }, showlegend: false,
+        text: [literalGlText(description)], marker: { color: trajectoryHorizonColorV3(trajectory, centroid.horizonKey), size: 4.5, symbol: "square", line: { color, width: 2 } }, showlegend: false,
         hovertemplate: `${escapeHoverText(description)}<extra></extra>`, meta: { role: "group-mean", groupName: centroid.group } });
       addTrajectoryLabel({ id: `centroid:${centroid.key}`, role: "centroid", text: centroid.horizonShortLabel,
-        description, priority: 200 }, centroid.point);
+        description, priority: 350 }, centroid.point, color);
     }
   }
   if (renderedDisplayNodeRows.length > 0) {
@@ -1121,13 +1184,13 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       marker: {
         color: renderedDisplayNodeRows.map((row) => codeColorFor(codeColors, String(row.code ?? ""))),
         size: trajectory ? 5.5 : 9,
-        symbol: "circle",
+        symbol: trajectory ? "circle-open" : "circle",
         opacity: 1,
-        line: { color: "#ffffff", width: 1.5 },
+        line: { color: trajectory ? "#64748b" : "#ffffff", width: trajectory ? 1 : 1.5 },
       },
       hovertemplate: "%{customdata}<extra></extra>",
       showlegend: false,
-      meta: { role: "code-node", markerSymbol: "circle" },
+      meta: { role: "code-node", markerSymbol: trajectory ? "circle-open" : "circle" },
     });
   }
 
@@ -1156,7 +1219,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     });
   }
 
-  traces.push(...axisTraces(axisExtent, dimensions));
+  traces.push(...axisTraces(axisExtent, dimensions, axisColors));
 
   const annotations = showVariance
     ? dimensions.map((dimension, index) => ({
@@ -1166,7 +1229,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         xref: "paper" as const,
         yref: "paper" as const,
         showarrow: false as const,
-        font: { color: AXIS_COLORS[index], size: 11 },
+        font: { color: axisColors[index], size: 11 },
         xanchor: "left" as const,
       }))
     : [];
@@ -1204,15 +1267,16 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         size: 12,
       },
       legend: { orientation: "h", x: 0, y: -0.12 },
+      ...(trajectory ? { showlegend: false } : {}),
       hoverlabel: { bgcolor: "#0f172a", font: { color: "#ffffff" } },
       uirevision: OPEN_ENA_3D_UI_REVISION,
       annotations,
       scene: {
         ...(trajectory ? { annotations: trajectoryAnnotations } : {}),
-        xaxis: sceneAxis(xDimension, AXIS_COLORS[0], flipX),
-        yaxis: sceneAxis(yDimension, AXIS_COLORS[1], flipY),
-        zaxis: sceneAxis(zDimension, AXIS_COLORS[2], false),
-        camera: scaledCamera(camera, plotZoom),
+        xaxis: sceneAxis(xDimension, axisColors[0], flipX),
+        yaxis: sceneAxis(yDimension, axisColors[1], flipY),
+        zaxis: sceneAxis(zDimension, axisColors[2], false),
+        camera: scaledCamera(camera, plotZoom, trajectory ? OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM : 1),
         bgcolor: "#ffffff",
         aspectmode: aspectratio ? "manual" : "cube",
         ...(aspectratio ? { aspectratio } : {}),

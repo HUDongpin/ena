@@ -3,7 +3,7 @@ import type { OpenEna3dLabelAnnotation } from "./plot3d";
 
 type AnnotationRuntime = {
   name?: string; x?: unknown; y?: unknown; z?: unknown;
-  ax?: number; ay?: number; opacity?: number; captureevents?: boolean;
+  ax?: number; ay?: number; xshift?: number; yshift?: number; opacity?: number; captureevents?: boolean;
   _xa?: { _offset?: number; r2p?: (value: unknown) => number };
   _ya?: { _offset?: number; r2p?: (value: unknown) => number };
 };
@@ -11,6 +11,7 @@ type LabelRoot = HTMLDivElement & {
   _fullData?: Array<{ visible?: boolean | string; type?: string; mode?: string; meta?: { role?: string };
     x?: ArrayLike<number | null>; y?: ArrayLike<number | null>; z?: ArrayLike<number | null>;
     text?: ArrayLike<string>; textfont?: { size?: number; family?: string };
+    line?: { width?: number };
     marker?: { size?: number | ArrayLike<number>; line?: { width?: number } } }>;
   _fullLayout?: {
     width?: number; height?: number;
@@ -130,12 +131,35 @@ export function readPlotlyAnnotationDragPosition(root: HTMLDivElement, annotatio
 }
 
 const textContexts = new WeakMap<HTMLDivElement, CanvasRenderingContext2D | null>();
-function fixedSceneObstacles(root: HTMLDivElement): PlotLabelRect[] {
+// CI wireframes can subdivide into many screen-space collision rectangles.
+// Bound label-layout scratch separately from the unchanged scientific traces.
+const MAX_SCENE_LABEL_OBSTACLES = 50_000;
+function fixedSceneObstacles(root: HTMLDivElement): { obstacles: PlotLabelRect[]; exceeded: boolean } {
   const runtime = root as LabelRoot;
   const obstacles: PlotLabelRect[] = [];
   for (const trace of runtime._fullData ?? []) {
     if (trace.visible === false || trace.visible === "legendonly" || trace.type !== "scatter3d") continue;
     const role = trace.meta?.role;
+    if (role === "confidence-interval") {
+      const padding = (trace.line?.width ?? 2) / 2 + 2;
+      for (let index = 1; index < (trace.x?.length ?? 0); index++) {
+        const endpoints = [index - 1, index].map(pointIndex => ({ x: trace.x![pointIndex], y: trace.y?.[pointIndex], z: trace.z?.[pointIndex] }));
+        if (endpoints.some(point => ![point.x, point.y, point.z].every(value => typeof value === "number" && Number.isFinite(value)))) continue;
+        const [from, to] = endpoints.map(point => readPlotlyPointAnchor(root, point));
+        if (!from || !to) continue;
+        // Short projected segments follow only the wireframe edges; one large
+        // bounding rectangle would incorrectly reserve its unfilled interior.
+        const count = Math.max(1, Math.min(256, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / 12)));
+        for (let step = 0; step < count; step++) {
+          if (obstacles.length >= MAX_SCENE_LABEL_OBSTACLES) return { obstacles: [], exceeded: true };
+          const x0 = from.x + (to.x - from.x) * step / count, x1 = from.x + (to.x - from.x) * (step + 1) / count;
+          const y0 = from.y + (to.y - from.y) * step / count, y1 = from.y + (to.y - from.y) * (step + 1) / count;
+          obstacles.push({ x: Math.min(x0, x1) - padding, y: Math.min(y0, y1) - padding,
+            width: Math.abs(x1 - x0) + padding * 2, height: Math.abs(y1 - y0) + padding * 2, soft: true });
+        }
+      }
+      continue;
+    }
     const marker = role === "code-node" || role === "group-mean" || role === "unit-points";
     const axisText = role === "axis-label";
     if (!marker && !axisText) continue;
@@ -159,10 +183,13 @@ function fixedSceneObstacles(root: HTMLDivElement): PlotLabelRect[] {
         width = Math.max(1, metrics.width) + 4;
         height = Math.max(fontSize, metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) + 4;
       }
-      if (Number.isFinite(width) && Number.isFinite(height)) obstacles.push({ x: anchor.x - width / 2, y: anchor.y - height / 2, width, height });
+      if (Number.isFinite(width) && Number.isFinite(height)) {
+        if (obstacles.length >= MAX_SCENE_LABEL_OBSTACLES) return { obstacles: [], exceeded: true };
+        obstacles.push({ x: anchor.x - width / 2, y: anchor.y - height / 2, width, height, soft: role === "unit-points" });
+      }
     }
   }
-  return obstacles;
+  return { obstacles, exceeded: false };
 }
 
 export interface OpenEna3dLabelMeasurement {
@@ -223,14 +250,25 @@ export function measureOpenEna3dLabels(root: HTMLDivElement, labels: readonly Op
     const box = localRect(element);
     if (!(box.width > 0 && box.height > 0)) continue;
     const manualAnchor = label.preferredPosition ? readPlotlyPointAnchor(root, label.preferredPosition) : null;
-    measured.push({ id: label.id, anchor, width: box.width + 1, height: box.height + 1, priority: label.priority,
+    measured.push({ id: label.id, anchor, width: box.width + 1, height: box.height + 1, priority: label.priority, ...(label.role === "centroid" || (label.role === "code" && !label.preferredPosition) ? { placement: "adjacent" as const } : {}),
       preferredOffset: manualAnchor ? { x: manualAnchor.x - anchor.x, y: manualAnchor.y - anchor.y } : { x: 0, y: -box.height / 2 - 10 } });
-    obstacles.push({ x: anchor.x - 4, y: anchor.y - 4, width: 8, height: 8 });
+    obstacles.push({ x: anchor.x - 4, y: anchor.y - 4, width: 8, height: 8, soft: label.role === "unit" });
   }
   root.setAttribute("data-ena-label-projection-error", verifiedProjections ? String(projectionError) : "unavailable");
   // Check the pinned projection adapter against Plotly's annotation projection
   // on the actual camera frame before using it for unlabelled marker obstacles.
-  if (verifiedProjections && projectionError < 0.5) obstacles.push(...fixedSceneObstacles(root));
+  if (verifiedProjections && projectionError < 0.5) {
+    const fixed = fixedSceneObstacles(root);
+    root.setAttribute("data-ena-label-obstacle-budget", fixed.exceeded ? "exceeded" : "within-limit");
+    if (fixed.exceeded) {
+      // An incomplete collision map could place text on omitted CI edges.
+      // Empty candidates make the existing owner defer every original label
+      // to its full-detail list; the plotted intervals and identities remain.
+      decorateLabels(runtime, labels);
+      return { labels: [], bounds, obstacles: [] };
+    }
+    for (const obstacle of fixed.obstacles) obstacles.push(obstacle);
+  }
   for (const element of root.querySelectorAll(".legend, .annotation")) obstacles.push(localRect(element));
   const toolbar = root.closest(".open-ena-interactive-3d-region")?.querySelector(".open-ena-3d-plot-actions");
   if (toolbar) obstacles.push(localRect(toolbar));
@@ -280,7 +318,11 @@ export function createOpenEna3dLabelLayout(options: OpenEna3dLabelLayoutOptions)
         const placement = placements.get(label.id);
         const visible = placement?.visible === true;
         if (!visible) deferred.push(label.id);
-        const next = { ax: visible ? Math.round(placement.dx) : 0, ay: visible ? Math.round(placement.dy) : 0,
+        // Arrowless period labels use pixel shifts. Code/Unit labels retain
+        // ax/ay so their existing leaders and manual dragging keep working.
+        const next = { ...(label.role === "centroid"
+          ? { xshift: visible ? Math.round(placement.dx) : 0, yshift: visible ? -Math.round(placement.dy) : 0 }
+          : { ax: visible ? Math.round(placement.dx) : 0, ay: visible ? Math.round(placement.dy) : 0 }),
           opacity: visible ? 1 : 0, captureevents: visible };
         for (const [field, value] of Object.entries(next)) {
           if (annotation[field as keyof typeof next] !== value) update[`scene.annotations[${label.annotationIndex}].${field}`] = value;

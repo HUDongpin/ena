@@ -71,7 +71,7 @@ test("a tiny drag preserves native subpixel clearance instead of feeding SVG pix
 
 function harness() {
   const labels: OpenEna3dLabelAnnotation[] = [0, 1, 2].map(index => ({ id: `label-${index}`, annotationIndex: index, role: "centroid", text: `TP${index}`, description: `Horizon Period = TP${index} · n=8`, priority: 300 }));
-  const native = labels.map(label => ({ name: label.id, ax: 0, ay: 0, opacity: 0, captureevents: false }));
+  const native = labels.map(label => ({ name: label.id, ax: 0, ay: 0, xshift: 0, yshift: 0, opacity: 0, captureevents: false }));
   const attrs = new Map<string, string>();
   const root = { setAttribute: (key: string, value: string) => attrs.set(key, value), querySelector: () => null, _fullLayout: { scene: { annotations: native } } } as unknown as HTMLDivElement;
   const updates: Record<string, unknown>[] = [];
@@ -97,8 +97,8 @@ test("native label layout separates coincident labels, coalesces camera events a
   assert.equal(h.frames.size, 0);
   assert.equal(h.attrs.get("data-ena-label-layout"), "ready");
   assert.equal(h.native.filter(label => label.opacity === 1).length, 3);
-  assert.equal(new Set(h.native.map(label => `${label.ax},${label.ay}`)).size, 3);
-  assert.ok(h.updates.every(update => Object.keys(update).every(key => /^scene\.annotations\[\d+\]\.(ax|ay|opacity|captureevents)$/.test(key))));
+  assert.equal(new Set(h.native.map(label => `${label.xshift},${label.yshift}`)).size, 3);
+  assert.ok(h.updates.every(update => Object.keys(update).every(key => /^scene\.annotations\[\d+\]\.(ax|ay|xshift|yshift|opacity|captureevents)$/.test(key))));
   const count = h.updates.length;
   await h.controller.flush();
   assert.equal(h.updates.length, count, "same measured layout must not cause relayout loops");

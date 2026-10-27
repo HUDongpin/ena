@@ -12,11 +12,13 @@ export interface SvgTrajectoryLabel {
   fontSize: number;
   priority: number;
   preferredOffset?: { x: number; y: number };
+  placement?: "adjacent";
   code?: string;
 }
 
 type TextMetric = { width: number; height: number; baselineX: number; baselineY: number };
 const PAD = 3;
+const labelPadding = (label?: SvgTrajectoryLabel) => label?.placement === "adjacent" ? 1 : PAD;
 
 export function placeSvgTrajectoryLabels(input: Parameters<typeof placePlotLabels>[0], activeLabelId: string | null) {
   return placePlotLabels({ ...input, labels: input.labels.map(label => label.id === activeLabelId ? { ...label, priority: 10000 } : label) });
@@ -34,10 +36,10 @@ export function useSvgTrajectoryLabels(labels: readonly SvgTrajectoryLabel[], bo
   const current = measured?.key === key ? measured : null;
   const metrics = useMemo(() => new Map(labels.map((label) => [label.id, current?.metrics.get(label.id) ?? {
     // Conservative pre-font/SSR bounds; the mounted SVG replaces these with glyph measurements.
-    width: Math.max(label.fontSize, [...label.text].reduce((sum, char) => sum + (/[^\u0000-\u00ff]/u.test(char) ? 1 : 0.68), 0) * label.fontSize) + PAD * 2,
-    height: label.fontSize * 1.25 + PAD * 2,
-    baselineX: PAD,
-    baselineY: label.fontSize + PAD,
+    width: Math.max(label.fontSize, [...label.text].reduce((sum, char) => sum + (/[^\u0000-\u00ff]/u.test(char) ? 1 : 0.68), 0) * label.fontSize) + labelPadding(label) * 2,
+    height: label.fontSize * 1.25 + labelPadding(label) * 2,
+    baselineX: labelPadding(label),
+    baselineY: label.fontSize + labelPadding(label),
   }])), [key, current]);
   const placements = useMemo(() => placeSvgTrajectoryLabels({
     labels: labels.map((label) => ({ ...label, ...metrics.get(label.id)! })),
@@ -59,8 +61,8 @@ export function useSvgTrajectoryLabels(labels: readonly SvgTrajectoryLabel[], bo
       for (const text of layer.querySelectorAll<SVGTextElement>("text[data-ena-label-measure]")) {
         const id = text.dataset.enaLabelMeasure;
         if (!id) continue;
-        const box = text.getBBox();
-        if (box.width > 0 && box.height > 0) next.set(id, { width: box.width + PAD * 2, height: box.height + PAD * 2, baselineX: PAD - box.x, baselineY: PAD - box.y });
+        const box = text.getBBox(), pad = labelPadding(labels.find(label => label.id === id));
+        if (box.width > 0 && box.height > 0) next.set(id, { width: box.width + pad * 2, height: box.height + pad * 2, baselineX: pad - box.x, baselineY: pad - box.y });
       }
       const reserved = [...svg.querySelectorAll<SVGGraphicsElement>(".ena-zero-axes text, .ena-reference-figure-provenance")].map((element) => {
         const box = element.getBBox();

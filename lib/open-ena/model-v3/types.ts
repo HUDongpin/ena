@@ -420,6 +420,8 @@ export interface PresentationArtifactV3 {
     showIntervals: boolean;
     showNetworks: boolean;
     showTrajectories: boolean;
+    showTrajectoryDirection: boolean;
+    showTrajectoryConfidenceIntervals: boolean;
     showLabels: boolean;
     showGroupLabels: boolean;
     showUnitLabels: boolean;

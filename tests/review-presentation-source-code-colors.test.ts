@@ -26,11 +26,11 @@ for(const label of ['normal','Code 1','__proto__','constructor','prototype','toS
  const result=await fixture(label),before=JSON.stringify(result),renderedSource=presentBoundResultV3(result).codeSourceByRenderedCode;
   const colors=explicit?Object.fromEntries([[label,'#ab12ef']]):{};
   const display={codeColors:colors,codeVisibility:{},groups:{}},downloaded:unknown[]=[];
-  const context={result,renderedSource,display,groups:[],sourcePositions:new Map(),selectedAxes:result.executionProvenance.projection.estimableAxes.slice(0,2),camera:undefined,codeColorFor,buildPresentationArtifactV3,downloadJson:(_name:string,value:unknown)=>downloaded.push(value),showPoints:true,showNetworks:true,showTrajectories:true,showLabels:true,showGroupLabels:true,showUnitLabels:false,showVariance:true,endpointsOnly:false,flipX:false,flipY:false,edgeThreshold:0,edgeScale:1,pointScale:1,plotZoom:1};
+  const context={result,renderedSource,display,groups:[],sourcePositions:new Map(),selectedAxes:result.executionProvenance.projection.estimableAxes.slice(0,2),camera:undefined,codeColorFor,buildPresentationArtifactV3,downloadJson:(_name:string,value:unknown)=>downloaded.push(value),showPoints:true,showNetworks:true,showTrajectories:true,showTrajectoryDirection:true,showTrajectoryConfidenceIntervals:true,showLabels:true,showGroupLabels:true,showUnitLabels:false,showVariance:true,endpointsOnly:false,flipX:false,flipY:false,edgeThreshold:0,edgeScale:1,pointScale:1,plotZoom:1};
   const run=Function(...Object.keys(context),compile(exportSource)+'\nreturn exportPresentation;')(...Object.values(context));run();
   assert.equal(downloaded.length,1);
   const decoded=parseBundleJsonV3(JSON.stringify(downloaded[0])) as ReturnType<typeof buildPresentationArtifactV3>;
-  const applied=prepareWorkspacePresentationV3(result,decoded);assert.equal(applied.status,'applied');
+  const applied=prepareWorkspacePresentationV3(result,decoded);assert.equal(applied.status,'applied');assert.equal(decoded.layerOptions?.showTrajectoryDirection,true);assert.equal(decoded.layerOptions?.showTrajectoryConfidenceIntervals,true);
   if(applied.status!=='applied')throw Error('Expected exact bound preset');
   assert.equal(applied.codeColors[label],explicit?'#ab12ef':'#000000');assert.equal(Object.hasOwn(applied.codeColors,label),true);
   const rendered=Function('renderedSource','display','codeColorFor','useMemo',compile('return '+colorSource+';'))(renderedSource,display,codeColorFor,(calculate:()=>unknown)=>calculate());

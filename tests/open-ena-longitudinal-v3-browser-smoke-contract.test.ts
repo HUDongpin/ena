@@ -126,7 +126,7 @@ test("full browser summary carries both aggregate and participant standalone rec
   requires(["standaloneDownloads", "aggregate: verifyStandaloneDownloads(downloads.aggregate, aggregate)", "participant: verifyStandaloneDownloads(downloads.participant, participant)"]);
 });
 test("native trajectory geometry retains Codes square centroids black paths direction and zero edges", () => {
-  requires(["codesPresent", "centroidSquares", 't.marker?.symbol === "square" && t.marker?.size === 4.5', "blackTrajectories", "lineOnlyTrajectories", "directionArrowTraceCount > 0", "networkEdgeTraceCount, 0", "errorBarTraceCount === 0", "unknownTraceRoles.length === 0", "display action changed bound fitted coordinates"]);
+  requires(["codesPresent", "centroidSquares", 't.marker?.symbol === "square" && t.marker?.size === 4.5', "blackTrajectories", "lineOnlyTrajectories", "directionArrowTraceCount > 0", "networkEdgeTraceCount, 0", "errorBarTraceCount === 0", "unknownTraceRoles.length === 0", "confidenceWireframes", 'trace.line?.dash === "dot"', 'trace.meta?.intervalMethod === "unit-history-bootstrap-percentile-95"', "trace.meta?.jointRegion === false", "edges + trace.x.length - 1, 0) === 12", "display action changed bound fitted coordinates"]);
 });
 test("all seven camera poses and actual mouse orbit preserve bound science", () => {
   requires(['["isometric", "xy", "xz", "yz", "yx", "zx", "zy"]', "cameraMatches", "expectedCameraStates", "readRuntimeCamera", "waitForRuntimeCameraChange", "scene?._scene?.getCamera", 'page.mouse.down({ button: "left" })', "steps: 20", "assertBrowser(dragVerified", "cameraScreenshots", 'assertScientificInvariants("camera preset " + preset)']);
@@ -173,6 +173,18 @@ test("fullscreen geometry reserves only the measured capped label-details row", 
     svd3Axis: { shaftPresent: true, arrowheadPresent: true, labelPresent: true, finiteNonDegenerate: true, arrowTipContinuesShaft: true, rangeHeadroomRatio: 0.05 },
   };
   assert.doesNotThrow(() => verify(fixture, "label details", "fallback"));
+  const withLegend = { ...fixture,
+    plotRegion: { top: 0, bottom: plotHeight, left: 0, right: 1220, width: 1220, height: plotHeight },
+    trajectoryLegend: { top: 0, bottom: 300, left: 1232, right: 1440, width: 208, height: 300 },
+    plot: { ...fixture.plot, right: 1220, width: 1220 },
+    toolbar: { ...fixture.toolbar, left: 1166, right: 1210 },
+    buttonBoxes: fixture.buttonBoxes.map(button => ({ ...button, left: 1166, right: 1210 })),
+    canvas: { ...fixture.canvas, width: 1220, pixelWidth: 1220 },
+  };
+  assert.doesNotThrow(() => verify(withLegend, "separate trajectory legend", "fallback"));
+  assert.throws(() => verify({ ...withLegend, trajectoryLegend: { ...withLegend.trajectoryLegend, left: 1190 } }, "overlapping legend", "fallback"));
+  assert.throws(() => verify({ ...withLegend, plot: { ...withLegend.plot, width: 900 } }, "unused canvas width", "fallback"));
+
   assert.throws(() => verify({ ...fixture, plot: { ...fixture.plot, bottom: 800, height: 800 } }, "clipped plot", "fallback"));
   assert.throws(() => verify({ ...fixture, labelDetails: { ...fixture.labelDetails, height: 300, maxHeight: 300 } }, "uncapped details", "fallback"));
   assert.throws(() => verify({ ...fixture, labelDetails: { ...fixture.labelDetails, marginTop: 200 } }, "wasted row", "fallback"));

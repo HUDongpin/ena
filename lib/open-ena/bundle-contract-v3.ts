@@ -1940,6 +1940,8 @@ export function assertPresentationArtifactContractV3(
       "showIntervals",
       "showNetworks",
       "showTrajectories",
+      "showTrajectoryDirection",
+      "showTrajectoryConfidenceIntervals",
       "showLabels",
       "showGroupLabels",
       "showUnitLabels",

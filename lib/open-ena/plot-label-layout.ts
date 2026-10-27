@@ -1,5 +1,5 @@
 /** Display-only, deterministic layout. Coordinates are in the caller's screen units. */
-export interface PlotLabelRect { x: number; y: number; width: number; height: number }
+export interface PlotLabelRect { x: number; y: number; width: number; height: number; soft?: boolean }
 export interface PlotLabelCandidate {
   id: string;
   anchor: { x: number; y: number };
@@ -7,6 +7,8 @@ export interface PlotLabelCandidate {
   height: number;
   priority: number;
   preferredOffset?: { x: number; y: number };
+  /** Period labels stay beside their centroid instead of becoming callouts. */
+  placement?: "adjacent";
 }
 export interface PlotLabelPlacement extends PlotLabelRect {
   id: string;
@@ -18,7 +20,7 @@ export interface PlotLabelPlacement extends PlotLabelRect {
 const GAP = 4;
 const CELL = 64;
 const finiteRect = (r: PlotLabelRect) => [r.x, r.y, r.width, r.height].every(Number.isFinite) && r.width > 0 && r.height > 0;
-const intersects = (a: PlotLabelRect, b: PlotLabelRect) => a.x < b.x + b.width + GAP && a.x + a.width + GAP > b.x && a.y < b.y + b.height + GAP && a.y + a.height + GAP > b.y;
+const intersects = (a: PlotLabelRect, b: PlotLabelRect, gap = GAP) => a.x < b.x + b.width + gap && a.x + a.width + gap > b.x && a.y < b.y + b.height + gap && a.y + a.height + gap > b.y;
 
 /** A spatial index keeps dense Unit-label layouts from scanning every other mark. */
 class OccupiedRects {
@@ -36,8 +38,8 @@ class OccupiedRects {
       entries.push(r); this.cells.set(key, entries);
     }
   }
-  intersects(r: PlotLabelRect) {
-    return this.keys(r).some(key => this.cells.get(key)?.some(other => intersects(r, other)));
+  intersects(r: PlotLabelRect, gap = GAP) {
+    return this.keys(r).some(key => this.cells.get(key)?.some(other => intersects(r, other, gap)));
   }
 }
 
@@ -49,13 +51,14 @@ export function placePlotLabels({ labels, bounds, obstacles = [], previous }: {
 }): Map<string, PlotLabelPlacement> {
   const result = new Map<string, PlotLabelPlacement>();
   const occupied = new OccupiedRects();
+  const softObstacles = new OccupiedRects();
   // Clip obstacles to the viewport before indexing arbitrarily large/offscreen marks.
   if (finiteRect(bounds)) for (const obstacle of obstacles) {
     if (!finiteRect(obstacle)) continue;
     const x = Math.max(bounds.x, obstacle.x), y = Math.max(bounds.y, obstacle.y);
     const width = Math.min(bounds.x + bounds.width, obstacle.x + obstacle.width) - x;
     const height = Math.min(bounds.y + bounds.height, obstacle.y + obstacle.height) - y;
-    if (width > 0 && height > 0) occupied.add({ x, y, width, height });
+    if (width > 0 && height > 0) (obstacle.soft ? softObstacles : occupied).add({ x, y, width, height });
   }
   const ordered = [...labels].sort((a, b) => (b.priority - a.priority) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   for (const label of ordered) {
@@ -65,16 +68,31 @@ export function placePlotLabels({ labels, bounds, obstacles = [], previous }: {
       || label.width > bounds.width || label.height > bounds.height
       || label.anchor.x < bounds.x || label.anchor.x > bounds.x + bounds.width || label.anchor.y < bounds.y || label.anchor.y > bounds.y + bounds.height) continue;
     const candidates: Array<{ x: number; y: number }> = [];
-    const retained = previous?.get(label.id);
+    const adjacent = label.placement === "adjacent";
+    const retained = adjacent ? undefined : previous?.get(label.id);
     if (retained?.visible && retained.width === label.width && retained.height === label.height) candidates.push({ x: retained.dx, y: retained.dy });
-    if (label.preferredOffset) candidates.push(label.preferredOffset);
+    if (!adjacent && label.preferredOffset) candidates.push(label.preferredOffset);
     // Bounded local search, nearest ring first. Never randomize or change scientific anchors.
     const halfWidth = label.width / 2, halfHeight = label.height / 2;
-    const radiusLimit = Math.min(240, Math.max(bounds.width, bounds.height) / 2);
-    for (let distance = 0; distance <= radiusLimit; distance += 16) {
-      const x = halfWidth + GAP + distance, y = halfHeight + GAP + distance;
-      candidates.push({ x, y: -y }, { x: -x, y: -y }, { x, y }, { x: -x, y }, { x: 0, y: -y }, { x, y: 0 }, { x: 0, y }, { x: -x, y: 0 });
+    const radiusLimit = adjacent ? 12 : Math.min(240, Math.max(bounds.width, bounds.height) / 2);
+    for (let distance = 0; distance <= radiusLimit; distance += adjacent ? 4 : 16) {
+      const x = halfWidth + (adjacent ? 6 : GAP) + distance, y = halfHeight + (adjacent ? 6 : GAP) + distance;
+      if (adjacent) candidates.push({ x, y: 0 }, { x: 0, y: -y }, { x: -x, y: 0 }, { x: 0, y },
+        { x, y: -y }, { x: -x, y: -y }, { x, y }, { x: -x, y },
+        { x, y: -y / 2 }, { x, y: y / 2 }, { x: -x, y: -y / 2 }, { x: -x, y: y / 2 },
+        { x: x / 2, y: -y }, { x: -x / 2, y: -y }, { x: x / 2, y }, { x: -x / 2, y });
+      else candidates.push({ x, y: -y }, { x: -x, y: -y }, { x, y }, { x: -x, y }, { x: 0, y: -y }, { x, y: 0 }, { x: 0, y }, { x: -x, y: 0 });
     }
+    if (adjacent) {
+      // Closely packed centroids can leave a small local opening between the
+      // compass positions. Search that bounded neighborhood before deferring.
+      const local: Array<{ x: number; y: number }> = [];
+      const spanX = Math.min(80, halfWidth + 20), spanY = Math.min(50, halfHeight + 20);
+      for (let x = -spanX; x <= spanX; x += 3) for (let y = -spanY; y <= spanY; y += 3) local.push({ x, y });
+      local.sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y));
+      candidates.push(...local);
+    }
+    let localFallback: PlotLabelPlacement | null = null;
     for (const offset of candidates) {
       if (![offset.x, offset.y].every(Number.isFinite)) continue;
       const rect = {
@@ -82,10 +100,16 @@ export function placePlotLabels({ labels, bounds, obstacles = [], previous }: {
         y: Math.max(bounds.y, Math.min(bounds.y + bounds.height - label.height, label.anchor.y + offset.y - halfHeight)),
         width: label.width, height: label.height,
       };
-      if (occupied.intersects(rect)) continue;
+      if (adjacent && Math.hypot(Math.max(0, Math.abs(rect.x + halfWidth - label.anchor.x) - halfWidth), Math.max(0, Math.abs(rect.y + halfHeight - label.anchor.y) - halfHeight)) > 20) continue;
+      if (occupied.intersects(rect, adjacent ? 1 : GAP)) continue;
       const placement = { ...rect, id: label.id, dx: rect.x + halfWidth - label.anchor.x, dy: rect.y + halfHeight - label.anchor.y, visible: true };
+      if (softObstacles.intersects(rect, adjacent ? 1 : GAP)) { if (adjacent && !localFallback) localFallback = placement; continue; }
       result.set(label.id, placement); occupied.add(rect); break;
     }
+    // Prefer avoiding CI wire edges, but keep a compact label at its node if
+    // that is the only local space. The small white label backing masks the
+    // intersecting dots; it never moves a marker or invents an interval.
+    if (!result.get(label.id)!.visible && localFallback) { result.set(label.id, localFallback); occupied.add(localFallback); }
   }
   return result;
 }
