@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
 export default async function HomePage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
-  return <UnifiedHome aboutHref={`/${locale}/about`} openEnaHref={`/${locale}/open-ena`} footer={
-    <HubFooter copy={getHomeFooterCopy(locale, getDictionary(locale))} homeHref={`/${locale}`} aboutHref={`/${locale}/about`} featureBase={`/${locale}`} comfortableLinks />
+  return <UnifiedHome locale={locale} aboutHref={`/${locale}/about`} openEnaHref={`/${locale}/open-ena`} footer={
+    <HubFooter copy={getHomeFooterCopy(locale, getDictionary(locale))} locale={locale} homeHref={`/${locale}`} aboutHref={`/${locale}/about`} featureBase={`/${locale}`} comfortableLinks />
   } />;
 }

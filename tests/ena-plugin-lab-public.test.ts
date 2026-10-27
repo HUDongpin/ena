@@ -130,7 +130,7 @@ test("navigation and sitemap include only public plugin routes", () => {
   assert.doesNotMatch(sitemap, /plugins\/(?:propose|status|operator)/u);
 });
 
-test("Plugin Lab invitations and migrated English pages retain explicit content-language decisions", () => {
+test("Plugin Lab invitations and mixed-language public pages retain explicit content-language decisions", () => {
   for (const path of [
     ["app", "[locale]", "mission", "page.tsx"],
     ["components", "open-ena", "OpenEnaLogin.tsx"],
@@ -147,4 +147,11 @@ test("Plugin Lab invitations and migrated English pages retain explicit content-
     assert.match(source, /lang="en" dir="ltr"/u, path.join("/"));
     assert.doesNotMatch(source, /pluginCopy\.invitation/u, path.join("/"));
   }
+  const about = readFileSync(join(projectRoot, "components", "about", "open-ena", "AboutContent.tsx"), "utf8");
+  assert.match(about, /lang=\{localeMeta\.htmlLang\} dir=\{localeMeta\.dir\}/u);
+  assert.match(about, /getOpenEnaAttributionCopy\(locale\)/u);
+  const home = readFileSync(join(projectRoot, "components", "home-source", "UnifiedHome.tsx"), "utf8");
+  assert.match(home, /<OpenEnaAttribution locale=\{locale\}/u);
+  const attribution = readFileSync(join(projectRoot, "components", "OpenEnaAttribution.tsx"), "utf8");
+  assert.match(attribution, /lang=\{meta\.htmlLang\} dir=\{meta\.dir\}/u);
 });

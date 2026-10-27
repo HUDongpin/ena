@@ -4,6 +4,7 @@ import { getOpenEnaNavLabel } from "@/lib/open-ena-i18n";
 import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 import { siteConfig } from "@/lib/site";
 import Logo from "./Logo";
+import OpenEnaAttribution from "./OpenEnaAttribution";
 
 interface FooterProps {
   locale: Locale;
@@ -33,6 +34,7 @@ export default function Footer({ locale, dictionary }: FooterProps) {
         <div className="footer-brand">
           <Logo href={`/${locale}`} />
           <p>{dictionary.footer.description}</p>
+          <OpenEnaAttribution locale={locale} aboutHref={`/${locale}/about`} variant="footer" />
         </div>
         <div>
           <h2>{dictionary.footer.navigation}</h2>
