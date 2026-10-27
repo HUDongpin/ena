@@ -38,6 +38,7 @@
     "test:browser:open-ena-a11y-landmarks": "node tests/open-ena-a11y-landmarks-browser.mjs",
     "test:browser:open-ena-stale-rebuild-cue": "node tests/open-ena-stale-rebuild-cue-browser.mjs",
     "test:browser:longitudinal-v3": "node tests/open-ena-longitudinal-v3-browser-smoke.mjs",
+    "test:browser:open-ena-trajectory-labels": "node tests/open-ena-trajectory-labels-browser.mjs",
     "prompt:verify": "node --import tsx scripts/verify-open-ena-ai-prompts.ts",
     "test:production-browser-receipt:unit": "node --test scripts/verify-open-ena-production-browser-run.test.mjs",
     "verify:production-browser-receipt": "node --check scripts/verify-open-ena-production-browser-run.mjs && node --check scripts/verify-open-ena-production-browser-run.test.mjs && npm run test:production-browser-receipt:unit",

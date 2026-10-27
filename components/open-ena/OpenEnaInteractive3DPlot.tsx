@@ -46,6 +46,7 @@ import {
 } from "./plotly-gl3d-loader";
 
 import { createOpenEnaPlotlyResourceOwnerV3, runOpenEnaPlotlyViewTransactionV3, type OpenEnaOwnedGlSceneV3 } from "../../lib/open-ena/plotly-resource-owner-v3";
+import { createOpenEna3dLabelLayout, movePlotlyPointByPixels, readPlotlyAnnotationDragPosition } from "../../lib/open-ena/plot3d-label-layout";
 
 type PlotlyApi = PlotlyGl3dApi;
 type PlotlyImageApi = PlotlyApi & {
@@ -114,6 +115,7 @@ export interface OpenEnaInteractive3DPlotProps extends OpenEnaCodeGraphPresentat
   edgeThreshold: number;
   pointScale: number;
   plotZoom: number;
+  textScale?: number;
   flipX: boolean;
   flipY: boolean;
   nodeLayout?: OpenEnaNodeLayoutPositions;
@@ -134,11 +136,13 @@ export interface OpenEnaInteractive3DPlotProps extends OpenEnaCodeGraphPresentat
 
 interface PlotlyEventRoot extends HTMLDivElement {
   on?: {
-    (event: "plotly_relayout", listener: (update: Record<string, unknown>) => void): void;
+    (event: "plotly_relayout" | "plotly_relayouting", listener: (update: Record<string, unknown>) => void): void;
+    (event: "plotly_afterplot", listener: () => void): void;
     (event: "plotly_hover" | "plotly_unhover", listener: (event: PlotlyGl3dPointEvent) => void): void;
   };
   removeListener?: {
-    (event: "plotly_relayout", listener: (update: Record<string, unknown>) => void): void;
+    (event: "plotly_relayout" | "plotly_relayouting", listener: (update: Record<string, unknown>) => void): void;
+    (event: "plotly_afterplot", listener: () => void): void;
     (event: "plotly_hover" | "plotly_unhover", listener: (event: PlotlyGl3dPointEvent) => void): void;
   };
   _fullLayout?: {
@@ -231,15 +235,36 @@ function pngBlobFromDataUrl(dataUrl: string) {
   return new Blob([bytes], { type: "image/png" });
 }
 
-function fallbackFullscreenFocusables(target: HTMLElement) {
+export function fallbackFullscreenFocusables(target: HTMLElement) {
   return [...target.querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, '
     + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  )].filter((element) => (
-    element.getAttribute("aria-hidden") !== "true"
-    && !element.hasAttribute("hidden")
-    && element.getClientRects().length > 0
-  ));
+  )].filter((element) => {
+    if (element.tabIndex < 0 || element.matches(":disabled")
+      || element.closest('[hidden], [inert], [aria-hidden="true"]')
+      || element.getClientRects().length === 0) return false;
+    const nativeVisibility = typeof element.checkVisibility === "function";
+    if (nativeVisibility && !element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false;
+    if (!nativeVisibility && ["hidden", "collapse"].includes(getComputedStyle(element).visibility)) return false;
+    // Chromium can report a nonempty client rect for descendants of a closed
+    // details element even though they cannot receive focus. Only its first
+    // summary (and visible controls inside that summary) remains in the ring.
+    for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
+      if (ancestor !== element && ancestor.tagName === "DETAILS" && !ancestor.hasAttribute("open")) {
+        const summary = [...ancestor.children].find(child => child.tagName === "SUMMARY");
+        if (!summary?.contains(element)) return false;
+      }
+      if (!nativeVisibility) {
+        const style = getComputedStyle(ancestor);
+        if (style.display === "none" || style.contentVisibility === "hidden" || style.opacity === "0") return false;
+      }
+    }
+    if (element.tagName === "SUMMARY" && !element.hasAttribute("tabindex")) {
+      const details = element.parentElement;
+      if (details?.tagName !== "DETAILS" || [...details.children].find(child => child.tagName === "SUMMARY") !== element) return false;
+    }
+    return true;
+  });
 }
 
 function restoreAttribute(target: HTMLElement, name: string, value: string | null) {
@@ -360,6 +385,7 @@ export default function OpenEnaInteractive3DPlot({
   edgeThreshold,
   pointScale,
   plotZoom,
+  textScale = 1,
   flipX,
   flipY,
   nodeLayout,
@@ -384,12 +410,15 @@ export default function OpenEnaInteractive3DPlot({
   const lastRenderedSceneRef = useRef<{ fit: object; axes: string } | null>(null);
   const initialCameraRef = useRef(initialCamera);
   const lastCameraRef = useRef(initialCamera);
+  // Transient orbit frames must not suppress the final onCameraChange publish.
+  const labelGestureCameraRef = useRef<OpenEna3dCamera | null>(null);
   const initialAspectRatioRef = useRef(initialAspectRatio);
   const lastAspectRatioRef = useRef(initialAspectRatio);
   const ownedViewSyncRef = useRef(createOpenEnaPlotViewSyncV3());
   const userViewRevisionRef = useRef(0);
   const latestCameraResetKeyRef = useRef("");
   const plotResourcesRef = useRef<ReturnType<typeof createOpenEnaPlotlyResourceOwnerV3> | null>(null);
+  const labelLayoutRef = useRef<ReturnType<typeof createOpenEna3dLabelLayout> | null>(null);
   const relayoutListenerRef = useRef<((update: Record<string, unknown>) => void) | null>(null);
   const hoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
   const unhoverListenerRef = useRef<((event: PlotlyGl3dPointEvent) => void) | null>(null);
@@ -401,6 +430,7 @@ export default function OpenEnaInteractive3DPlot({
     startClientX: number;
     startClientY: number;
     startPosition: OpenEnaNodePosition3d;
+    nativeAnnotation: boolean;
   } | null>(null);
   const pendingNodeMoveRef = useRef<{ code: string; next: OpenEnaNodePosition3d } | null>(null);
   const visibleCodeIdentitiesRef = useRef<ReadonlySet<string>>(new Set());
@@ -443,6 +473,7 @@ export default function OpenEnaInteractive3DPlot({
   }, [isFullscreen, status]);
   const [hoveredCode, setHoveredCode] = useState<string | null>(null);
   const [nodeDragging, setNodeDragging] = useState<string | null>(null);
+  const [deferredLabelIds, setDeferredLabelIds] = useState<readonly string[]>([]);
   const [pluginReceipt, setPluginReceipt] = useState<{ receipt: OpenEnaPluginRunReceiptV1; isCurrent: () => boolean } | null>(null);
   const generatedFullscreenTargetId = `open-ena-interactive-3d-fullscreen-target-${instanceId}`;
   const fullscreenTargetId = fullscreenTarget?.id ?? generatedFullscreenTargetId;
@@ -530,6 +561,7 @@ export default function OpenEnaInteractive3DPlot({
       edgeThreshold,
       pointScale,
       plotZoom,
+      textScale,
       flipX,
       flipY,
       nodeLayout,
@@ -574,6 +606,7 @@ export default function OpenEnaInteractive3DPlot({
     edgeThreshold,
     pointScale,
     plotZoom,
+    textScale,
     flipX,
     flipY,
     nodeLayout,
@@ -728,7 +761,7 @@ export default function OpenEnaInteractive3DPlot({
       try {
         void runPlotlyOperation(() => Plotly.Plots.resize(plotRoot)).catch(() => {
           // Plotly rejects when a final observer callback reaches a detached plot.
-        });
+        }).then(() => labelLayoutRef.current?.schedule());
       } catch {
         // A detached plot can race a final observer notification during unmount.
       }
@@ -955,6 +988,77 @@ export default function OpenEnaInteractive3DPlot({
   }, [Plotly, spec, cameraResetKey, scientificFrame, sceneAxesKey, onCameraChange, onAspectRatioChange, onReady, onError]);
 
   useEffect(() => {
+    const root = plotRootRef.current as PlotlyEventRoot | null;
+    const labels = spec.trajectoryLabelAnnotations;
+    if (!Plotly || !root || !labels) { setDeferredLabelIds([]); return; }
+    let active = true;
+    const current = () => active && plotRootRef.current === root && currentPluginStateRef.current.spec === spec;
+    const controller = createOpenEna3dLabelLayout({
+      root, labels, isCurrent: current,
+      run: operation => runPlotlyOperation(operation),
+      relayout: async update => {
+        if (!current()) return;
+        // An annotation redraw must retain an orbit that is still in progress;
+        // the public camera prop is intentionally published only on mouseup.
+        const revision = userViewRevisionRef.current;
+        await ownedViewSyncRef.current.apply({ ...update, "scene.camera": currentCamera() },
+          value => Plotly.relayout(root, value));
+        const latestCamera = labelGestureCameraRef.current ?? lastCameraRef.current;
+        if (current() && revision !== userViewRevisionRef.current && latestCamera) {
+          await ownedViewSyncRef.current.apply({ "scene.camera": latestCamera }, value => Plotly.relayout(root, value));
+        }
+      },
+      scheduleFrame: callback => window.requestAnimationFrame(callback),
+      cancelFrame: frame => window.cancelAnimationFrame(frame),
+      onDeferredChange: ids => { if (current()) setDeferredLabelIds(ids); },
+      onError: () => { if (current()) setDeferredLabelIds(labels.map(label => label.id)); },
+    });
+    labelLayoutRef.current = controller;
+    const schedule = () => controller.schedule();
+    const relayout = (update: Record<string, unknown>) => {
+      if (ownedViewSyncRef.current.owns(update)) return;
+      // Native annotation updates echo their own relayout. They cannot be a
+      // fresh layout request or a user camera change.
+      if (Object.keys(update).every(key => key.startsWith("scene.annotations"))) return;
+      if (openEnaPlotViewFieldsV3(update).camera) labelGestureCameraRef.current = null;
+      schedule();
+    };
+    const relayouting = (update: Record<string, unknown>) => {
+      if (ownedViewSyncRef.current.owns(update)) return;
+      const fields = openEnaPlotViewFieldsV3(update);
+      if (fields.camera) {
+        const next = cameraFromRelayout(update, lastCameraRef.current ?? spec.layout.scene.camera);
+        if (next) { labelGestureCameraRef.current = next; userViewRevisionRef.current++; }
+      }
+      schedule();
+    };
+    root.on?.("plotly_relayouting", relayouting);
+    root.on?.("plotly_relayout", relayout);
+    root.on?.("plotly_afterplot", schedule);
+    // GL camera frames redraw native annotation groups without afterplot.
+    // Observe only child replacement, not our diagnostic attributes, so the
+    // final inertial frame receives the same measured layout and drag identity.
+    const annotationsObserver = new MutationObserver(records => {
+      if (records.some(record => (record.target instanceof Element && record.target.closest(".annotation-scene"))
+        || [...record.addedNodes, ...record.removedNodes].some(node => node instanceof Element
+          && (node.matches(".annotation-scene") || node.querySelector(".annotation-scene"))))) schedule();
+    });
+    annotationsObserver.observe(root, { childList: true, subtree: true });
+    document.fonts?.addEventListener("loadingdone", schedule);
+    void document.fonts?.ready.then(() => { if (current()) schedule(); });
+    schedule();
+    return () => {
+      active = false; controller.close(); labelGestureCameraRef.current = null;
+      root.removeListener?.("plotly_relayouting", relayouting);
+      root.removeListener?.("plotly_relayout", relayout);
+      root.removeListener?.("plotly_afterplot", schedule);
+      annotationsObserver.disconnect();
+      document.fonts?.removeEventListener("loadingdone", schedule);
+      if (labelLayoutRef.current === controller) labelLayoutRef.current = null;
+    };
+  }, [Plotly, spec]);
+
+  useEffect(() => {
     const visibleCodes = visibleCodeIdentitiesRef.current;
     if (hoveredCodeRef.current && !visibleCodes.has(hoveredCodeRef.current.code)) {
       hoveredCodeRef.current = null;
@@ -1072,10 +1176,19 @@ export default function OpenEnaInteractive3DPlot({
 
   function beginNodeDrag(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || status !== "ready" || !onNodeMove || activeNodeDragRef.current) return;
-    const hovered = hoveredCodeRef.current;
+    const element = event.target instanceof Element ? event.target.closest(".annotation-scene[data-index]") : null;
+    const annotationIndex = element ? Number(element.getAttribute("data-index")) : -1;
+    const annotationLabel = spec.trajectoryLabelAnnotations?.find(label => label.annotationIndex === annotationIndex);
+    const hovered = annotationLabel?.code ? { code: annotationLabel.code } : hoveredCodeRef.current;
+    if (element && !annotationLabel?.code) return;
     if (!hovered || !visibleCodeIdentitiesRef.current.has(hovered.code)) return;
-    const position = openEna3dCodePositionByIdentity(spec, hovered.code, "code-label");
+    let position = openEna3dCodePositionByIdentity(spec, hovered.code, "code-label");
     if (!position) return;
+    if (annotationLabel) {
+      position = readPlotlyAnnotationDragPosition(event.currentTarget, annotationIndex);
+      if (!position) return;
+      labelLayoutRef.current?.select(annotationLabel.id);
+    }
 
     event.preventDefault();
     event.stopPropagation();
@@ -1087,6 +1200,7 @@ export default function OpenEnaInteractive3DPlot({
       startClientX: event.clientX,
       startClientY: event.clientY,
       startPosition: position,
+      nativeAnnotation: Boolean(annotationLabel),
     };
     setNodeDragging(hovered.code);
   }
@@ -1097,7 +1211,11 @@ export default function OpenEnaInteractive3DPlot({
     event.preventDefault();
     event.stopPropagation();
     const bounds = event.currentTarget.getBoundingClientRect();
-    const next = dragOpenEnaNodeIn3d({
+    const layout = (event.currentTarget as HTMLDivElement & { _fullLayout?: { width?: number; height?: number } })._fullLayout;
+    const next = active.nativeAnnotation ? movePlotlyPointByPixels(event.currentTarget, active.startPosition, {
+      x: (event.clientX - active.startClientX) * (layout?.width ?? bounds.width) / bounds.width,
+      y: (event.clientY - active.startClientY) * (layout?.height ?? bounds.height) / bounds.height,
+    }) : dragOpenEnaNodeIn3d({
       position: active.startPosition,
       deltaPixels: {
         x: event.clientX - active.startClientX,
@@ -1112,6 +1230,7 @@ export default function OpenEnaInteractive3DPlot({
       camera: currentCamera(),
       aspectRatio: currentAspectRatio(),
     });
+    if (!next) return;
     pendingNodeMoveRef.current = { code: active.code, next };
     if (nodeMoveFrameRef.current === null) {
       nodeMoveFrameRef.current = window.requestAnimationFrame(flushNodeMove);
@@ -1131,6 +1250,7 @@ export default function OpenEnaInteractive3DPlot({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     activeNodeDragRef.current = null;
+    labelLayoutRef.current?.select(null);
     hoveredCodeRef.current = null;
     setHoveredCode(null);
     setNodeDragging(null);
@@ -1221,6 +1341,8 @@ export default function OpenEnaInteractive3DPlot({
         acquire: captureImageExport ?? (() => () => true), active,
         render: async current => {
           announceAction(copy.plot.copyingImage);
+          await labelLayoutRef.current?.flush();
+          if (!current()) return null;
           const dataUrl = await runPlotlyOperation(() => current() ? (Plotly as PlotlyImageApi).toImage(plotRoot, { format: "png", filename: `open-ena-3d-${plotKind}`, width: Math.max(1, Math.round(plotRoot.clientWidth)), height: Math.max(1, Math.round(plotRoot.clientHeight)), scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)) }) : null);
           if (dataUrl === null) return null;
           return { dataUrl, png: pngBlobFromDataUrl(dataUrl) };
@@ -1281,6 +1403,7 @@ export default function OpenEnaInteractive3DPlot({
             ...(aspectMode === "manual" ? { "scene.aspectratio": currentAspectRatio() } : {}),
           } as never);
         } else await Plotly.Plots.resize(plotRoot);
+        labelLayoutRef.current?.schedule();
       }).catch(() => {
         // A detached plot can reject a final fullscreen geometry update.
       });
@@ -1538,6 +1661,38 @@ export default function OpenEnaInteractive3DPlot({
           <span className="ena-plot-copy-status" role="status" aria-live="polite">{actionStatus}</span>
         </div>
       </div>
+
+      {spec.trajectoryLabelAnnotations?.length ? (
+        <details className="ena-result-summary open-ena-trajectory-label-summary" data-ena-label-details="true"
+          style={{ maxHeight: "12rem", overflow: "auto", minHeight: 0 }}>
+          <summary>{copy.workspace.plotLabels}</summary>
+          <p>{copy.workspace.plotLabelsHelp}</p>
+          <ul>
+            {spec.trajectoryLabelAnnotations.map(label => (
+              <li key={label.id}>
+                <button type="button" data-ena-label-detail-id={label.id}
+                  onFocus={() => labelLayoutRef.current?.select(label.id)}
+                  onBlur={() => labelLayoutRef.current?.select(null)}
+                  onMouseEnter={() => labelLayoutRef.current?.select(label.id)}
+                  onMouseLeave={() => labelLayoutRef.current?.select(null)}
+                  onClick={() => labelLayoutRef.current?.select(label.id)}>
+                  {label.description}
+                </button>
+                {deferredLabelIds.includes(label.id) ? <span> · {copy.workspace.deferredPlotLabel}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      {spec.trajectoryLabelAnnotations ? <style>{`
+        .open-ena-interactive-3d-figure[data-ena-native-trajectory="true"]:fullscreen,
+        .open-ena-interactive-3d-figure[data-ena-native-trajectory="true"][data-fallback-fullscreen="true"] {
+          grid-template-rows: minmax(0, 1fr) auto;
+        }
+        .open-ena-trajectory-label-summary ul { margin: 0; padding: 0 0 0 1.25rem; }
+        .open-ena-trajectory-label-summary button { text-align: start; }
+      `}</style> : null}
 
       {showAccessibleSummary ? (
         <details

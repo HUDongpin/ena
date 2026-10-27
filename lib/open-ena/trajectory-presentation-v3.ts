@@ -2,6 +2,12 @@ import { buildLongitudinalViewV3, type LongitudinalViewV3 } from "./longitudinal
 import { canonicalJsonV3 } from "./model-v3/canonical-json";
 import { openEnaGroupUnitKey, resolveOpenEnaGroupDisplayOptions, type OpenEnaGroupDisplaySettingsByGroup } from "./group-display";
 import type { BoundStandardResultV3 } from "./model-v3/types";
+import type { IdentityFieldV3 } from "./model-v3/identity";
+
+/** Plot text is a display value, never an identity or a parsed provenance label. */
+export function shortHorizonLabelV3(fields: readonly IdentityFieldV3[]): string {
+  return fields.map(field => String(field.value.value)).join(" · ");
+}
 
 export interface TrajectoryDisplaySettingsV3 {
   showCentroidPaths: boolean;
@@ -27,7 +33,7 @@ export function buildTrajectoryPresentationV3(result: BoundStandardResultV3, set
   const visibleHorizons = settings.visibleHorizons === null ? null : new Set(settings.visibleHorizons);
   const visible = (step: Step) => visibleHorizons === null || visibleHorizons.has(step.horizon.key);
   const points = visibleEntities.flatMap((entity) => entity.steps.filter((step, index) => visible(step) && (!settings.endpointsOnly || index === entity.steps.length - 1)).map((step) => ({
-    unitKey: entity.key, unitLabel: entity.id, group: entity.group?.label ?? "All Units", horizon: step.horizon.label, horizonKey: step.horizon.key,
+    unitKey: entity.key, unitLabel: entity.id, group: entity.group?.label ?? "All Units", horizon: step.horizon.label, horizonShortLabel: shortHorizonLabelV3(step.horizon.identity), horizonKey: step.horizon.key,
     ordinal: step.trajectoryOrdinal, point: step.point,
   })));
   const paths = settings.endpointsOnly ? [] : visibleEntities.flatMap((entity) => entity.steps.slice(1).flatMap((step, index) => {
@@ -35,14 +41,14 @@ export function buildTrajectoryPresentationV3(result: BoundStandardResultV3, set
     return visible(previous) && visible(step) ? [{ unitKey: entity.key, unitLabel: entity.id, group: entity.group?.label ?? "All Units", from: previous.point, to: step.point,
       fromOrdinal: previous.trajectoryOrdinal, toOrdinal: step.trajectoryOrdinal }] : [];
   }));
-  const populations = new Map<string, { key: string; group: string; horizon: string; horizonKey: string; units: Set<string>; points: Step["point"][] }>();
+  const populations = new Map<string, { key: string; group: string; horizon: string; horizonShortLabel: string; horizonKey: string; units: Set<string>; points: Step["point"][] }>();
   for (const entity of summaryEntities) for (const step of (settings.endpointsOnly ? entity.steps.slice(-1) : entity.steps)) {
     const key = canonicalJsonV3([groupKey(entity.group), step.horizon.key]);
-    const population = populations.get(key) ?? { key, group: entity.group?.label ?? "All Units", horizon: step.horizon.label, horizonKey: step.horizon.key, units: new Set(), points: [] };
+    const population = populations.get(key) ?? { key, group: entity.group?.label ?? "All Units", horizon: step.horizon.label, horizonShortLabel: shortHorizonLabelV3(step.horizon.identity), horizonKey: step.horizon.key, units: new Set(), points: [] };
     population.units.add(entity.key); population.points.push(step.point); populations.set(key, population);
   }
   const centroids = [...populations.values()].filter((population) => visibleHorizons === null || visibleHorizons.has(population.horizonKey)).map((population) => ({
-    key: population.key, group: population.group, horizon: population.horizon, horizonKey: population.horizonKey, n: population.units.size,
+    key: population.key, group: population.group, horizon: population.horizon, horizonShortLabel: population.horizonShortLabel, horizonKey: population.horizonKey, n: population.units.size,
     point: Object.fromEntries(view.supportedAxes.map((axis) => [axis, population.points.reduce((sum, point) => sum + Number(point[axis]), 0) / population.points.length])),
   }));
   const byKey = new Map(centroids.map((centroid) => [centroid.key, centroid]));

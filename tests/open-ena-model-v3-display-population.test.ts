@@ -56,7 +56,10 @@ test("hidden trajectory Units govern summary population and shared contributors 
   const projected = presentBoundResultV3(result), axes = projected.result.dimensions;
   const props = { result: { ...projected.result, trajectoryPresentation: full }, groupColumn: "Group", view: "2d" as const, xDimension: axes[0], yDimension: axes[1], zDimension: axes[2], camera: "isometric" as const, showPoints: true, showNetworks: true, showLabels: true, showUnitLabels: false, showVariance: false, showTrajectories: true, edgeScale: 1, edgeThreshold: 0, pointScale: 1, plotZoom: 1, flipX: false, flipY: false, copy: getOpenEnaCopy("en") };
   const base3d = compileOpenEna3dPlotSpec(props), hidden3d = compileOpenEna3dPlotSpec({ ...props, result: { ...projected.result, trajectoryPresentation: hidden } });
-  assert.deepEqual(hidden3d.layout.scene, base3d.layout.scene);
+  const { annotations: hiddenAnnotations, ...hiddenGeometry } = hidden3d.layout.scene;
+  const { annotations: fullAnnotations, ...fullGeometry } = base3d.layout.scene;
+  assert.deepEqual(hiddenGeometry, fullGeometry, "display labels never alter axes, camera or scene scaling");
+  assert.equal(hiddenAnnotations?.length, fullAnnotations?.length, "population changes preserve every visible identity label");
   const svg = renderToStaticMarkup(createElement(OpenEnaPlot, { ...props, result: { ...projected.result, trajectoryPresentation: hidden } }));
   assert.equal((svg.match(/data-ena-trajectory-path="true"/g) ?? []).length, 10);
 });

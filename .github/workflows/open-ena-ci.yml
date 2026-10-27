@@ -412,6 +412,7 @@ jobs:
         run: |
           node --import tsx tests/review-plot-legend-browser.mts output/review-regressions/plot-legend chromium
           node --import tsx tests/review-plot-literal-browser.mts output/review-regressions/plot-literal chromium
+          node --import tsx tests/open-ena-3d-fullscreen-focusables-browser.mts output/review-regressions/3d-fullscreen-focusables
           node tests/review-ui-reference-export-browser.mjs
           node tests/review-ui-source-order-disclosure-browser.mjs
           node tests/review-ui-native-button-spacing-browser.mjs

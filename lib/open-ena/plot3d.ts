@@ -123,7 +123,49 @@ export interface OpenEna3dTrace {
   connectgaps?: boolean;
   legendgroup?: string;
   showlegend?: boolean;
+  visible?: boolean;
   meta: OpenEna3dTraceMeta;
+}
+
+/** Display-only annotations. Their x/y/z remain scientific fitted anchors;
+ * automatic collision avoidance changes only the detached runtime ax/ay. */
+export interface OpenEna3dSceneAnnotation {
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  text: string;
+  hovertext: string;
+  showarrow: true;
+  arrowhead: 0;
+  arrowwidth: number;
+  arrowcolor: string;
+  ax: number;
+  ay: number;
+  xanchor: "center";
+  yanchor: "middle";
+  xshift: 0;
+  yshift: 0;
+  textangle: 0;
+  opacity: number;
+  captureevents: boolean;
+  borderpad: number;
+  borderwidth: number;
+  bgcolor: string;
+  font: { color: string; size: number };
+}
+
+export interface OpenEna3dLabelAnnotation {
+  id: string;
+  annotationIndex: number;
+  role: "code" | "centroid" | "unit";
+  text: string;
+  description: string;
+  priority: number;
+  code?: string;
+  /** Manual text preference only. Native annotation x/y/z stay at the
+   * scientific node so text dragging never changes Plotly's scene bounds. */
+  preferredPosition?: { x: number; y: number; z: number };
 }
 
 export interface OpenEna3dCamera {
@@ -279,6 +321,7 @@ export interface OpenEna3dPlotLayout {
     aspectmode: "cube" | "manual";
     aspectratio?: OpenEna3dAspectRatio;
     dragmode: "orbit" | false;
+    annotations?: OpenEna3dSceneAnnotation[];
   };
 }
 
@@ -296,6 +339,7 @@ export interface OpenEna3dPlotSpec {
   layout: OpenEna3dPlotLayout;
   config: OpenEna3dPlotConfig;
   diagnostics?: { degenerateDimensions: string[] };
+  trajectoryLabelAnnotations?: OpenEna3dLabelAnnotation[];
 }
 
 export interface CompileOpenEna3dPlotInput extends OpenEnaCodeGraphPresentation {
@@ -323,6 +367,7 @@ export interface CompileOpenEna3dPlotInput extends OpenEnaCodeGraphPresentation 
   edgeThreshold: number;
   pointScale: number;
   plotZoom: number;
+  textScale?: number;
   flipX: boolean;
   flipY: boolean;
   nodeLayout?: OpenEnaNodeLayoutPositions;
@@ -697,6 +742,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     edgeThreshold,
     pointScale,
     plotZoom,
+    textScale = 1,
     flipX,
     flipY,
     nodeLayout,
@@ -709,6 +755,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   const traces: OpenEna3dTrace[] = [];
   const unitLegendGroupIndices = new Set<number>();
   const nodeRows = result.set.rotation.nodes ?? [];
+  const canonicalNodeByCode = new Map(nodeRows.map(row => [String(row.code ?? ""), row]));
   const labelRows = nodeRows.map((row) => {
     const code = String(row.code ?? "");
     const canonical = new Map(dimensions.map((dimension) => [dimension, coordinate(row, dimension)]));
@@ -720,8 +767,29 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   ));
   const points = result.set.points;
   const trajectory = result.trajectoryPresentation;
+  const trajectoryAnnotations: OpenEna3dSceneAnnotation[] = [];
+  const trajectoryLabelAnnotations: OpenEna3dLabelAnnotation[] = [];
+  const labelSize = 12 * clamp(textScale, 0.65, 1.8, 1);
+  const addTrajectoryLabel = (
+    label: Omit<OpenEna3dLabelAnnotation, "annotationIndex">,
+    point: Row,
+    color = "#263740",
+  ) => {
+    const annotationIndex = trajectoryAnnotations.length;
+    trajectoryLabelAnnotations.push({ ...label, annotationIndex });
+    trajectoryAnnotations.push({
+      name: label.id,
+      x: coordinate(point, xDimension), y: coordinate(point, yDimension), z: coordinate(point, zDimension),
+      text: escapeHoverText(label.text), hovertext: escapeHoverText(label.description),
+      showarrow: true, arrowhead: 0, arrowwidth: 0.8, arrowcolor: color,
+      ax: 0, ay: 0, xanchor: "center", yanchor: "middle", xshift: 0, yshift: 0, textangle: 0,
+      opacity: 0, captureevents: false, borderpad: 2, borderwidth: 0,
+      bgcolor: "rgba(255,255,255,0.9)", font: { color, size: labelSize },
+    });
+  };
   const trajectoryPointKey = (row: Row) => JSON.stringify([row.Unit, row.Horizon]);
-  const visibleTrajectoryPoints = trajectory ? new Set(trajectory.points.map((point) => trajectoryPointKey(point.point))) : null;
+  const trajectoryPointsByKey = trajectory ? new Map(trajectory.points.map(point => [trajectoryPointKey(point.point), point])) : null;
+  const visibleTrajectoryPoints = trajectoryPointsByKey ? new Set(trajectoryPointsByKey.keys()) : null;
   const safePointScale = clamp(pointScale, 0.2, 5, 1);
   const safeEdgeScale = clamp(edgeScale, 0.1, 5, 1);
   const safeThreshold = clamp(edgeThreshold, 0, 1, 0);
@@ -914,7 +982,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       unitLegendGroupIndices.add(groupIndex);
       traces.push({
         type: "scatter3d",
-        mode: showUnitLabels ? "markers+text" : "markers",
+        mode: showUnitLabels && !trajectory ? "markers+text" : "markers",
         name: `${escapeHoverText(group.name)} units · ${markerLabel}`,
         x: selected.map((row) => coordinate(row, xDimension)),
         y: selected.map((row) => coordinate(row, yDimension)),
@@ -937,6 +1005,15 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         legendgroup: `open-ena-group-${groupIndex}`,
         showlegend: true,
         meta: { role: "unit-points", groupName: group.name, groupIndex, markerSymbol },
+      });
+      if (trajectory && showUnitLabels) selected.forEach((row, index) => {
+        const point = trajectoryPointsByKey?.get(trajectoryPointKey(row));
+        const label = String(row.ENA_UNIT ?? `unit-${index + 1}`);
+        addTrajectoryLabel({
+          id: `unit:${JSON.stringify([row.Group, row.Unit, row.Horizon])}`,
+          role: "unit", text: label, priority: 100,
+          description: `${group.name} · ${label}${point ? ` · ${point.horizon}` : ""}`,
+        }, row, color);
       });
     });
   }
@@ -1015,10 +1092,13 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     }
     for (const centroid of trajectory.centroids) {
       if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) continue;
-      traces.push({ type: "scatter3d", mode: "markers+text", name: "Observed Group centroid",
+      const description = `${centroid.group} · ${centroid.horizon} · n=${centroid.n}`;
+      traces.push({ type: "scatter3d", mode: "markers", name: "Observed Group centroid",
         x: [coordinate(centroid.point, xDimension)], y: [coordinate(centroid.point, yDimension)], z: [coordinate(centroid.point, zDimension)],
-        text: [literalGlText(`${centroid.horizon} · n=${centroid.n}`)], marker: { color: "black", size: 7, symbol: "square" }, showlegend: false,
-        hovertemplate: `Observed n=${centroid.n}<extra></extra>`, meta: { role: "group-mean", groupName: centroid.group } });
+        text: [literalGlText(description)], marker: { color: "black", size: 7, symbol: "square" }, showlegend: false,
+        hovertemplate: `${escapeHoverText(description)}<extra></extra>`, meta: { role: "group-mean", groupName: centroid.group } });
+      addTrajectoryLabel({ id: `centroid:${centroid.key}`, role: "centroid", text: centroid.horizonShortLabel,
+        description, priority: 200 }, centroid.point);
     }
   }
   if (renderedDisplayNodeRows.length > 0) {
@@ -1040,7 +1120,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       textfont: { color: "#263740", size: 12 },
       marker: {
         color: renderedDisplayNodeRows.map((row) => codeColorFor(codeColors, String(row.code ?? ""))),
-        size: 9,
+        size: trajectory ? 5.5 : 9,
         symbol: "circle",
         opacity: 1,
         line: { color: "#ffffff", width: 1.5 },
@@ -1055,6 +1135,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
     const labels = labelRows.filter(row => openEnaRenderedCodeIsVisible(codePresentation, String(row.code ?? "")));
     traces.push({
       type: "scatter3d", mode: "text", name: "Code labels",
+      ...(trajectory ? { visible: false } : {}),
       x: labels.map(row => coordinate(row, xDimension)),
       y: labels.map(row => coordinate(row, yDimension)),
       z: labels.map(row => coordinate(row, zDimension)),
@@ -1064,6 +1145,14 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       textposition: "top center", textfont: { color: "#263740", size: 12 },
       hovertemplate: "%{customdata}<extra></extra>", showlegend: false,
       meta: { role: "code-label" },
+    });
+    if (trajectory) labels.forEach(row => {
+      const code = String(row.code);
+      const text = openEnaRenderedCodeLabel(input, code);
+      const manual = dimensions.some(dimension => nodeLayout?.get(code)?.has(dimension));
+      addTrajectoryLabel({ id: `code:${code}`, role: "code", code, text, description: text, priority: manual ? 400 : 300,
+        ...(manual ? { preferredPosition: { x: coordinate(row, xDimension), y: coordinate(row, yDimension), z: coordinate(row, zDimension) } } : {}),
+      }, canonicalNodeByCode.get(code)!);
     });
   }
 
@@ -1096,6 +1185,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
   const aspectratio = displayAspectRatio(camera, plotZoom);
 
   return {
+    ...(trajectory ? { trajectoryLabelAnnotations } : {}),
     data: traces.map((trace) => ({
       ...trace,
       meta: { ...trace.meta, plotKind },
@@ -1118,6 +1208,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       uirevision: OPEN_ENA_3D_UI_REVISION,
       annotations,
       scene: {
+        ...(trajectory ? { annotations: trajectoryAnnotations } : {}),
         xaxis: sceneAxis(xDimension, AXIS_COLORS[0], flipX),
         yaxis: sceneAxis(yDimension, AXIS_COLORS[1], flipY),
         zaxis: sceneAxis(zDimension, AXIS_COLORS[2], false),

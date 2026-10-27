@@ -8,7 +8,7 @@ import { analyzeDataset } from "../lib/open-ena/analyze";
 import { exportCurrentAnalysisV3,buildAnalysisBundle } from "../lib/open-ena/export";
 import { SAMPLE_CONFIG } from "../lib/open-ena/types";
 
-test("CSV source labels stay literal in GL-only text while native identity, coordinates and exported bytes stay unchanged",async()=>{
+test("CSV source labels stay literal in trajectory annotations and lookup text while identity, coordinates and exports stay unchanged",async()=>{
   for(const label of literalLabelCases){
     const {bound,plan,props}=await literalLabelFixture(label);
     const before=JSON.stringify(props); const exported=await exportCurrentAnalysisV3(bound,plan);
@@ -16,6 +16,17 @@ test("CSV source labels stay literal in GL-only text while native identity, coor
     const labels=spec.data.find(trace=>trace.meta.role==="code-label")!;
     const code=labels.ids!.find(id=>props.codeLabelByRenderedCode[id]===label)!;
     const index=labels.ids!.indexOf(code);
+    assert.equal(labels.visible,false,"native trajectory Code text is rendered by the annotation, not the retained lookup trace");
+    const displayedCode=spec.trajectoryLabelAnnotations!.find(item=>item.code===code)!;
+    assert.equal(displayedCode.text,label);
+    const codeAnnotation=spec.layout.scene.annotations![displayedCode.annotationIndex];
+    assert.equal(codeAnnotation.name,displayedCode.id);
+    assert.equal(codeAnnotation.text.split("\u200b").length,label.split("\u200b").length,"SVG annotation text must not acquire GL-only separators");
+    const centroid=props.result.trajectoryPresentation.centroids[0];
+    const displayedHorizon=spec.trajectoryLabelAnnotations!.find(item=>item.id===`centroid:${centroid.key}`)!;
+    assert.equal(displayedHorizon.text,centroid.horizonShortLabel,"visible time labels retain the exact raw Horizon value");
+    assert.ok(displayedHorizon.description.includes(centroid.horizon),"full Horizon identity remains available in details and hover");
+    assert.ok(displayedHorizon.description.includes(`n=${centroid.n}`));
     assert.equal(visibleGlLabelForTest(labels.text![index],label),label);
     assert.doesNotMatch(labels.text![index],/<\/?(?:b|i|sup|sub|br)>/u);
     assert.equal(labels.hovertemplate,"%{customdata}<extra></extra>");
@@ -27,6 +38,7 @@ test("CSV source labels stay literal in GL-only text while native identity, coor
     const offset=new Map([[props.xDimension,123]]);
     const moved=compileOpenEna3dPlotSpec({...props,nodeLayout:new Map([[code,offset]])});
     assert.equal(openEna3dCodePositionByIdentity(moved,code,"code-label")!.x,123);
+    assert.deepEqual(moved.layout.scene.annotations,spec.layout.scene.annotations,"manual label preferences do not alter scientific annotation anchors or literal text");
     assert.equal(JSON.stringify(props),before);
     assert.deepEqual((await exportCurrentAnalysisV3(bound,plan)).bytes,exported.bytes);
     assert.equal(new TextDecoder().decode(exported.bytes).includes("\u200b"),label.includes("\u200b"));

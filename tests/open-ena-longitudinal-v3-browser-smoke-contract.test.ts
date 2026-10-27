@@ -149,10 +149,33 @@ test("rail navigation preserves native mounted plot AI consent and zero automati
   requires(["__openEnaAiLifecycleAudit", "aiPostCount: 0", "currentAiRoot === baseline.aiRoot", "currentConsent === baseline.consent", "audit.consentChecked, audit.consentEnabled", "audit.aiPostCount, audit.baselineAiPostCount", '"AI-assisted interpretation", "Model", "AI-assisted interpretation", "Data", "Stats & Export", "Plot Tools"']);
 });
 test("fallback fullscreen retains outside-tree modal isolation focus traversal Escape and exact restoration", () => {
-  requires(["exerciseFallbackFullscreenAccessibility", 'Object.getOwnPropertyDescriptor(shell, "requestFullscreen")', 'Object.defineProperty(shell, "requestFullscreen"', "outsideSnapshots", "shellPathNonInert", "outsideTreeIsolated", 'getAttribute("aria-modal") === "true"', "document.activeElement === audit.exitButton", "pendingActions.every((control) => control.disabled)", 'settledState.focusableDescriptors.at(-1)?.action === "fullscreen"', 'page.keyboard.press("Shift+Tab")', 'page.keyboard.press("Tab")', "backgroundCandidate.focus()", 'page.keyboard.press("Escape")', "outsideTreeRestored", "requestFullscreenRestored"]);
+  requires(["exerciseFallbackFullscreenAccessibility", 'Object.getOwnPropertyDescriptor(shell, "requestFullscreen")', 'Object.defineProperty(shell, "requestFullscreen"', "outsideSnapshots", "shellPathNonInert", "outsideTreeIsolated", 'getAttribute("aria-modal") === "true"', "document.activeElement === audit.exitButton", "pendingActions.every((control) => control.disabled)", "settledExitIndex", "settledRuntimeFirst", "settledRuntimeLast", "closed label details leaked buttons into keyboard traversal", "expanded label details made Exit unreachable", 'page.keyboard.press("Shift+Tab")', 'page.keyboard.press("Tab")', "backgroundCandidate.focus()", 'page.keyboard.press("Escape")', "outsideTreeRestored", "requestFullscreenRestored"]);
 });
 test("native and fallback fullscreen retain full canvas geometry and positive separate SVD3 shaft label arrow", () => {
-  requires(["readFullscreenPlotLayout", "assertFullscreenPlotLayout", "audit.buttonBoxes.length === 5", 'audit.toolbar.position === "absolute"', "rightInset >= 6 && rightInset <= 22", "Math.abs(toolbarCenter - shellCenter) <= 2", "audit.plot.height >= audit.shell.height * 0.96", "webglRuntimeReady", "audit.canvas.pixelWidth >= audit.canvas.width * audit.plotGlPixelRatio * 0.9", "sceneDomain", 'trace.meta?.role === "axis"', 'trace.meta?.role === "axis-label"', "arrowTipContinuesShaft", "arrowTip > shaftTip", "rangeHeadroomRatio >= 0.01", '"fallback fullscreen layout", "fallback"', '"fullscreen layout", "native"']);
+  requires(["readFullscreenPlotLayout", "assertFullscreenPlotLayout", "audit.buttonBoxes.length === 5", 'audit.toolbar.position === "absolute"', "rightInset >= 6 && rightInset <= 22", "Math.abs(toolbarCenter - plotCenter) <= 2", "audit.plot.height >= availablePlotHeight * 0.96", "labelDetails", "webglRuntimeReady", "audit.canvas.pixelWidth >= audit.canvas.width * audit.plotGlPixelRatio * 0.9", "sceneDomain", 'trace.meta?.role === "axis"', 'trace.meta?.role === "axis-label"', "arrowTipContinuesShaft", "arrowTip > shaftTip", "rangeHeadroomRatio >= 0.01", '"fallback fullscreen layout", "fallback"', '"fullscreen layout", "native"']);
+});
+
+test("fullscreen geometry reserves only the measured capped label-details row", () => {
+  const declaration = source.match(/function assertFullscreenPlotLayout\(audit, label, expectedMode\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(declaration);
+  const verify = new Function(`${declaration}; return assertFullscreenPlotLayout;`)() as (audit: unknown, label: string, mode: string) => void;
+  const plotHeight = 932;
+  const fixture = {
+    mode: "fallback", rootFontSize: 16,
+    shell: { top: 0, bottom: 1000, left: 0, right: 1440, width: 1440, height: 1000 },
+    plot: { top: 0, bottom: plotHeight, left: 0, right: 1440, width: 1440, height: plotHeight },
+    labelDetails: { top: 936, bottom: 992, left: 0, right: 1440, width: 1440, height: 56, marginTop: 4, marginBottom: 8, maxHeight: 192 },
+    toolbar: { position: "absolute", flexDirection: "column", top: 356, bottom: 576, left: 1386, right: 1430, clientHeight: 220, scrollHeight: 220 },
+    buttonBoxes: Array.from({ length: 5 }, (_, index) => ({ top: 356 + index * 44, bottom: 400 + index * 44, left: 1386, right: 1430, height: 44 })),
+    legend: null, modebar: null, webglRuntimeReady: true, devicePixelRatio: 1, plotGlPixelRatio: 1,
+    canvas: { width: 1440, height: plotHeight, pixelWidth: 1440, pixelHeight: plotHeight },
+    sceneDomain: { x: [0, 1], y: [0, 1] },
+    svd3Axis: { shaftPresent: true, arrowheadPresent: true, labelPresent: true, finiteNonDegenerate: true, arrowTipContinuesShaft: true, rangeHeadroomRatio: 0.05 },
+  };
+  assert.doesNotThrow(() => verify(fixture, "label details", "fallback"));
+  assert.throws(() => verify({ ...fixture, plot: { ...fixture.plot, bottom: 800, height: 800 } }, "clipped plot", "fallback"));
+  assert.throws(() => verify({ ...fixture, labelDetails: { ...fixture.labelDetails, height: 300, maxHeight: 300 } }, "uncapped details", "fallback"));
+  assert.throws(() => verify({ ...fixture, labelDetails: { ...fixture.labelDetails, marginTop: 200 } }, "wasted row", "fallback"));
 });
 test("desktop tablet mobile and native fullscreen retain screenshots and no document overflow", () => {
   requires(["width: 1440, height: 1000", "width: 1024, height: 768", "width: 390, height: 844", "clippedInteractiveControls", "getBoundingClientRect()", "overflow.documentScrollWidth <= overflow.documentClientWidth + 1", "overflow.bodyScrollWidth <= overflow.bodyClientWidth + 1", "shellPath", "fullscreenPath", "document.fullscreenElement === shell"]);
@@ -337,8 +360,42 @@ test("actual source verifier rejects changed owned bytes and incorrect source li
   assert.equal(await verify({ ...candidate, ownedSourceSha256: createHash("sha256").update(text).digest("hex") }), null);
 });
 
-test("queued-render regression targets code text and accepts its separate trace", () => {
-  requires(['"code-label"', "t.meta?.role==='code-label'", "if(t?.meta?.role==='code-label')", "code text before queued display edit"]);
+function queuedCodeTargetsReader() {
+  const declaration = source.match(/function readQueuedRenderCodeLabelTargetsV3\(root\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(declaration, "queued display edits must resolve actual annotation text instead of projecting a hidden GL trace");
+  return new Function(`${declaration}; return readQueuedRenderCodeLabelTargetsV3;`)() as (root: unknown) => Array<{ id: string; code: string; x: number; y: number }>;
+}
+
+test("queued-render pointer targets come from visible annotation text even when the GL label trace is hidden", () => {
+  const read = queuedCodeTargetsReader();
+  const annotation = (index: number, id: string, box: { left: number; top: number; width: number; height: number }) => ({
+    getAttribute: (name: string) => name === "data-index" ? String(index) : name === "data-ena-label-id" ? id : null,
+    querySelector: (selector: string) => selector === ".annotation-text" ? { getBoundingClientRect: () => box } : null,
+  });
+  const root = {
+    data: [{ meta: { role: "code-label" }, visible: false, ids: ["Code 1", "Code 2"], x: [1, 2], y: [3, 4], z: [5, 6] }],
+    _fullLayout: { scene: { annotations: [{ name: "code:Code 1", opacity: 1 }, { name: "code:Code 2", opacity: 0 }, { name: "centroid:TP1", opacity: 1 }] } },
+    querySelectorAll: () => [
+      annotation(0, "code:Code 1", { left: 120, top: 230, width: 20, height: 14 }),
+      annotation(1, "code:Code 2", { left: 160, top: 250, width: 20, height: 14 }),
+      annotation(2, "centroid:TP1", { left: 200, top: 260, width: 20, height: 14 }),
+    ],
+  };
+  assert.deepEqual(read(root), [{ id: "code:Code 1", code: "Code 1", x: 130, y: 237 }]);
+  root._fullLayout.scene.annotations[0].name = "code:Code 2";
+  assert.deepEqual(read(root), [], "stale annotation identities cannot become a pointer target");
+});
+
+test("queued-render target reader reports a missing opt-in instead of dereferencing an absent trace", () => {
+  const read = queuedCodeTargetsReader();
+  assert.throws(() => read({ data: [], querySelectorAll: () => [] }), /Code labels must be enabled/u);
+});
+
+test("queued-render regression explicitly enables optional Code labels and verifies a real annotation drag", () => {
+  requires(["readQueuedRenderCodeLabelTargetsV3", 'name: "Code labels", exact: true', "codeLabels.check()", "elementFromPoint", "data-ena-node-dragging", "code text before queued display edit"]);
   const queued = source.slice(source.indexOf("async function checkQueuedRenderExitV3"), source.indexOf("async function exerciseStaleImageLease"));
+  assert.ok(queued.indexOf("codeLabels.check()") < queued.indexOf("await copy.click()"), "optional text must be enabled before the genuine image callback is held");
+  assert.ok(source.includes('getByRole("checkbox", { name: "Code labels", exact: true }).uncheck()'), "later fullscreen cases must return to the default label display");
   assert.doesNotMatch(queued, /meta\?\.role==='code-node'/);
+  assert.doesNotMatch(queued, /__task38QueuedActualHover|cameraParams|trace\.x\.map/u);
 });
