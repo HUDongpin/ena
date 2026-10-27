@@ -14466,3 +14466,55 @@ html:has(.open-ena-page) {
   border-inline-start-color: #94651c;
   background: #fff9ed;
 }
+
+/* Open ENA attribution additions: isolated from the existing live UI. */
+.open-ena-attribution {
+  min-width: 0;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.open-ena-attribution p { margin: 0; }
+.open-ena-attribution .open-ena-attribution-purpose { margin-block-start: 6px; font-weight: 600; }
+.open-ena-attribution a.open-ena-attribution-link {
+  display: inline-block;
+  max-width: 100%;
+  padding-block: 6px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.open-ena-attribution a.open-ena-attribution-link:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+
+.open-ena-attribution-home {
+  width: min(100% - 48px, 1320px);
+  margin: 0 auto 32px;
+  color: var(--muted, #526477);
+  font-size: 0.875rem;
+}
+
+.open-ena-attribution-footer {
+  margin-block-start: 16px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid currentColor;
+  font-size: 0.8125rem;
+  color: inherit;
+}
+
+.open-ena-attribution-workspace {
+  flex: 0 0 auto;
+  padding: 8px 13px;
+  border-block-end: 1px solid #c9d7df;
+  background: #f5f9fc;
+  color: #294452;
+  font-size: 0.75rem;
+}
+
+.open-ena-attribution-workspace .open-ena-attribution-purpose { margin-block-start: 2px; }
+.open-ena-attribution-workspace a { padding-block: 3px; }
+
+@media (max-width: 480px) {
+  .open-ena-attribution-home { width: calc(100% - 32px); }
+  .open-ena-attribution-workspace { padding-inline: 10px; }
+}

@@ -22,7 +22,6 @@ const unchangedUi = [
   "components/home-source/NetworkHero.tsx",
   "components/home-source/unified-home/Home.module.css",
   "components/shared-home-footer/HubFooter.module.css",
-  "app/globals.css",
   "components/open-ena/OpenEnaSiteNavigation.tsx",
   "components/about/open-ena/TeamCard.tsx",
   "components/about/open-ena/PublicationCard.tsx",
@@ -34,6 +33,19 @@ for (const path of unchangedUi) {
     assert.ok(read(path) === baseline(path), `${path} must remain identical to live release ${liveBase}`);
   });
 }
+
+test("global styles preserve the complete live prefix and only append scoped attribution rules", () => {
+  const original = baseline("app/globals.css");
+  const current = read("app/globals.css");
+  assert.ok(current.startsWith(original), "all original global style bytes must be retained");
+  const added = current.slice(original.length).replace(/\/\*[\s\S]*?\*\//g, "").trim();
+  assert.ok(added.length > 0);
+  for (const match of added.matchAll(/([^{}]+)\{/g)) {
+    const selector = match[1].trim();
+    if (selector.startsWith("@")) assert.equal(selector, "@media (max-width: 480px)");
+    else for (const item of selector.split(",")) assert.match(item.trim(), /^\.open-ena-attribution(?:[\s.:-]|$)/);
+  }
+});
 
 test("workspace changes only add the attribution import and visible attribution row", () => {
   const path = "components/open-ena/OpenEnaWorkspace.tsx";
