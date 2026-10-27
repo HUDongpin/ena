@@ -363,11 +363,20 @@ async function dragSvgNode(page, svgSelector, code, delta) {
   assertBrowser(matching.length === 1, "drag Code requires unique source/rendered identity");
   const node = page.locator(svgSelector).first().locator(`[data-ena-drag-code="${matching[0].column}"]`);
   const hitTarget = node.locator("text");
+  // A bounding box can be outside a nested scrollport after switching models.
+  // Bring the actual label into view and require a genuine pointer hit.
+  await hitTarget.scrollIntoViewIfNeeded();
+  await hitTarget.hover();
   const box = await hitTarget.boundingBox();
   assertBrowser(Boolean(box), "SVG node hit target is not visible");
   const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  assertBrowser(await hitTarget.evaluate((element, point) => {
+    const hit = document.elementFromPoint(point.x, point.y);
+    return hit === element || element.contains(hit);
+  }, start), "SVG label drag must begin on the visible target, not a clipped or covered coordinate");
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
+  await node.locator('xpath=self::*[@data-ena-node-dragging="true"]').waitFor();
   await page.mouse.move(start.x + delta.x, start.y + delta.y, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(250);
