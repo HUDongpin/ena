@@ -1095,7 +1095,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       const description = `${centroid.group} · ${centroid.horizon} · n=${centroid.n}`;
       traces.push({ type: "scatter3d", mode: "markers", name: "Observed Group centroid",
         x: [coordinate(centroid.point, xDimension)], y: [coordinate(centroid.point, yDimension)], z: [coordinate(centroid.point, zDimension)],
-        text: [literalGlText(description)], marker: { color: "black", size: 7, symbol: "square" }, showlegend: false,
+        text: [literalGlText(description)], marker: { color: "black", size: 4.5, symbol: "square" }, showlegend: false,
         hovertemplate: `${escapeHoverText(description)}<extra></extra>`, meta: { role: "group-mean", groupName: centroid.group } });
       addTrajectoryLabel({ id: `centroid:${centroid.key}`, role: "centroid", text: centroid.horizonShortLabel,
         description, priority: 200 }, centroid.point);

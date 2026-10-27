@@ -440,7 +440,7 @@ export default function OpenEnaPlot({
     for (const [index, centroid] of trajectory.centroids.entries()) {
       if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) continue;
       const point = positions.get(`trajectory-centroid-${index}`)!;
-      labelObstacles.push({ x: point.x - 5.5, y: point.y - 5.5, width: 11, height: 11 });
+      labelObstacles.push({ x: point.x - 4.5, y: point.y - 4.5, width: 9, height: 9 });
       trajectoryLabels.push({ id: `centroid:${centroid.key}`, kind: "centroid", text: centroid.horizonShortLabel,
         detail: `${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`, anchor: point, fontSize: 13 * labelScale, priority: 60,
         preferredOffset: { x: 28, y: -22 } });
@@ -579,7 +579,7 @@ export default function OpenEnaPlot({
         {trajectory?.centroids.map((centroid, index) => {
           if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) return null;
           const point = positions.get(`trajectory-centroid-${index}`);
-          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true" tabIndex={0} role="img" aria-label={`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}><rect x={point.x - 3.5} y={point.y - 3.5} width={7} height={7} fill="black" /><title>{`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}</title></g> : null;
+          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true" tabIndex={0} role="img" aria-label={`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}><rect x={point.x - 2.5} y={point.y - 2.5} width={5} height={5} fill="black" /><title>{`${centroid.group} · ${centroid.horizon} · observed n = ${centroid.n}`}</title></g> : null;
         })}
         {showPoints && unitPoints.map((unit) => {
           const point = positions.get(unit.key);
