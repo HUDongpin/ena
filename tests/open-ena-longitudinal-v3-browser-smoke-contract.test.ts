@@ -337,8 +337,42 @@ test("actual source verifier rejects changed owned bytes and incorrect source li
   assert.equal(await verify({ ...candidate, ownedSourceSha256: createHash("sha256").update(text).digest("hex") }), null);
 });
 
-test("queued-render regression targets code text and accepts its separate trace", () => {
-  requires(['"code-label"', "t.meta?.role==='code-label'", "if(t?.meta?.role==='code-label')", "code text before queued display edit"]);
+function queuedCodeTargetsReader() {
+  const declaration = source.match(/function readQueuedRenderCodeLabelTargetsV3\(root\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(declaration, "queued display edits must resolve actual annotation text instead of projecting a hidden GL trace");
+  return new Function(`${declaration}; return readQueuedRenderCodeLabelTargetsV3;`)() as (root: unknown) => Array<{ id: string; code: string; x: number; y: number }>;
+}
+
+test("queued-render pointer targets come from visible annotation text even when the GL label trace is hidden", () => {
+  const read = queuedCodeTargetsReader();
+  const annotation = (index: number, id: string, box: { left: number; top: number; width: number; height: number }) => ({
+    getAttribute: (name: string) => name === "data-index" ? String(index) : name === "data-ena-label-id" ? id : null,
+    querySelector: (selector: string) => selector === ".annotation-text" ? { getBoundingClientRect: () => box } : null,
+  });
+  const root = {
+    data: [{ meta: { role: "code-label" }, visible: false, ids: ["Code 1", "Code 2"], x: [1, 2], y: [3, 4], z: [5, 6] }],
+    _fullLayout: { scene: { annotations: [{ name: "code:Code 1", opacity: 1 }, { name: "code:Code 2", opacity: 0 }, { name: "centroid:TP1", opacity: 1 }] } },
+    querySelectorAll: () => [
+      annotation(0, "code:Code 1", { left: 120, top: 230, width: 20, height: 14 }),
+      annotation(1, "code:Code 2", { left: 160, top: 250, width: 20, height: 14 }),
+      annotation(2, "centroid:TP1", { left: 200, top: 260, width: 20, height: 14 }),
+    ],
+  };
+  assert.deepEqual(read(root), [{ id: "code:Code 1", code: "Code 1", x: 130, y: 237 }]);
+  root._fullLayout.scene.annotations[0].name = "code:Code 2";
+  assert.deepEqual(read(root), [], "stale annotation identities cannot become a pointer target");
+});
+
+test("queued-render target reader reports a missing opt-in instead of dereferencing an absent trace", () => {
+  const read = queuedCodeTargetsReader();
+  assert.throws(() => read({ data: [], querySelectorAll: () => [] }), /Code labels must be enabled/u);
+});
+
+test("queued-render regression explicitly enables optional Code labels and verifies a real annotation drag", () => {
+  requires(["readQueuedRenderCodeLabelTargetsV3", 'name: "Code labels", exact: true', "codeLabels.check()", "elementFromPoint", "data-ena-node-dragging", "code text before queued display edit"]);
   const queued = source.slice(source.indexOf("async function checkQueuedRenderExitV3"), source.indexOf("async function exerciseStaleImageLease"));
+  assert.ok(queued.indexOf("codeLabels.check()") < queued.indexOf("await copy.click()"), "optional text must be enabled before the genuine image callback is held");
+  assert.ok(source.includes('getByRole("checkbox", { name: "Code labels", exact: true }).uncheck()'), "later fullscreen cases must return to the default label display");
   assert.doesNotMatch(queued, /meta\?\.role==='code-node'/);
+  assert.doesNotMatch(queued, /__task38QueuedActualHover|cameraParams|trace\.x\.map/u);
 });

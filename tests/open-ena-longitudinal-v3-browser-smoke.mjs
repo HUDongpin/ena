@@ -1385,10 +1385,34 @@ async function exercisePendingImageActions(page) {
   }
 }
 
+// Trajectory Code text is an opt-in native annotation. Its hidden GL trace
+// retains identity/anchor data but is not a pointer target.
+function readQueuedRenderCodeLabelTargetsV3(root) {
+  const trace = root.data?.find(candidate => candidate.meta?.role === "code-label");
+  if (!trace) throw new Error("Code labels must be enabled before the queued-render pointer check");
+  const annotations = root._fullLayout?.scene?.annotations ?? [];
+  const codes = new Set(trace.ids ?? []);
+  return [...root.querySelectorAll('.annotation-scene[data-ena-label-role="code"][data-ena-label-visible="true"]')].flatMap(element => {
+    const id = element.getAttribute("data-ena-label-id");
+    const annotation = annotations[Number(element.getAttribute("data-index"))];
+    if (!id?.startsWith("code:") || annotation?.name !== id || annotation.opacity !== 1) return [];
+    const code = id.slice("code:".length);
+    if (!codes.has(code)) return [];
+    const box = element.querySelector(".annotation-text")?.getBoundingClientRect();
+    if (!box || ![box.left, box.top, box.width, box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0) return [];
+    return [{ id, code, x: box.left + box.width / 2, y: box.top + box.height / 2 }];
+  });
+}
+
 async function checkQueuedRenderExitV3(page, { mode = "restore" } = {}) {
   const focusReceiptName = mode === "restore" ? "queued-exit-focus.json" : "queued-exit-focus-user-choice.json";
   const baselineScience = await nativeScience(page);
   const shell=page.locator('.open-ena-interactive-3d-figure'), fullscreen=shell.locator('[data-ena-plot-action="fullscreen"]'), copy=shell.locator('[data-ena-plot-action="copy-image"]');
+  await page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Plot Tools", exact: true }).click();
+  const codeLabels = page.locator(".ena-workspace-plot-v3").getByRole("checkbox", { name: "Code labels", exact: true });
+  await codeLabels.check();
+  const root = shell.locator('[data-ena-plotly-root="true"]');
+  await root.locator('.annotation-scene[data-ena-label-role="code"][data-ena-label-visible="true"] .annotation-text').first().waitFor({ state: "visible" });
   await page.evaluate(()=>{
     const figure=document.querySelector('.open-ena-interactive-3d-figure');
     let proto=HTMLImageElement.prototype,onload;while(proto&&!onload){onload=Object.getOwnPropertyDescriptor(proto,'onload');proto=Object.getPrototypeOf(proto);}if(!onload?.set||!onload?.get)throw Error('Native image event unavailable');
@@ -1403,12 +1427,21 @@ async function checkQueuedRenderExitV3(page, { mode = "restore" } = {}) {
     await fullscreen.click();await page.waitForFunction(()=>document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen')==='true');
     await copy.waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('[data-ena-plot-action="copy-image"]').disabled);
     page.once('dialog',dialog=>dialog.accept());await copy.click();await page.waitForFunction(()=>!!window.__task38QueuedExit.release,null,{timeout:120000});
-    const root=shell.locator('[data-ena-plotly-root="true"]');
-    const candidates=await root.evaluate(element=>{const trace=element.data.find(t=>t.meta?.role==='code-label'),scene=element._fullLayout.scene._scene,params=scene.glplot.cameraParams,scale=scene.dataScale,box=scene.glplot.canvas.getBoundingClientRect();const multiply=(m,v)=>[0,1,2,3].map(r=>v.reduce((s,n,c)=>s+m[c*4+r]*n,0));element.__task38QueuedActualHover=null;element.__task38QueuedHover=e=>{const p=e.points?.[0],t=p?.fullData??p?.data;if(t?.meta?.role==='code-label')element.__task38QueuedActualHover=t.ids?.[p.pointNumber]??t.text?.[p.pointNumber];};element.on('plotly_hover',element.__task38QueuedHover);return trace.x.map((x,index)=>{const clip=multiply(params.projection,multiply(params.view,multiply(params.model,[x*scale[0],trace.y[index]*scale[1],trace.z[index]*scale[2],1])));return{x:box.left+(1+clip[0]/clip[3])*box.width/2,y:box.top+(1-clip[1]/clip[3])*box.height/2,id:trace.ids?.[index]??trace.text[index],visible:clip[3]>0};});});
+    const candidates = await root.evaluate(readQueuedRenderCodeLabelTargetsV3);
     let start;
-    for(const point of candidates){if(!point.visible||point.x<30||point.y<30)continue;for(const[dx,dy]of[[0,-12],[5,-12],[-5,-12],[0,-18],[0,-8],[0,0],[2,0],[-2,0],[0,2],[0,-2]]){await page.mouse.move(point.x+dx,point.y+dy);await page.waitForTimeout(90);if(await root.evaluate((element,id)=>element.__task38QueuedActualHover===id&&element.getAttribute('data-ena-node-hovered')===id,point.id)){start={x:point.x+dx,y:point.y+dy};break;}}if(start)break;}
+    for (const point of candidates) {
+      if (point.x < 30 || point.y < 30) continue;
+      await page.mouse.move(point.x, point.y);
+      const hitsCodeText = await root.evaluate((element, point) => {
+        const target = element.ownerDocument.elementFromPoint(point.x, point.y)?.closest('.annotation-scene[data-ena-label-role="code"][data-ena-label-visible="true"]');
+        return Boolean(target && element.contains(target) && target.getAttribute("data-ena-label-id") === point.id);
+      }, point);
+      if (hitsCodeText) { start = point; break; }
+    }
     assert.ok(start,'real pointer must hit code text before queued display edit');
-    await page.mouse.down();await page.mouse.move(start.x+38,start.y-23,{steps:5});await page.mouse.up();
+    await page.mouse.down();
+    await page.waitForFunction(code => document.querySelector('[data-ena-plotly-root="true"]')?.getAttribute("data-ena-node-dragging") === code, start.code, { timeout: 5000 });
+    await page.mouse.move(start.x+38,start.y-23,{steps:5});await page.mouse.up();
     await page.waitForFunction(()=>document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute('aria-busy')==='true',null,{timeout:5000});
     const beforeExit=await page.evaluate(()=>window.__task38QueuedExit.snapshot('queued-before-exit'));assert.equal(beforeExit.exitDisabled,false);assert.equal(beforeExit.callbackState,"held");
     await fullscreen.click();await page.waitForFunction(()=>document.querySelector('.open-ena-interactive-3d-figure')?.getAttribute('data-fallback-fullscreen')!=='true');
@@ -1429,7 +1462,7 @@ async function checkQueuedRenderExitV3(page, { mode = "restore" } = {}) {
   } catch(error) {
     result=await page.evaluate(()=>({held:window.__task38QueuedExit.held,events:window.__task38QueuedExit.events,snapshots:[...window.__task38QueuedExit.snapshots,window.__task38QueuedExit.snapshot('failure-before-finally')]}));writeFileSync(join(artifactDirectory,focusReceiptName),JSON.stringify({status:'FAIL',error:String(error),...result},null,2));throw error;
   } finally {
-    await page.evaluate(()=>{const a=window.__task38QueuedExit;a.release?.();for(const{type,listener}of a.listeners)document.removeEventListener(type,listener,true);if(a.previous)Object.defineProperty(HTMLImageElement.prototype,'onload',a.previous);else delete HTMLImageElement.prototype.onload;if(a.fullscreen)Object.defineProperty(a.figure,'requestFullscreen',a.fullscreen);else delete a.figure.requestFullscreen;const root=a.figure.querySelector('[data-ena-plotly-root]');root?.removeListener?.('plotly_hover',root.__task38QueuedHover);delete window.__task38QueuedExit;});
+    await page.evaluate(()=>{const a=window.__task38QueuedExit;a.release?.();for(const{type,listener}of a.listeners)document.removeEventListener(type,listener,true);if(a.previous)Object.defineProperty(HTMLImageElement.prototype,'onload',a.previous);else delete HTMLImageElement.prototype.onload;if(a.fullscreen)Object.defineProperty(a.figure,'requestFullscreen',a.fullscreen);else delete a.figure.requestFullscreen;delete window.__task38QueuedExit;});
   }
 }
 
@@ -2551,6 +2584,7 @@ try {
   await runBrowserPhase("later user focus cancels queued fullscreen return", checkQueuedRenderExitV3, { mode: "user-choice" }, 180_000);
   await runtime.page.getByRole("navigation", { name: "Analysis modes" }).getByRole("button", { name: "Plot Tools", exact: true }).click();
   await runtime.page.getByRole("button", { name: "Reset node positions", exact: true }).click();
+  await runtime.page.locator(".ena-workspace-plot-v3").getByRole("checkbox", { name: "Code labels", exact: true }).uncheck();
   await runtime.page.waitForFunction(() => document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "false", null, { timeout: 30000 });
   const fallbackA11yAudit = await runBrowserPhase("reversible fallback fullscreen keyboard modal", exerciseFallbackFullscreenAccessibility, { viewport: { width: 1440, height: 1000 } });
   const responsiveAudit = await runBrowserPhase("responsive native fullscreen and canvas geometry", captureResponsiveEvidence, { viewports: viewportMatrix, artifactDirectory });
