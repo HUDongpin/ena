@@ -8,7 +8,7 @@ import { siteConfig } from "@/lib/site";
 import styles from "./AboutContent.module.css";
 
 /** Shared English source content; the host owns the main landmark and navigation. */
-export default function AboutContent({ homeHref = "/" }: { homeHref?: string }) {
+export default function AboutContent({ openEnaHref = "/open-ena" }: { openEnaHref?: string }) {
   const peopleJsonLd = teamMembers.map((member) => ({
     "@type": "Person",
     name: member.name,
@@ -55,7 +55,7 @@ export default function AboutContent({ homeHref = "/" }: { homeHref?: string }) 
               <p>It means making the path from evidence to interpretation visible: what the model receives, what the computation does, what the figure shows, and what it cannot claim.</p>
             </div>
           </div>
-          <Link className={styles["button-primary"]} href={homeHref} prefetch={false}>Explore Open ENA</Link>
+          <Link className={styles["button-primary"]} href={openEnaHref} prefetch={false}>Explore Open ENA</Link>
         </section>
 
         <section className={styles["team-section"]} aria-labelledby="team-title">

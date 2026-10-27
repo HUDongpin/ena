@@ -40,5 +40,5 @@ export async function generateMetadata({ params }: AboutPageProps): Promise<Meta
 export default async function AboutPage({ params }: AboutPageProps) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
-  return <AboutContent homeHref={`/${locale}`} />;
+  return <AboutContent openEnaHref={`/${locale}/open-ena`} />;
 }
