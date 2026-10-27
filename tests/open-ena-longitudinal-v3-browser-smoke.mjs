@@ -1636,6 +1636,8 @@ async function readFullscreenPlotLayout(page) {
           ? "fallback"
           : "none",
       shell: shellBox,
+      plotRegion: boxFor(root.closest(".open-ena-interactive-3d-region")),
+      trajectoryLegend: boxFor(shell?.querySelector(".ena-trajectory-legend")),
       rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
       labelDetails: labelDetailsBox ? { ...labelDetailsBox, open: labelDetailsElement.open,
         marginTop: Number.parseFloat(labelDetailsStyle.marginTop), marginBottom: Number.parseFloat(labelDetailsStyle.marginBottom),
@@ -1722,7 +1724,18 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
   const availablePlotHeight = audit.shell.height - reservedDetailsHeight;
   const availablePlotBottom = audit.shell.bottom - reservedDetailsHeight;
   assertLayout(availablePlotHeight > 0, "label details consumed the complete plot");
-  const rightInset = audit.shell.right - audit.toolbar.right;
+  const plotRegion = audit.plotRegion ?? audit.shell;
+  const trajectoryLegend = audit.trajectoryLegend;
+  if (trajectoryLegend) {
+    const legendGap = trajectoryLegend.left >= plotRegion.right - 1
+      ? trajectoryLegend.left - plotRegion.right : plotRegion.left - trajectoryLegend.right;
+    assertLayout(trajectoryLegend.width > 0 && legendGap >= -1 && legendGap <= 24
+      && Math.abs(Math.min(plotRegion.left, trajectoryLegend.left) - audit.shell.left) <= 2
+      && Math.abs(Math.max(plotRegion.right, trajectoryLegend.right) - audit.shell.right) <= 2
+      && trajectoryLegend.top >= audit.shell.top - 1 && trajectoryLegend.bottom <= availablePlotBottom + 1,
+    "the separate trajectory legend overlaps the plot or falls outside its allocated fullscreen area");
+  }
+  const rightInset = plotRegion.right - audit.toolbar.right;
   const toolbarCenter = (audit.toolbar.top + audit.toolbar.bottom) / 2;
   const plotCenter = (audit.plot.top + audit.plot.bottom) / 2;
   assertLayout(rightInset >= 6 && rightInset <= 22, "the action toolbar is not at the far-right edge");
@@ -1749,7 +1762,7 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
   assertLayout(
     Math.abs(audit.plot.top - audit.shell.top) <= 2
       && Math.abs(audit.plot.bottom - availablePlotBottom) <= 2
-      && audit.plot.width >= audit.shell.width * 0.96
+      && audit.plot.width >= plotRegion.width * 0.96
       && audit.plot.height >= availablePlotHeight * 0.96,
     "the Plotly root does not fill the available plot after the measured label-details row",
   );
@@ -1767,6 +1780,7 @@ function assertFullscreenPlotLayout(audit, label, expectedMode) {
       && left.bottom > right.top
   );
   assertLayout(!boxesOverlap(audit.toolbar, audit.legend), "the toolbar covers the Plotly legend");
+  assertLayout(!boxesOverlap(audit.toolbar, trajectoryLegend), "the toolbar covers the separate trajectory legend");
   assertLayout(!boxesOverlap(audit.toolbar, audit.modebar), "the toolbar covers any visible modebar");
   assertLayout(
     audit.webglRuntimeReady
