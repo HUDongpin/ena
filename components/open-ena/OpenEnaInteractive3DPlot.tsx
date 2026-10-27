@@ -27,7 +27,7 @@ import type {
   OpenEnaOrderedPlotScope,
 } from "@/lib/open-ena/ordered-plot";
 import {
-  cameraForPreset,
+  cameraForPreset, OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM,
   type OpenEna3dAspectRatio,
   type OpenEna3dCamera,
   type OpenEna3dPlotKind,
@@ -1157,6 +1157,10 @@ export default function OpenEnaInteractive3DPlot({
     return cameraFromValue(eventRoot?._fullLayout?.scene?._scene?.getCamera?.(), fallback) ?? fallback;
   }
 
+  function defaultCameraForView() {
+    return cameraForPreset(camera, result.trajectoryPresentation ? OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM : 1);
+  }
+
   function resetAspectRatio() {
     return { ...UNIT_ASPECT_RATIO };
   }
@@ -1302,7 +1306,7 @@ export default function OpenEnaInteractive3DPlot({
       if (!current()) return;
       const activeCamera = currentCamera();
       const nextCamera = activeCamera.projection.type === "orthographic"
-        ? structuredClone(activeCamera) : resetOpenEna3dCameraDistance(activeCamera, cameraForPreset(camera));
+        ? structuredClone(activeCamera) : resetOpenEna3dCameraDistance(activeCamera, defaultCameraForView());
       const nextAspectRatio = activeCamera.projection.type === "orthographic" ? resetAspectRatio() : null;
       lastCameraRef.current = nextCamera; lastAspectRatioRef.current = nextAspectRatio;
       await Plotly.relayout(root, {
@@ -1316,7 +1320,7 @@ export default function OpenEnaInteractive3DPlot({
   function changeCameraZoom(direction: "in" | "out") {
     void runDisplayAction(async () => { const activeCamera = currentCamera();
       if (activeCamera.projection.type === "orthographic") await applyDisplayAspectRatio(zoomOpenEna3dAspectRatio(currentAspectRatio(), resetAspectRatio(), direction));
-      else await applyDisplayCamera(zoomOpenEna3dCamera(activeCamera, cameraForPreset(camera), direction));
+      else await applyDisplayCamera(zoomOpenEna3dCamera(activeCamera, defaultCameraForView(), direction));
     }, copy.plot.actionUnavailable);
   }
   function recenterCamera() { void runDisplayAction(async () => { await applyDefaultDisplayDistance(); }, copy.plot.actionUnavailable); }

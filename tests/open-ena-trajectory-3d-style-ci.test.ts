@@ -135,3 +135,20 @@ test("3D per-Group CI visibility gates both wireframes and expanded axis extents
   input.result = { ...input.result, groupPresentation: { ...input.result.groupPresentation!, allSuppressed: true } };
   assert.ok(!compileOpenEna3dPlotSpec(input).data.some(trace => ["confidence-interval", "group-mean", "trajectory-path", "direction-arrow", "unit-points"].includes(trace.meta.role)));
 });
+
+test("trajectory default view brings the scene closer while retaining every fitted coordinate and CI bound", async () => {
+  const input = await fixture();
+  const { cameraForPreset } = await import('../lib/open-ena/plot3d');
+  const before = JSON.stringify(input.result);
+  const spec = compileOpenEna3dPlotSpec(input), camera = cameraForPreset('isometric');
+  const distance = (eye: { x: number; y: number; z: number }) => Math.hypot(eye.x, eye.y, eye.z);
+  assert.ok(Math.abs(distance(camera.eye) / distance(spec.layout.scene.camera.eye) - 1.25) < 1e-12);
+  assert.equal(JSON.stringify(input.result), before);
+  for (const [index, axis] of ['xaxis', 'yaxis', 'zaxis'].entries()) {
+    const range = spec.layout.scene[axis as 'xaxis' | 'yaxis' | 'zaxis'].range;
+    const values = spec.data.flatMap(trace => (index === 0 ? trace.x : index === 1 ? trace.y : trace.z)).filter((value): value is number => typeof value === 'number');
+    assert.ok(values.every(value => value >= Math.min(...range) && value <= Math.max(...range)), 'all scientific marks, intervals, and axis labels stay inside the view range');
+  }
+  const ordinary = compileOpenEna3dPlotSpec({ ...input, result: { ...input.result, trajectoryPresentation: undefined } });
+  assert.deepEqual(ordinary.layout.scene.camera, camera, 'other analysis modes retain their existing default view');
+});

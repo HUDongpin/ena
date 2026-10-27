@@ -55,7 +55,7 @@ import { openEnaCodeColorPair } from "@/lib/open-ena/code-color-presets";
 import { codeColorFor } from "@/lib/open-ena/plot-style";
 import type { OpenEnaNodeLayoutPositions, OpenEnaNodeDimensionPosition } from "@/lib/open-ena/node-layout";
 import {
-  cameraForPreset,
+  cameraForPreset, scaledCamera, OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM,
   selectOpenEnaWorkspacePlotAxis,
   type OpenEna3dCamera,
   type OpenEna3dAspectRatio,
@@ -1350,7 +1350,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     onShowUnitLabelsChange={setShowUnitLabels} onShowPointsChange={setShowPoints} onUnitCircleChange={setUnitCircle}
     onFlipXChange={setFlipX} onFlipYChange={setFlipY} onPlotZoomChange={setPlotZoom}
     onResetNodeLayout={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}
-    onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric")); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(!isTrajectory); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
+    onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric", isTrajectory ? OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM : 1)); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(true); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
     settingsOpen={plotSettingsOpen} onSettingsOpenChange={setPlotSettingsOpen} disabled={!result} />;
   const panelHeading = mode === "data"
     ? { kicker: restoredCopy.dataKicker, title: copy.data.title, description: copy.data.description }
@@ -1564,7 +1564,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
         </fieldset><fieldset className="ena-restored-scale-fields"><legend>{restoredCopy.scales}</legend>
         {[[workspaceCopy.plot.edgeThreshold, edgeThreshold, setEdgeThreshold, 0, 1], [workspaceCopy.plot.edgeScale, edgeScale, setEdgeScale, 0.1, 4], [workspaceCopy.plot.pointScale, pointScale, setPointScale, 0.1, 4], [workspaceCopy.plot.zoom, plotZoom, setPlotZoom, 0.5, 3]].map(([label, value, setter, min, max]) => <OpenEnaRangeField key={String(label)} id={String(label)} idPrefix={workspaceId} label={String(label)} value={value as number} formattedValue={String(value)} accessibleValueText={String(value)} min={min as number} max={max as number} step={0.1} onChange={(e) => (setter as (value: number) => void)(e.target.valueAsNumber)} />)}
         </fieldset>
-        {view === "3d" && <fieldset className="ena-camera-fieldset"><legend>{copy.plot.cameraPosition}</legend>{cameraPositionOptions.map(([preset, label]) => <label key={preset}><input type="radio" name="ena-camera" value={preset} checked={cameraPreset === preset} onChange={() => { setCameraPreset(preset); setCamera(cameraForPreset(preset)); setAspectRatio(null); }} />{label}</label>)}</fieldset>}
+        {view === "3d" && <fieldset className="ena-camera-fieldset"><legend>{copy.plot.cameraPosition}</legend>{cameraPositionOptions.map(([preset, label]) => <label key={preset}><input type="radio" name="ena-camera" value={preset} checked={cameraPreset === preset} onChange={() => { setCameraPreset(preset); setCamera(isTrajectory ? scaledCamera(preset, plotZoom, OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM) : cameraForPreset(preset)); setAspectRatio(null); }} />{label}</label>)}</fieldset>}
         <button type="button" onClick={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}>{workspaceCopy.plot.resetNodes}</button>
       </section>}
       {mode === "stats" && !activeInference && initialCloudWorkspace?.statisticsReport

@@ -26,6 +26,7 @@ import { trajectoryCentroidDescriptionV3, trajectoryHorizonColorV3 } from "./tra
 
 export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
 export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
+export const OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM = 1.25;
 
 export const OPEN_ENA_3D_AXIS_COLORS = ["#e00000", "#0000d0", "#15803d"] as const;
 const AXIS_COLORS = OPEN_ENA_3D_AXIS_COLORS;
@@ -427,11 +428,12 @@ const CAMERA_PRESETS: Record<CameraPreset, OpenEna3dCamera> = {
 };
 
 /** Returns a fresh display-only Plotly camera for the selected preset. */
-export function cameraForPreset(preset: CameraPreset): OpenEna3dCamera {
+export function cameraForPreset(preset: CameraPreset, defaultZoom = 1): OpenEna3dCamera {
   const camera = CAMERA_PRESETS[preset];
+  const distance = camera.projection.type === "perspective" ? 1 / clamp(defaultZoom, .35, 3, 1) : 1;
   return {
     center: { ...camera.center },
-    eye: { ...camera.eye },
+    eye: { x: camera.eye.x * distance, y: camera.eye.y * distance, z: camera.eye.z * distance },
     up: { ...camera.up },
     projection: { ...camera.projection },
   };
@@ -533,8 +535,8 @@ function edgeWeight(groups: GroupNetwork[], edgeName: string) {
   return { value, groupIndex, comparison: false };
 }
 
-export function scaledCamera(preset: CameraPreset, plotZoom: number) {
-  const camera = cameraForPreset(preset);
+export function scaledCamera(preset: CameraPreset, plotZoom: number, defaultZoom = 1) {
+  const camera = cameraForPreset(preset, defaultZoom);
   if (camera.projection.type === "orthographic") return camera;
   const distanceScale = 1 / clamp(plotZoom, 0.35, 3, 1);
   return {
@@ -916,7 +918,9 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       });
     }) : []),
   ];
-  const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * 1.15;
+  // Keep trajectory framing close to the complete node/interval extent;
+  // sceneExtent below still reserves room for axis heads and labels.
+  const axisExtent = Math.max(0.5, ...coordinateMagnitudes) * (trajectory ? 1 : 1.15);
 
   // Draw the uncertainty wireframe before points, cones and labels. Plotly owns
   // axis reversal, so lower/upper remain the fitted-frame scientific bounds.
@@ -1272,7 +1276,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         xaxis: sceneAxis(xDimension, axisColors[0], flipX),
         yaxis: sceneAxis(yDimension, axisColors[1], flipY),
         zaxis: sceneAxis(zDimension, axisColors[2], false),
-        camera: scaledCamera(camera, plotZoom),
+        camera: scaledCamera(camera, plotZoom, trajectory ? OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM : 1),
         bgcolor: "#ffffff",
         aspectmode: aspectratio ? "manual" : "cube",
         ...(aspectratio ? { aspectratio } : {}),

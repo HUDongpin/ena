@@ -57,7 +57,7 @@ const expectedCameraLabels = {
 const expectedCameraStates = {
   isometric: {
     center: { x: 0, y: 0, z: 0 },
-    eye: { x: 1.45 / 1.5, y: 1.45 / 1.5, z: 1.25 / 1.5 },
+    eye: { x: 1.45 / (1.5 * 1.25), y: 1.45 / (1.5 * 1.25), z: 1.25 / (1.5 * 1.25) },
     up: { x: 0, y: 0, z: 1 },
     projection: { type: "perspective" },
   },

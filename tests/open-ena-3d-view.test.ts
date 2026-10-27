@@ -983,7 +983,7 @@ test("camera presets are explicit display-only orientations and the client plot 
   assert.match(workspace, /onAspectRatioChange=\{setAspectRatio\}/);
   assert.match(workspace, /sharedCamera=\{camera\}/);
   assert.match(workspace, /sharedAspectRatio=\{aspectRatio\}/);
-  assert.match(workspace, /setCamera\(cameraForPreset\(preset\)\)/);
+  assert.match(workspace, /setCamera\(isTrajectory \? scaledCamera\(preset, plotZoom, OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM\) : cameraForPreset\(preset\)\)/);
   assert.match(workspace, /setAspectRatio\(null\)/);
   for (const preset of ["isometric", "yx", "zx", "zy"]) assert.ok(workspace.includes(`["${preset}", copy.plot.`));
 
@@ -1279,10 +1279,10 @@ test("each 3D paper replaces the Plotly modebar with the same five unframed plot
   assert.match(interactive, /displayModeBar = false/);
   assert.match(interactive, /activeCamera\.projection\.type === "orthographic"/);
   assert.match(interactive, /zoomOpenEna3dAspectRatio\(currentAspectRatio\(\), resetAspectRatio\(\), direction\)/);
-  assert.match(interactive, /zoomOpenEna3dCamera\(activeCamera, cameraForPreset\(camera\), direction\)/);
+  assert.match(interactive, /zoomOpenEna3dCamera\(activeCamera, defaultCameraForView\(\), direction\)/);
   assert.match(interactive, /getAspectratio\?\.\(\)/);
   assert.match(interactive, /"scene\.aspectratio": nextAspectRatio/);
-  assert.match(interactive, /resetOpenEna3dCameraDistance\(activeCamera, cameraForPreset\(camera\)\)/);
+  assert.match(interactive, /resetOpenEna3dCameraDistance\(activeCamera, defaultCameraForView\(\)\)/);
   assert.match(interactive, /await applyDefaultDisplayDistance\(\)/);
   assert.match(interactive, /data-ena-recenter-behavior="default-distance"/);
   assert.match(groupContrast2d, /onClick=\{\(\) => onZoomChange\(1\)\}/);
