@@ -1287,7 +1287,7 @@ test("each 3D paper replaces the Plotly modebar with the same five unframed plot
   assert.match(interactive, /data-ena-recenter-behavior="default-distance"/);
   assert.match(groupContrast2d, /onClick=\{\(\) => onZoomChange\(1\)\}/);
   assert.match(interactive, /toImage\(plotRoot,/);
-  assert.match(interactive, /png: pngBlobFromDataUrl\(dataUrl\)/);
+  assert.match(interactive, /png: pngBlobFromDataUrl\(exportedDataUrl\)/);
   assert.doesNotMatch(interactive, /fetch\(dataUrl\)/);
   assert.match(interactive, /navigator\.clipboard\.write\(\[new ClipboardItem\(\{ "image\/png": png \}\)\]\)/);
   assert.match(interactive, /navigator\.clipboard\.writeText\(text\)/);

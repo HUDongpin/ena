@@ -6,6 +6,7 @@ import { nativePlotSummaryGroupsV3 } from "@/lib/open-ena/bound-presentation-v3"
 import type { OpenEnaContrastPresentation } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaCopy } from "@/lib/open-ena-i18n";
+import type { Locale } from "@/lib/i18n";
 import type { OpenEnaPairwiseContrast } from "@/lib/open-ena/contrasts";
 import type { OpenEnaDerivedGroupDisplay } from "@/lib/open-ena/group-display";
 import {
@@ -38,6 +39,8 @@ import { OPEN_ENA_PLUGIN_CATALOG } from "@/lib/open-ena/plugins/catalog";
 import { createOpenEnaPluginRunReceiptV1, type OpenEnaPluginRunReceiptV1 } from "@/lib/open-ena/plugins/run-receipt";
 import type { CameraPreset, OpenEnaConfig, OpenEnaResult } from "@/lib/open-ena/types";
 import OpenEnaPlotActionIcon from "./OpenEnaPlotActionIcon";
+import OpenEnaTrajectoryLegend from "./OpenEnaTrajectoryLegend";
+import { appendTrajectoryLegendToPng } from "@/lib/open-ena/trajectory-legend-export-v3";
 import {
   getPlotlyGl3d,
   schedulePlotlyGl3dRole,
@@ -78,6 +81,7 @@ export function openEna3dFullscreenMode(capabilities: {
 import { performPlotImageExportV3, type OpenEnaImageExportLeaseV3 } from "../../lib/open-ena/plot-image-export-v3";
 
 export interface OpenEnaInteractive3DPlotProps extends OpenEnaCodeGraphPresentation {
+  locale?: Locale;
   analysisKind?: "ena" | "ona";
   result: OpenEnaPlotResult;
   orderedConfig?: OpenEnaConfig;
@@ -348,6 +352,7 @@ export function zoomOpenEna3dAspectRatio(
 }
 
 export default function OpenEnaInteractive3DPlot({
+  locale = "en",
   analysisKind = "ena",
   result,
   orderedConfig,
@@ -1345,7 +1350,10 @@ export default function OpenEnaInteractive3DPlot({
           if (!current()) return null;
           const dataUrl = await runPlotlyOperation(() => current() ? (Plotly as PlotlyImageApi).toImage(plotRoot, { format: "png", filename: `open-ena-3d-${plotKind}`, width: Math.max(1, Math.round(plotRoot.clientWidth)), height: Math.max(1, Math.round(plotRoot.clientHeight)), scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)) }) : null);
           if (dataUrl === null) return null;
-          return { dataUrl, png: pngBlobFromDataUrl(dataUrl) };
+          const exportedDataUrl = result.trajectoryPresentation
+            ? await appendTrajectoryLegendToPng(dataUrl, result.trajectoryPresentation, result.groups, locale) : dataUrl;
+          if (!current()) return null;
+          return { dataUrl: exportedDataUrl, png: pngBlobFromDataUrl(exportedDataUrl) };
         },
         ...(typeof ClipboardItem === "function" && navigator.clipboard?.write ? { writePng: async (png: Blob) => { await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]); } } : navigator.clipboard?.writeText ? { writeText: async (text: string) => { await navigator.clipboard.writeText(text); } } : {}),
         download: png => { const url = URL.createObjectURL(png); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `open-ena-3d-${plotKind}.png`; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); },
@@ -1546,8 +1554,10 @@ export default function OpenEnaInteractive3DPlot({
       data-ena-native-trajectory={result.boundPresentation && result.trajectoryPresentation ? "true" : undefined}
       data-ena-plot-size={compact ? "compact" : "main"}
     >
+      <div className={result.trajectoryPresentation ? "ena-trajectory-figure-layout" : undefined}
+        style={result.trajectoryPresentation ? undefined : { display: "contents" }}>
       <div
-        className="open-ena-interactive-3d-region"
+        className={`open-ena-interactive-3d-region${result.trajectoryPresentation ? " ena-trajectory-canvas" : ""}`}
         role="region"
         tabIndex={0}
         aria-label={resolvedAriaLabel}
@@ -1662,6 +1672,9 @@ export default function OpenEnaInteractive3DPlot({
         </div>
       </div>
 
+      {result.trajectoryPresentation ? <OpenEnaTrajectoryLegend trajectory={result.trajectoryPresentation} groups={result.groups} locale={locale} /> : null}
+      </div>
+
       {spec.trajectoryLabelAnnotations?.length ? (
         <details className="ena-result-summary open-ena-trajectory-label-summary" data-ena-label-details="true"
           style={{ maxHeight: "12rem", overflow: "auto", minHeight: 0 }}>
@@ -1686,10 +1699,6 @@ export default function OpenEnaInteractive3DPlot({
       ) : null}
 
       {spec.trajectoryLabelAnnotations ? <style>{`
-        .open-ena-interactive-3d-figure[data-ena-native-trajectory="true"]:fullscreen,
-        .open-ena-interactive-3d-figure[data-ena-native-trajectory="true"][data-fallback-fullscreen="true"] {
-          grid-template-rows: minmax(0, 1fr) auto;
-        }
         .open-ena-trajectory-label-summary ul { margin: 0; padding: 0 0 0 1.25rem; }
         .open-ena-trajectory-label-summary button { text-align: start; }
       `}</style> : null}

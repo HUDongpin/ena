@@ -20,6 +20,7 @@ async function fixture(trajectory = true): Promise<CompileOpenEna3dPlotInput> {
     const point = Object.fromEntries(result.dimensions.map(dimension => [dimension, 0]));
     result = { ...result, trajectoryPresentation: {
       points: result.set.points.map(row => ({ unitKey: String(row.Unit), unitLabel: String(row.ENA_UNIT), group: String(row.Group), horizon: String(row.Horizon), horizonShortLabel: String(row.Horizon), horizonKey: String(row.Horizon), ordinal: 1, point: row })),
+      horizonStyles: [], showDirection: true, showConfidenceIntervals: true, uncertaintyStatus: "pending",
       paths: [], centroidPaths: [], disclosure: "Synthetic display-only collision fixture",
       centroids: ["TP1", "TP2"].map((horizonShortLabel, index) => ({
         key: `centroid-${index}`, group: result.groups[0].name,
@@ -48,10 +49,12 @@ test("coincident native trajectory centroids use short measured annotations whil
     assert.equal(annotation.text, label.text);
     assert.equal(annotation.ax, 0);
     assert.equal(annotation.ay, 0);
+    assert.equal(annotation.showarrow, false, "period labels must not have diagonal leader lines");
+    assert.equal(annotation.font.size, 8);
     assert.equal(annotation.opacity, 0, "unmeasured labels must not flash on top of each other");
     assert.deepEqual([annotation.x, annotation.y, annotation.z], [0, 0, 0]);
     assert.match(annotation.hovertext, /Horizon Period = TP[12]/);
-    assert.match(annotation.hovertext, /n=8/);
+    assert.match(annotation.hovertext, /n\s*=\s*8/);
   }
   assert.ok(spec.data.filter(trace => trace.meta.role === "group-mean").every(trace => trace.mode === "markers"));
   assert.equal(JSON.stringify(input.result), before);
@@ -64,7 +67,7 @@ test("trajectory Code and optional Unit labels share annotations and respect dis
   assert.ok(!baseline.trajectoryLabelAnnotations!.some(label => label.role === "unit"));
   const scaled = compileOpenEna3dPlotSpec({ ...input, showUnitLabels: true, textScale: 1.5 });
   assert.ok(scaled.trajectoryLabelAnnotations!.some(label => label.role === "unit"));
-  assert.ok(scaled.layout.scene.annotations!.every(annotation => annotation.font.size === 18));
+  assert.ok(scaled.layout.scene.annotations!.every(annotation => annotation.font.size === (annotation.name.startsWith("unit:") ? 18 : annotation.name.startsWith("centroid:") ? 12 : 15)));
   assert.ok(scaled.data.filter(trace => trace.meta.role === "unit-points").every(trace => trace.mode === "markers"));
   const withoutCodes = compileOpenEna3dPlotSpec({ ...input, showLabels: false });
   assert.ok(!withoutCodes.trajectoryLabelAnnotations!.some(label => label.role === "code"));

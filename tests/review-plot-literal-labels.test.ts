@@ -26,7 +26,7 @@ test("CSV source labels stay literal in trajectory annotations and lookup text w
     const displayedHorizon=spec.trajectoryLabelAnnotations!.find(item=>item.id===`centroid:${centroid.key}`)!;
     assert.equal(displayedHorizon.text,centroid.horizonShortLabel,"visible time labels retain the exact raw Horizon value");
     assert.ok(displayedHorizon.description.includes(centroid.horizon),"full Horizon identity remains available in details and hover");
-    assert.ok(displayedHorizon.description.includes(`n=${centroid.n}`));
+    assert.ok(displayedHorizon.description.includes(`n = ${centroid.n}`));
     assert.equal(visibleGlLabelForTest(labels.text![index],label),label);
     assert.doesNotMatch(labels.text![index],/<\/?(?:b|i|sup|sub|br)>/u);
     assert.equal(labels.hovertemplate,"%{customdata}<extra></extra>");

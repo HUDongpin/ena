@@ -9,6 +9,7 @@ export type OpenEnaCloudPresentation = {
   axes: string[]; threeDAxes: string[]; camera: OpenEna3dCamera | null; aspectRatio: OpenEna3dAspectRatio | null; cameraPreset: CameraPreset;
   nodePositions: Array<[string, Array<[string, number]>]>; visibleHorizons: string[] | null; hiddenUnitKeys: string[];
   showPoints: boolean; showNetworks: boolean; showLabels: boolean; showGroupLabels: boolean; showUnitLabels: boolean;
+  showTrajectoryDirection?: boolean; showTrajectoryConfidenceIntervals?: boolean;
   showVariance: boolean; showTrajectories: boolean; showGroupCentroidPaths: boolean; endpointsOnly: boolean; unitCircle: boolean;
   flipX: boolean; flipY: boolean; edgeThreshold: number; edgeScale: number; pointScale: number; plotZoom: number; textScale: number;
   inferenceDesign: "independent" | "paired" | "repeated"; selectedPeriods: string[];
@@ -18,6 +19,7 @@ export function defaultOpenEnaCloudPresentation(): OpenEnaCloudPresentation {
   return { mode: "data", view: "2d", primaryGroupName: "", secondaryGroupName: "", axes: [], threeDAxes: [],
     camera: null, aspectRatio: null, cameraPreset: "isometric", nodePositions: [], visibleHorizons: null, hiddenUnitKeys: [],
     showPoints: true, showNetworks: true, showLabels: true, showGroupLabels: true, showUnitLabels: false, showVariance: true,
+    showTrajectoryDirection: true, showTrajectoryConfidenceIntervals: true,
     showTrajectories: false, showGroupCentroidPaths: true, endpointsOnly: false, unitCircle: false, flipX: false, flipY: false,
     edgeThreshold: 0, edgeScale: 1, pointScale: 1, plotZoom: 1, textScale: 1, inferenceDesign: "independent", selectedPeriods: [] };
 }
@@ -43,9 +45,10 @@ const vector = (value: unknown) => {
 
 export function validateOpenEnaCloudPresentation(input: unknown): OpenEnaCloudPresentation {
   const value = object(input), defaults = defaultOpenEnaCloudPresentation();
-  if (Object.keys(value).length !== Object.keys(defaults).length || Object.keys(defaults).some((key) => !Object.hasOwn(value, key))) throw new TypeError("Invalid cloud presentation shape.");
+  const optional = new Set(["showTrajectoryDirection", "showTrajectoryConfidenceIntervals"]);
+  if (Object.keys(value).some(key => !Object.hasOwn(defaults, key)) || Object.keys(defaults).some((key) => !optional.has(key) && !Object.hasOwn(value, key))) throw new TypeError("Invalid cloud presentation shape.");
   for (const [key, fallback] of Object.entries(defaults)) {
-    if (typeof fallback === "boolean" && typeof value[key] !== "boolean") throw new TypeError("Invalid cloud display flag.");
+    if (typeof fallback === "boolean" && (!optional.has(key) || Object.hasOwn(value, key)) && typeof value[key] !== "boolean") throw new TypeError("Invalid cloud display flag.");
   }
   if (!["data", "model", "plot", "stats", "ai"].includes(String(value.mode)) || !["2d", "3d"].includes(String(value.view))
     || !["isometric", "xy", "xz", "yz", "yx", "zx", "zy"].includes(String(value.cameraPreset))

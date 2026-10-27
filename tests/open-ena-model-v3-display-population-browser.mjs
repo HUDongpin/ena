@@ -56,10 +56,10 @@ try {
   const assertIntervals = async () => {
     for (const name of ['Show confidence intervals', 'Show outlier intervals']) {
       const control = switchFor(name, 'G2');
-      assert.equal(await control.isDisabled(), true);
+      assert.equal(await control.isDisabled(), name === 'Show outlier intervals');
       const descriptions = (await control.getAttribute('aria-describedby')).split(' ');
       const texts = await page.evaluate(ids => ids.map(id => document.getElementById(id)?.textContent).join(' '), descriptions);
-      assert.match(texts, /do not provide confidence or outlier intervals/i);
+      if (name === 'Show outlier intervals') assert.match(texts, /Trajectory outlier intervals are unavailable/i);
     }
   };
   await page.goto('http://localhost:31992/');
@@ -120,7 +120,7 @@ try {
   assert.equal(await switchFor('Show mean', 'G1').isChecked(), false, 'preset overlay preserves saved mean preference');
   assert.equal(await switchFor('Show unit points', 'G1').isChecked(), true);
   for (const control of await group('G1').getByRole('switch').all()) {
-    assert.equal(await control.isDisabled(), true);
+    assert.equal(await control.isDisabled(), name === 'Show outlier intervals');
     assert.ok(await control.getAttribute('aria-describedby'));
   }
   assert.match(await group('G1').innerText(), /preset/i);

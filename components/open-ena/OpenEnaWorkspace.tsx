@@ -30,6 +30,9 @@ import { buildContrastV3 } from "@/lib/open-ena/contrasts";
 import OpenEnaDataView, { type OpenEnaDataViewContext } from "./OpenEnaDataView";
 import { buildDataViewPresentationV3 } from "@/lib/open-ena/data-view-presentation-v3";
 import { buildHistoricalDataViewV3, buildDataViewV3 } from "@/lib/open-ena/data-view-export";
+import { useTrajectoryUncertaintyV3 } from "./useTrajectoryUncertaintyV3";
+import { trajectoryCopyV3 } from "@/lib/open-ena/trajectory-copy-v3";
+import { appendTrajectoryLegendToSvg } from "@/lib/open-ena/trajectory-legend-export-v3";
 import { buildTrajectoryPresentationV3 } from "@/lib/open-ena/trajectory-presentation-v3";
 import { buildLongitudinalViewV3, type OpenEnaTrajectoryControlsV3 } from "@/lib/open-ena/longitudinal-bound-v3";
 import { runOpenEnaInferenceV3, runOpenEnaTrajectoryInferenceV3, assertOpenEnaTrajectoryInferenceConsumerV3 } from "@/lib/open-ena/inference-v2";
@@ -511,10 +514,13 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     const restoredResult = initialCloudWorkspace?.result;
     const restoredTrajectory = restoredResult?.configuration.analysisFamily === "standard" && restoredResult.configuration.analysis.model.type !== "EndPoint";
     return { other: restoredTrajectory ? true : restoredView?.showLabels ?? true,
-      trajectory: restoredTrajectory ? restoredView?.showLabels ?? false : false };
+      trajectory: restoredTrajectory ? restoredView?.showLabels ?? true : true };
   });
   const [showUnitLabels, setShowUnitLabels] = useState(restoredView?.showUnitLabels ?? false), [showVariance, setShowVariance] = useState(restoredView?.showVariance ?? true), [showTrajectories, setShowTrajectories] = useState(restoredView?.showTrajectories ?? false);
   const [showGroupCentroidPaths, setShowGroupCentroidPaths] = useState(restoredView?.showGroupCentroidPaths ?? true);
+  const [showTrajectoryDirection, setShowTrajectoryDirection] = useState(restoredView?.showTrajectoryDirection ?? true);
+  const [showTrajectoryConfidenceIntervals, setShowTrajectoryConfidenceIntervals] = useState(restoredView?.showTrajectoryConfidenceIntervals ?? true);
+  const trajectoryCopy = trajectoryCopyV3(locale);
   const [endpointsOnly, setEndpointsOnly] = useState(restoredView?.endpointsOnly ?? false);
   const [visibleHorizons, setVisibleHorizons] = useState<string[] | null>(restoredView?.visibleHorizons ?? null);
   const [threeDAxes, setThreeDAxes] = useState<string[]>(restoredView?.threeDAxes ?? []);
@@ -1052,7 +1058,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   function serializedPlotSvg() {
     const source = plotSvgRef.current;
     if (!source) return null;
-    const dimensions = resolveOpenEnaPlotExportDimensions(source.getAttribute("viewBox"));
+    let dimensions = resolveOpenEnaPlotExportDimensions(source.getAttribute("viewBox"));
     const clone = source.cloneNode(true) as SVGSVGElement;
     if (completedResultKind === "ona" || !showUnitLabels) {
       clone.querySelectorAll<SVGGElement>("[data-ena-unit-point='true'], [data-ona-unit-point='true']").forEach((unitPoint, index) => {
@@ -1100,6 +1106,11 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
       .ona-directed-edge path[data-ona-edge-hit-target='true'] { stroke: transparent; }
     `;
     clone.insertBefore(styles, clone.firstChild);
+    if (trajectoryPresentation && plotResult) {
+      appendTrajectoryLegendToSvg(clone, trajectoryPresentation, plotResult.groups, locale);
+      dimensions = resolveOpenEnaPlotExportDimensions(clone.getAttribute("viewBox"));
+      clone.setAttribute("width", String(dimensions.width)); clone.setAttribute("height", String(dimensions.height));
+    }
     return {
       svg: `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(clone)}\n`,
       dimensions,
@@ -1167,7 +1178,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const cloudPresentation: OpenEnaCloudPresentation = { mode, view, primaryGroupName, secondaryGroupName, axes, threeDAxes,
     camera, cameraPreset, aspectRatio, nodePositions: [...sourcePositions].map(([code, coordinates]) => [code, [...coordinates]]),
     visibleHorizons, hiddenUnitKeys, showPoints, showNetworks, showLabels, showGroupLabels, showUnitLabels, showVariance,
-    showTrajectories, showGroupCentroidPaths, endpointsOnly, unitCircle, flipX, flipY, edgeThreshold, edgeScale, pointScale, plotZoom,
+    showTrajectories, showGroupCentroidPaths, showTrajectoryDirection, showTrajectoryConfidenceIntervals, endpointsOnly, unitCircle, flipX, flipY, edgeThreshold, edgeScale, pointScale, plotZoom,
     textScale, inferenceDesign, selectedPeriods };
   const cloudPresentationKey = canonicalJsonV3({ ...cloudPresentation, mode: "data" });
   const cloudChangeInputs = [dataset, modelState.drafts, modelState.display, result, originalSource, cloudPresentationKey, activeInference, state.references, state.raw, state.presetHiddenGroups, savedAiInterpretation, sets, setComparison, state.historical];
@@ -1213,7 +1224,12 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     setNodeOverrides((previous) => { const positions = new Map(previous.hash === resultHash ? previous.positions : []); positions.set(source, new Map([...(positions.get(source) ?? []), ...position])); return { hash: resultHash, positions }; });
   };
   const graph = { showCodeGraph: !display.allCodesSuppressed, codeVisibility: display.codeVisibility, codeSourceByRenderedCode: renderedSource, codeLabelByRenderedCode: presentation?.codeLabelByRenderedCode };
-  const trajectoryPresentation = useMemo(() => result && isTrajectory ? buildTrajectoryPresentationV3(result as BoundStandardResultV3, { showCentroidPaths: showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys, groupSettingsByToken: baseDisplay.groups }) : undefined, [result, isTrajectory, showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys, baseDisplay.groups]);
+  const trajectorySettings = useMemo(() => ({ showCentroidPaths: showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys,
+    groupSettingsByToken: baseDisplay.groups, showDirection: showTrajectoryDirection, showConfidenceIntervals: showTrajectoryConfidenceIntervals }),
+    [showGroupCentroidPaths, endpointsOnly, visibleHorizons, hiddenUnitKeys, baseDisplay.groups, showTrajectoryDirection, showTrajectoryConfidenceIntervals]);
+  const trajectoryUncertainty = useTrajectoryUncertaintyV3(isTrajectory ? result as BoundStandardResultV3 : null, currentPlan, current, trajectorySettings);
+  const trajectoryPresentation = useMemo(() => result && isTrajectory ? buildTrajectoryPresentationV3(result as BoundStandardResultV3, trajectorySettings, trajectoryUncertainty) : undefined,
+    [result, isTrajectory, trajectorySettings, trajectoryUncertainty]);
   const hasHiddenUnits = hiddenUnitKeys.length > 0;
   const hiddenUnitLabelIndex = useMemo(() => result && hasHiddenUnits ? buildUnitDisplayLabelIndexV3(result) : null, [result, hasHiddenUnits]);
   const hiddenUnits = useMemo(() => hiddenUnitLabelsV3(hiddenUnitLabelIndex, hiddenUnitKeys), [hiddenUnitLabelIndex, hiddenUnitKeys]);
@@ -1230,7 +1246,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
       codeColors: Object.fromEntries(Object.values(renderedSource).map((source) => [source, codeColorFor(display.codeColors, source)])),
       nodeOverrides: [...sourcePositions].map(([code, coordinates]) => ({ code, coordinates: Object.fromEntries(coordinates) })),
       dimensions: [...selectedAxes], ...(camera ? { camera3d: camera } : {}),
-      layerOptions: { showPoints, showNetworks, showTrajectories, showLabels, showGroupLabels, showUnitLabels, showVariance, endpointsOnly, flipX, flipY, edgeThreshold, edgeScale, pointScale, plotZoom },
+      layerOptions: { showPoints, showNetworks, showTrajectories, showTrajectoryDirection, showTrajectoryConfidenceIntervals, showLabels, showGroupLabels, showUnitLabels, showVariance, endpointsOnly, flipX, flipY, edgeThreshold, edgeScale, pointScale, plotZoom },
     });
     downloadJson("bound-presentation-preset.json", preset);
   }
@@ -1281,6 +1297,8 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     if (value.camera3d) setCamera(value.camera3d);
     if (layers.showPoints !== undefined) setShowPoints(layers.showPoints);
     if (layers.showNetworks !== undefined) setShowNetworks(layers.showNetworks);
+    if (layers.showTrajectoryDirection !== undefined) setShowTrajectoryDirection(layers.showTrajectoryDirection);
+    if (layers.showTrajectoryConfidenceIntervals !== undefined) setShowTrajectoryConfidenceIntervals(layers.showTrajectoryConfidenceIntervals);
     if (layers.showTrajectories !== undefined) setShowTrajectories(layers.showTrajectories);
     if (layers.showLabels !== undefined) setShowLabels(layers.showLabels);
     if (layers.showGroupLabels !== undefined) setShowGroupLabels(layers.showGroupLabels);
@@ -1304,7 +1322,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   };
   const isPluginResultCurrent = () => mounted.current && latest.current.current && latest.current.state.model.result === result
     && latest.current.currentPlan === currentPlan && currentPlan !== null;
-  const plotProps = { ...graph, codeColors, captureImageExport, runtimeDisabledPluginIds, resultIsStale: !current, isPluginResultCurrent, groupDisplay: groupDisplay ?? undefined, groupColumn: presentation?.config.groupColumn ?? null,
+  const plotProps = { ...graph, locale, codeColors, captureImageExport, runtimeDisabledPluginIds, resultIsStale: !current, isPluginResultCurrent, groupDisplay: groupDisplay ?? undefined, groupColumn: presentation?.config.groupColumn ?? null,
     xDimension, yDimension, zDimension, camera: cameraPreset, showPoints: showPoints && !display.allGroupsSuppressed,
     showNetworks: showNetworks && !display.allGroupsSuppressed, showLabels, showUnitLabels, showVariance, showTrajectories,
     edgeScale, edgeThreshold, pointScale, textScale, plotZoom, flipX, flipY, nodeLayout, onNodeMove: moveNode, copy };
@@ -1532,7 +1550,9 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
           <button type="button" disabled={!contrastEdgesDisclosure?.familyApplies || Boolean(contrastEdgesDisclosure?.disabled) || !endpointControls} aria-label={disclosedName(workspaceCopy.plot.exportContrastEdges, contrastEdgesDisclosure, contrastEdgesNote)} aria-describedby={contrastEdgesNote ? contrastEdgesNoteId : undefined} title={contrastEdgesNote || undefined} onClick={() => void attempt(async () => { if (!contrastEdgesDisclosure?.familyApplies || contrastEdgesDisclosure.disabled || !endpointControls) return; const file = await exportContrastV3(result, currentPlan, endpointControls); if (mounted.current && consumerKey === consumerKeyRef.current) downloadCsv("native-contrast-edges.csv", file.edgesCsv); })}>{workspaceCopy.plot.exportContrastEdges}</button>
           {contrastEdgesDisclosure && contrastEdgesNote ? <OpenEnaExportApplicabilityNote id={contrastEdgesNoteId} action="contrast-edges" text={contrastEdgesNote} reason={contrastEdgesDisclosure.reason} familyApplies={contrastEdgesDisclosure.familyApplies} /> : null}
           {activeContrast && endpointControls ? <button type="button" onClick={() => { setPrimaryGroupName(secondaryGroupName); setSecondaryGroupName(primaryGroupName); }}>{workspaceCopy.plot.switchPlots}</button> : null}</div></details>}
-        {isTrajectory && <><label><input type="checkbox" checked={showGroupCentroidPaths} onChange={(e) => setShowGroupCentroidPaths(e.target.checked)} />{workspaceCopy.plot.showCentroidPaths}</label>
+        {isTrajectory && <><label><input type="checkbox" checked={showTrajectoryConfidenceIntervals} onChange={(e) => setShowTrajectoryConfidenceIntervals(e.target.checked)} />{trajectoryCopy.showCi}</label>
+          <label><input type="checkbox" checked={showTrajectoryDirection} onChange={(e) => setShowTrajectoryDirection(e.target.checked)} />{trajectoryCopy.showDirection}</label>
+          <label><input type="checkbox" checked={showGroupCentroidPaths} onChange={(e) => setShowGroupCentroidPaths(e.target.checked)} />{workspaceCopy.plot.showCentroidPaths}</label>
           <label><input type="checkbox" checked={endpointsOnly} onChange={(e) => setEndpointsOnly(e.target.checked)} />{workspaceCopy.plot.endpointsOnly}</label>
           <p>{workspaceCopy.plot.fittedOrder}</p>
           {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={visibleHorizons === null || visibleHorizons.includes(horizon.canonicalJson)} onChange={(e) => setVisibleHorizons((values) => { const selected = values ?? horizons.map((value) => value.canonicalJson); return e.target.checked ? [...new Set([...selected, horizon.canonicalJson])] : selected.filter((key) => key !== horizon.canonicalJson); })} />{workspaceCopy.plot.displayHorizon(horizon.displayLabel)}</label>)}</>}

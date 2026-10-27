@@ -1960,7 +1960,7 @@ const MODEL_EXACT_ZH_HANT_V3: Readonly<Record<string, string>> = {
   "The imported Standard draft uses backward extent 1 for legacy value 0, preserving the current-row behavior. Conversation windows are unchanged; the historical artifact retains its original value.": "匯入的 Standard 草稿將舊版後向範圍 0 轉為 1，保留包含目前列的行為。Conversation 窗口不變；歷史成果仍保留原始值。",
   "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.": "呈現預設隱藏了此群組。清除預設群組隱藏後即可使用這些已儲存控制項；個別單位偏好仍會保留。",
   "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.": "所有群組均已隱藏。還原群組可見性後即可使用這些已儲存控制項；個別單位偏好仍會保留。",
-  "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.": "原生軌跡顯示摘要不提供信賴區間或離群區間；已儲存的區間偏好不適用於此檢視。",
+  "Trajectory outlier intervals are unavailable. Confidence intervals use the configured Unit-history bootstrap.": "軌跡不提供離群區間。信賴區間採用已設定分析單位的完整軌跡 Bootstrap。",
 };
 
 const MODEL_EXACT_ZH_HANS_V3: Readonly<Record<string, string>> = {
@@ -2162,7 +2162,7 @@ const MODEL_EXACT_ZH_HANS_V3: Readonly<Record<string, string>> = {
   "The imported Standard draft uses backward extent 1 for legacy value 0, preserving the current-row behavior. Conversation windows are unchanged; the historical artifact retains its original value.": "导入的 Standard 草稿将旧版后向范围 0 转为 1，保留包含当前行的行为。Conversation 窗口不变；历史成果仍保留原始值。",
   "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.": "呈现预设隐藏了此组。清除预设组隐藏后即可使用这些已保存控件；个别单位偏好仍会保留。",
   "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.": "所有组均已隐藏。恢复组可见性后即可使用这些已保存控件；个别单位偏好仍会保留。",
-  "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.": "原生轨迹显示摘要不提供置信区间或离群区间；已保存的区间偏好不适用于此视图。",
+  "Trajectory outlier intervals are unavailable. Confidence intervals use the configured Unit-history bootstrap.": "轨迹不提供离群区间。置信区间采用已设置分析单位的完整轨迹 Bootstrap。",
 };
 
 const MODEL_SHORT_LOCALES_V3: Readonly<Record<string, readonly [string, string]>> = {
@@ -2384,7 +2384,7 @@ const importPreviewCopyEnV3: OpenEnaImportPreviewCopyV3 = {
 const groupApplicabilityEnV3 = {
   preset: "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.",
   global: "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.",
-  trajectoryIntervals: "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.",
+  trajectoryIntervals: "Trajectory outlier intervals are unavailable. Confidence intervals use the configured Unit-history bootstrap.",
 } as const;
 
 // Keys match the fixed English edge-scale definition identifiers in lib/open-ena/contrasts.ts.

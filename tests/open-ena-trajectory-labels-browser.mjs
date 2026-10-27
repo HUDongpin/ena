@@ -316,10 +316,10 @@ try {
   if (!["3d", "3d-drag"].includes(process.env.OPEN_ENA_TRAJECTORY_LABELS_PHASE)) {
   await stage("2D default compact labels and full accessible details", async () => {
     const value = await audit2d({ all: true });
-    assert.equal(value.labels.filter(label => label.id.startsWith("code:")).length, 0, "trajectory defaults hide Code text and its leader lines");
-    assert.equal(value.labels.length, 6, "default public sample keeps the six TP labels");
+    assert.equal(value.labels.filter(label => label.id.startsWith("code:")).length, 6, "trajectory defaults show the six small Code names");
+    assert.equal(value.labels.length, 12, "default public sample keeps six Code names and six TP labels");
     assert.equal(value.codeNodes.length, 6, "hiding Code text retains the six scientific nodes");
-    assert.ok(value.codeNodes.every(node => node.radius === 8 && node.fill === "rgb(0, 0, 0)"), "default trajectory Code markers are small black dots");
+    assert.ok(value.codeNodes.every(node => node.radius === 8 && node.fill === "rgb(255, 255, 255)"), "default trajectory Code markers are small hollow dots");
     assert.ok(value.codeNodes.some(node => /\bEX\b/.test(node.title)), "Code-node hover must retain EX when labels are hidden");
     const details = page.locator('[data-ena-trajectory-label-details="true"]');
     await details.locator("summary").click();
@@ -408,8 +408,8 @@ try {
   } else {
   await stage("3D default annotations, seven camera presets and drag rotation", async () => {
     await selectView("3d"); const initial = await audit3d({ all: true });
-    assert.equal(initial.labels.filter(label => label.role === "code").length, 0, "trajectory defaults omit Code text and its leader lines in 3D");
-    assert.equal(initial.labels.length, 6, "default 3D sample shows only its six TP labels");
+    assert.equal(initial.labels.filter(label => label.role === "code").length, 6, "trajectory defaults show the six small Code names in 3D");
+    assert.equal(initial.labels.length, 12, "default 3D sample shows six Code names and six TP labels");
     assert.equal(initial.geometry.find(trace => trace.role === "code-node")?.x.length, 6, "3D Code nodes remain visible");
     assert.equal(initial.codeNodeSize, 5.5, "trajectory 3D Code markers use the smaller dot size");
     const hover = await hover3dCode("EX"); assert.ok(hover.some(text => text.includes("EX")));

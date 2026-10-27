@@ -45,7 +45,7 @@ test("native teaching-sample centroid and Code labels share non-overlapping boun
     const placements = boxes(markup);
     assert.equal(placements.length, props.result.set.codes.length + props.result.trajectoryPresentation.centroids.length, "all Code and centroid labels must enter the same placement layer");
     const shown = placements.filter((box) => box.visible);
-    assert.equal(shown.length, placements.length, "the small teaching sample has room for every label");
+    assert.equal(shown.length, placements.length, `the small teaching sample has room for every label (${xDimension},${yDimension}); hidden: ${placements.filter(box => !box.visible).map(box => box.id).join(",")}`);
     for (const [i, a] of shown.entries()) {
       assert.ok(a.x >= 0 && a.y >= 0 && a.x + a.width <= 920 && a.y + a.height <= 590);
       for (const b of shown.slice(i + 1)) assert.equal(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height, false, `${a.id} overlaps ${b.id}`);
@@ -65,7 +65,7 @@ test("native labels scale without changing fitted geometry and retain a keyboard
   const geometry = (markup: string) => [...markup.matchAll(/<rect x="([^"]+)" y="([^"]+)" width="5" height="5"/gu)].map((match) => match[0]);
   assert.equal(geometry(base).length, props.result.trajectoryPresentation.centroids.length, "every smaller centroid square retains its fitted centre");
   assert.deepEqual(geometry(larger), geometry(base), "label placement cannot change centroid coordinates");
-  assert.match(base, /data-ena-label-leader="true"/);
+  assert.doesNotMatch(base, /data-ena-label-leader="true"/, "automatic Code and period labels do not use callout leaders");
 });
 
 test("hiding native Code and Unit labels removes them from placements while centroid details remain", async () => {
@@ -76,7 +76,7 @@ test("hiding native Code and Unit labels removes them from placements while cent
   assert.match(markup, /data-ena-trajectory-label-details/);
 });
 
-test("trajectory Code-label hiding retains six black nodes with human names available on hover and keyboard focus", async () => {
+test("trajectory Code-label hiding retains six hollow nodes with human names available on hover and keyboard focus", async () => {
   const props = await sample;
   const markup = render({ ...props, showLabels: false, showUnitLabels: false });
   const nodes = [...markup.matchAll(/<g\b([^>]*data-ena-code-node-position[^>]*)>(.*?)<\/g>/gu)];
@@ -86,7 +86,7 @@ test("trajectory Code-label hiding retains six black nodes with human names avai
     assert.match(attrs, /tabindex="0"/u);
     assert.match(attrs, /role="img"/u);
     assert.match(attrs, /aria-label="[^"]+"/u);
-    assert.match(contents, /<circle\b[^>]*class="ena-result-node"[^>]*fill="#000000"/u);
+    assert.match(contents, /<circle\b[^>]*class="ena-result-node"[^>]*fill="#fff"/u);
     assert.doesNotMatch(contents, /data-ena-label-leader/u);
   }
   assert.ok(nodes.some(([, attrs, contents]) => /aria-label="EX"/u.test(attrs) && contents.includes("<title>EX</title>")), "the EX node must expose its actual Code name without a visible text label");
@@ -144,4 +144,22 @@ test("focusing a deferred label promotes it without moving an already visible se
   const promoted = place!({ ...input, previous: initial }, "unit");
   assert.equal(promoted.get("unit")?.visible, true, "keyboard focus reveals the deferred label when a slot is available");
   assert.equal(promoted.get("code")?.visible, false);
+});
+
+test("centroid period labels are small and adjacent with no leader lines", async () => {
+  const markup = render({ ...await sample, showLabels: false, showUnitLabels: false });
+  const labels = [...markup.matchAll(/<g\b[^>]*data-label-id="centroid:[^"]*"[^>]*>(.*?)<\/g>/gu)];
+  assert.equal(labels.length, 6);
+  for (const [, contents] of labels) {
+    assert.doesNotMatch(contents, /data-ena-label-leader/u);
+    assert.match(contents, /font-size:10px/u);
+  }
+});
+
+test("visible trajectory Code names use small text beside the hollow nodes", async () => {
+  const markup = render(await sample);
+  const texts = [...markup.matchAll(/<text\b[^>]*data-ena-layout-label="code:[^"]+"[^>]*>/gu)].map(match => match[0]);
+  assert.equal(texts.length, 6);
+  assert.ok(texts.every(text => text.includes('font-size:10px')));
+  assert.match(markup, />IN<\/text>/u);
 });

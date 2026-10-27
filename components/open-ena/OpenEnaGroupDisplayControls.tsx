@@ -39,6 +39,8 @@ export interface OpenEnaGroupDisplayControlsProps {
   /** Effective suppression overrides the stored settings without rewriting them. */
   suppressedGroups?: Readonly<Record<string, string>>;
   intervalsUnavailableReason?: string;
+  /** Some trajectory presenters supply bootstrap CI but no outlier guides. */
+  outlierIntervalsUnavailableReason?: string;
   disclosureCommand?: GroupDisclosureCommandV3;
   onSettingsChange: (groupName: string, patch: Partial<OpenEnaGroupDisplayOptions>) => void;
   onUnitVisibilityChange: (groupName: string, unitId: string, visible: boolean) => void;
@@ -118,6 +120,7 @@ export default function OpenEnaGroupDisplayControls({
   disabled = false,
   suppressedGroups = {},
   intervalsUnavailableReason,
+  outlierIntervalsUnavailableReason,
   disclosureCommand,
   onSettingsChange,
   onUnitVisibilityChange,
@@ -224,7 +227,7 @@ export default function OpenEnaGroupDisplayControls({
             !intervalsUnavailableReason ? outlierBoundaryId : "",
           ].filter(Boolean).join(" ");
           const outlierDisabled = groupDisabled
-            || Boolean(intervalsUnavailableReason)
+            || Boolean(intervalsUnavailableReason || outlierIntervalsUnavailableReason)
             || view === "3d"
             || !settings.showMean
             || summaryUnitCount < 2;
@@ -300,7 +303,9 @@ export default function OpenEnaGroupDisplayControls({
                   describedBy={groupDescriptionId}
                   onChange={(checked) => onSettingsChange(groupId, { includeHiddenPoints: checked })}
                 />
-                {intervalsUnavailableReason ? <p id={intervalsUnavailableId} className="ena-group-display-boundary" role="note">{intervalsUnavailableReason}</p> : view === "3d" ? (
+                {intervalsUnavailableReason ? <p id={intervalsUnavailableId} className="ena-group-display-boundary" role="note">{intervalsUnavailableReason}</p> : outlierIntervalsUnavailableReason ? (
+                  <p id={outlierBoundaryId} className="ena-group-display-boundary" role="note">{outlierIntervalsUnavailableReason}</p>
+                ) : view === "3d" ? (
                   <p id={outlierBoundaryId} className="ena-group-display-boundary" role="note">
                     {copy.outlierThreeDBoundary}
                   </p>

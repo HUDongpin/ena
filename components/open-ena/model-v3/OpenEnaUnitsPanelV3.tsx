@@ -124,7 +124,7 @@ export interface OpenEnaUnitsPanelV3Props {
 export const GROUP_DISPLAY_APPLICABILITY_COPY_V3 = {
   preset: "A presentation preset hides this Group. Clear preset Group hiding to use these saved controls; individual Unit preferences are retained.",
   global: "All Groups are hidden. Restore Group visibility to use these saved controls; individual Unit preferences are retained.",
-  trajectoryIntervals: "Native trajectory display summaries do not provide confidence or outlier intervals. These saved interval preferences do not apply to this view.",
+  trajectoryIntervals: "Trajectory outlier intervals are unavailable. Confidence intervals use the configured Unit-history bootstrap.",
 } as const;
 
 export interface OpenEnaGroupDisplayApplicabilityCopyV3 {
@@ -264,7 +264,7 @@ export function OpenEnaUnitsPanelV3({
       presetSuppressed.has(group.id ?? group.name) ? applicabilityCopy.preset : ""].filter(Boolean);
     return reasons.length ? [[group.id ?? group.name, reasons.join(" ")]] : [];
   }));
-  const trajectoryIntervalsUnavailable = state.result?.configuration.analysisFamily === "standard"
+  const trajectoryOutlierIntervalsUnavailable = state.result?.configuration.analysisFamily === "standard"
     && state.result.configuration.analysis.model.type !== "EndPoint";
   const canHideGroups = plotGroups.length > 0;
   const canExcludeGroup = draft.groupColumn !== null;
@@ -498,7 +498,7 @@ export function OpenEnaUnitsPanelV3({
               groups={plotGroups}
               settingsByGroup={display.groups}
               suppressedGroups={suppressedGroups}
-              intervalsUnavailableReason={trajectoryIntervalsUnavailable ? applicabilityCopy.trajectoryIntervals : undefined}
+              outlierIntervalsUnavailableReason={trajectoryOutlierIntervalsUnavailable ? applicabilityCopy.trajectoryIntervals : undefined}
               hiddenUnitKeys={hiddenUnitKeys}
               view={view}
               copy={groupDisplayCopy}
