@@ -126,7 +126,17 @@ test("full browser summary carries both aggregate and participant standalone rec
   requires(["standaloneDownloads", "aggregate: verifyStandaloneDownloads(downloads.aggregate, aggregate)", "participant: verifyStandaloneDownloads(downloads.participant, participant)"]);
 });
 test("native trajectory geometry retains Codes square centroids black paths direction and zero edges", () => {
-  requires(["codesPresent", "centroidSquares", 't.marker?.symbol === "square" && t.marker?.size === 4.5', "blackTrajectories", "lineOnlyTrajectories", "directionArrowTraceCount > 0", "networkEdgeTraceCount, 0", "errorBarTraceCount === 0", "unknownTraceRoles.length === 0", "confidenceWireframes", 'trace.line?.dash === "dot"', 'trace.meta?.intervalMethod === "unit-history-bootstrap-percentile-95"', "trace.meta?.jointRegion === false", "edges + trace.x.length - 1, 0) === 12", "display action changed bound fitted coordinates"]);
+  requires(["codesPresent", "centroidSquares", 't.marker?.symbol === "square" && t.marker?.size === 7', 'value.width === "7" && value.height === "7"', "blackTrajectories", "lineOnlyTrajectories", "directionArrowTraceCount > 0", "networkEdgeTraceCount, 0", "errorBarTraceCount === 0", "unknownTraceRoles.length === 0", "confidenceWireframes", 'trace.line?.dash === "dot"', 'trace.meta?.intervalMethod === "unit-history-bootstrap-percentile-95"', "trace.meta?.jointRegion === false", "edges + trace.x.length - 1, 0) === 12", "display action changed bound fitted coordinates"]);
+});
+test("native trajectory Unit-point coverage distinguishes hidden defaults from explicit display and restores them", () => {
+  const phase = source.slice(source.indexOf("async function authenticateAndRunTrajectory"), source.indexOf("async function exerciseNonPlotRailPanels"));
+  for (const token of ['getByRole("checkbox", { name: "Points", exact: true })', "assert.equal(await unitPoints.isChecked(), false)",
+    "assert.equal(plotAudit.defaultParticipantTraceCount, 0)", "plotAudit.participantTraceCount = await plot.evaluate", "assert.ok(plotAudit.participantTraceCount > 0)",
+    "root._fullData", 'trace.visible !== false && trace.visible !== "legendonly"', "restoring the default must remove rendered Unit traces"]) {
+    assert.ok(phase.includes(token), `missing native Unit-point display coverage: ${token}`);
+  }
+  const steps = ["assert.equal(plotAudit.defaultParticipantTraceCount, 0)", "await unitPoints.check()", "plotAudit.participantTraceCount = await plot.evaluate", "await unitPoints.uncheck()", "restoring the default must remove rendered Unit traces"].map(token => phase.indexOf(token));
+  assert.ok(steps.every((offset, index) => offset >= 0 && (index === 0 || offset > steps[index - 1])), "the real Points control must bracket its positive rendered-trace measurement");
 });
 test("all seven camera poses and actual mouse orbit preserve bound science", () => {
   requires(['["isometric", "xy", "xz", "yz", "yx", "zx", "zy"]', "cameraMatches", "expectedCameraStates", "readRuntimeCamera", "waitForRuntimeCameraChange", "scene?._scene?.getCamera", 'page.mouse.down({ button: "left" })', "steps: 20", "assertBrowser(dragVerified", "cameraScreenshots", 'assertScientificInvariants("camera preset " + preset)']);

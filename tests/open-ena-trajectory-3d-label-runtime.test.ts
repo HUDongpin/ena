@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createOpenEna3dLabelLayout, movePlotlyPointByPixels, readPlotlyAnnotationAnchor, readPlotlyAnnotationDragPosition, readPlotlyPointAnchor } from "../lib/open-ena/plot3d-label-layout";
+import { createOpenEna3dLabelLayout, measureOpenEna3dLabels, movePlotlyPointByPixels, readPlotlyAnnotationAnchor, readPlotlyAnnotationDragPosition, readPlotlyPointAnchor } from "../lib/open-ena/plot3d-label-layout";
 import { placePlotLabels } from "../lib/open-ena/plot-label-layout";
 import type { OpenEna3dLabelAnnotation } from "../lib/open-ena/plot3d";
 
@@ -19,6 +19,59 @@ test("marker projection uses native model/view/projection matrices, scene domain
   } } } as unknown as HTMLDivElement;
   assert.deepEqual(readPlotlyPointAnchor(native, { x: 0.25, y: 0.5, z: 0 }), { x: 310, y: 140 });
   assert.equal(readPlotlyPointAnchor({} as HTMLDivElement, { x: 0, y: 0, z: 0 }), null);
+});
+
+function crossingDirectionLabelScene(modelScale = [1, 1, 1], projection?: number[]) {
+  const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  const model = [...identity];
+  [model[0], model[5], model[10]] = modelScale;
+  const axis = { r2l: (value: number) => value };
+  const label: OpenEna3dLabelAnnotation = { id: "centroid:crossing", annotationIndex: 0, role: "centroid", text: "TP2", description: "Another Group crosses this direction arrow", priority: 350 };
+  const trace = { type: "cone", meta: { role: "direction-arrow" }, x: [0], y: [0], z: [0], u: [1], v: [0], w: [0], anchor: "center", sizemode: "absolute", sizeref: 0.13 };
+  const element = { style: {}, setAttribute() {}, querySelector: () => ({ getBoundingClientRect: () => ({ left: 439, top: 294, width: 22, height: 12 }) }) };
+  const root = { clientWidth: 900, clientHeight: 600,
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 900, height: 600 }), setAttribute() {},
+    querySelector: () => element, querySelectorAll: () => [], closest: () => null,
+    _fullData: [trace], _fullLayout: { width: 900, height: 600, _size: { l: 0, t: 0, w: 900, h: 600 }, scene: {
+      xaxis: axis, yaxis: axis, zaxis: axis,
+      annotations: [{ name: label.id, x: 0, y: 0, z: 0,
+        _xa: { _offset: 0, r2p: (x: number) => 450 + 450 * x }, _ya: { _offset: 0, r2p: (y: number) => 300 - 300 * y } }],
+      _scene: { dataScale: [1, 1, 1], glplot: { cameraParams: { model, view: identity, projection: projection ?? identity } } },
+    } },
+  } as unknown as HTMLDivElement;
+  return { root, label, trace };
+}
+
+test("a crossing TP label avoids the complete projected direction cone", () => {
+  const { root, label, trace } = crossingDirectionLabelScene();
+  const before = JSON.stringify(trace);
+  const measurement = measureOpenEna3dLabels(root, [label]);
+  const placement = placePlotLabels(measurement).get(label.id)!;
+  assert.ok(placement.visible, "a nearby clear position remains available");
+  // Pinned Plotly's centered 0.13-unit cone tip is at +0.065 on X.
+  const tip = { x: 479.25, y: 300 };
+  assert.equal(placement.x < tip.x && placement.x + placement.width > tip.x
+    && placement.y < tip.y && placement.y + placement.height > tip.y, false, "the TP label must not cover the direction tip");
+  assert.equal(JSON.stringify(trace), before, "collision layout cannot modify scientific trace geometry");
+});
+
+test("direction obstacles contain the cone base after anisotropic native aspect scaling", () => {
+  const { root, label } = crossingDirectionLabelScene([4, 0.1, 1]);
+  const measurement = measureOpenEna3dLabels(root, [label]);
+  // Plotly computes the base radius after mat3(model): length 0.52,
+  // radius 0.13. Its upper rim projects to (333,261), not the narrow
+  // data-coordinate cube produced by scaling a 0.13-unit Y radius by 0.1.
+  const rim = { x: 333, y: 261 };
+  assert.ok(measurement.obstacles.some(rect => rect.x <= rim.x && rect.x + rect.width >= rim.x
+    && rect.y <= rim.y && rect.y + rect.height >= rim.y), "native model-space cone width must remain protected");
+});
+
+test("unprojectable direction geometry defers labels instead of using incomplete obstacles", () => {
+  const projection = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -100, 0, 0, 0, 1];
+  const { root, label } = crossingDirectionLabelScene([1, 1, 1], projection);
+  const measurement = measureOpenEna3dLabels(root, [label]);
+  assert.deepEqual(measurement.labels, [], "a cone crossing the camera plane must fail closed to label details");
+  assert.deepEqual(measurement.obstacles, []);
 });
 
 test("manual annotation movement exactly inverts native screen projection without a first-step jump", () => {

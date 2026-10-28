@@ -47,60 +47,52 @@ const elements = (markup: string, tag: string, marker: string) => [...markup.mat
 const close = (actual: number, expected: number, message?: string) => assert.ok(Math.abs(actual - expected) < 1e-7, message ?? `${actual} != ${expected}`);
 const withoutIntervals = (props: Props) => ({ ...props, result: { ...props.result, trajectoryPresentation: { ...props.result.trajectoryPresentation, showConfidenceIntervals: false } } });
 
-test("2D trajectories use Horizon circles and squares with Group outlines and black centroid paths", async () => {
+test("2D trajectories use borderless Group-colored squares and black centroid paths", async () => {
   const props = await sample, markup = render(props), trajectory = props.result.trajectoryPresentation;
   const centroids = [...markup.matchAll(/<g\b[^>]*data-ena-trajectory-centroid="true"[^>]*>(.*?)<\/g>/gu)];
   assert.equal(centroids.length, trajectory.centroids.length);
   for (const [index, centroid] of trajectory.centroids.entries()) {
     const rect = centroids[index][1].match(/<rect\b[^>]*>/u)![0];
-    const color = trajectory.horizonStyles.find(style => style.horizonKey === centroid.horizonKey)!.color;
     const group = props.result.groups.find(group => group.name === centroid.group)!;
-    assert.ok(attr(rect, "style")?.includes(`fill:${color}`), "square fill must retain its Horizon color in standalone SVG");
-    assert.ok(attr(rect, "style")?.includes(`stroke:${group.color}`));
+    assert.ok(attr(rect, "style")?.includes(`fill:${group.color}`));
+    assert.ok(attr(rect, "style")?.includes("stroke:none"));
   }
   const units = [...markup.matchAll(/<g\b[^>]*data-ena-unit-point="true"[^>]*>(.*?)<\/g>/gu)];
   assert.equal(units.length, trajectory.points.length);
-  assert.ok(units.every(([, contents]) => /<circle\b/u.test(contents)), "all individual trajectory points are circles");
   for (const [, contents] of units) {
-    const circle = contents.match(/<circle\b[^>]*>/u)![0];
-    assert.ok(trajectory.horizonStyles.some(({ color }) => attr(circle, "style")?.includes(`fill:${color}`)));
-    assert.match(attr(circle, "style") ?? "", /stroke:#fff(?:;|$)/u);
-    assert.match(attr(circle, "style") ?? "", /opacity:0.88/u);
-    assert.ok(Number(attr(circle, "r")) <= 4.5);
+    const rect = contents.match(/<rect\b[^>]*>/u)![0];
+    assert.ok(props.result.groups.some(group => attr(rect, "fill") === group.color));
+    assert.equal(attr(rect, "stroke"), "none");
   }
-  const paths = elements(markup, "line", "data-ena-centroid-path");
-  for (const path of paths) {
+  for (const path of elements(markup, "line", "data-ena-centroid-path")) {
     assert.match(attr(path, "style") ?? "", /stroke:black(?:;|$)/u);
     assert.equal(attr(path, "stroke-width"), "3");
   }
 });
 
-test("2D direction heads are open mid-segment V marks with viewport-normalized length and no zero-length arrow", async () => {
+test("2D direction heads are filled and centered, retain direction controls and omit zero-length arrows", async () => {
   const props = await sample, markup = render(props);
   const paths = elements(markup, "line", "data-ena-centroid-path");
-  const heads = elements(markup, "polyline", "data-ena-trajectory-direction");
-  assert.equal(heads.length, paths.length, "each nonzero centroid segment has one open direction head");
-  assert.equal(elements(markup, "polygon", "data-ena-trajectory-direction").length, 0);
+  const heads = elements(markup, "polygon", "data-ena-trajectory-direction");
+  assert.equal(heads.length, paths.length);
   for (const [index, head] of heads.entries()) {
-    const path = paths[index];
-    const from = [Number(attr(path, "x1")) / 920, Number(attr(path, "y1")) / 590];
-    const to = [Number(attr(path, "x2")) / 920, Number(attr(path, "y2")) / 590];
-    const [left, tip, right] = attr(head, "points")!.split(" ").map(pair => pair.split(",").map((value, axis) => Number(value) / (axis ? 590 : 920)));
-    close(tip[0], (from[0] + to[0]) / 2); close(tip[1], (from[1] + to[1]) / 2);
-    const center = [(left[0] + right[0]) / 2, (left[1] + right[1]) / 2];
-    const length = Math.min(0.0224, Math.hypot(to[0] - from[0], to[1] - from[1]) * 0.224);
-    close(Math.hypot(tip[0] - center[0], tip[1] - center[1]), length);
-    close(Math.hypot(left[0] - right[0], left[1] - right[1]), length * 0.9);
-    assert.match(attr(head, "style") ?? "", /fill:none/u);
-    assert.match(attr(head, "style") ?? "", /stroke:black(?:;|$)/u);
+    const path = paths[index], from = [Number(attr(path, "x1")), Number(attr(path, "y1"))];
+    const to = [Number(attr(path, "x2")), Number(attr(path, "y2"))];
+    const dx = to[0] - from[0], dy = to[1] - from[1], length = Math.hypot(dx, dy);
+    const positions = attr(head, "points")!.split(" ").map(pair => pair.split(",").map(Number));
+    const fractions = positions.map(([x, y]) => ((x - from[0]) * dx + (y - from[1]) * dy) / length ** 2);
+    const lower = Math.min(...fractions), upper = Math.max(...fractions);
+    close((lower + upper) / 2, 0.5);
+    assert.ok(lower >= 0.3 - 1e-9 && upper <= 0.7 + 1e-9);
+    assert.equal(fractions[0], upper);
+    assert.match(attr(head, "style") ?? "", /fill:black/u);
   }
-  const trajectory = props.result.trajectoryPresentation;
-  const point = trajectory.centroids[0];
+  const trajectory = props.result.trajectoryPresentation, point = trajectory.centroids[0];
   const zero = render({ ...props, result: { ...props.result, trajectoryPresentation: { ...trajectory, centroidPaths: [{ from: point, to: point, sharedContributorCount: 1 }] } } });
-  assert.equal(elements(zero, "polyline", "data-ena-trajectory-direction").length, 0);
+  assert.equal(elements(zero, "polygon", "data-ena-trajectory-direction").length, 0);
   const hidden = render({ ...props, result: { ...props.result, trajectoryPresentation: { ...trajectory, showDirection: false } } });
-  assert.equal(elements(hidden, "polyline", "data-ena-trajectory-direction").length, 0);
-  assert.ok(elements(hidden, "line", "data-ena-centroid-path").every(path => /stroke:black(?:;|$)/u.test(attr(path, "style") ?? "")), "turning arrows off keeps main paths black");
+  assert.equal(elements(hidden, "polygon", "data-ena-trajectory-direction").length, 0);
+  assert.ok(elements(hidden, "line", "data-ena-centroid-path").every(path => /stroke:black(?:;|$)/u.test(attr(path, "style") ?? "")));
 });
 
 test("2D CI rectangles render selected-axis bounds before paths and expand only the display frame", async () => {
@@ -157,8 +149,8 @@ test("unavailable selected-axis CI is omitted and hollow Code nodes preserve foc
   assert.equal(elements(markup, "rect", "data-ena-trajectory-ci").length, trajectory.centroids.length - 1);
   const nodes = elements(markup, "circle", "ena-result-node");
   assert.equal(nodes.length, props.result.set.codes.length);
-  assert.ok(nodes.every(node => /fill:(?:#fff|#ffffff|#f8fafc)(?:;|$)/u.test(attr(node, "style") ?? "")), "trajectory Code nodes have a light hollow appearance");
-  assert.ok(nodes.every(node => Number(attr(node, "r")) <= 8));
+  assert.ok(nodes.every(node => /fill:none(?:;|$)/u.test(attr(node, "style") ?? "")), "trajectory Code nodes have a light hollow appearance");
+  assert.ok(nodes.every(node => Number(attr(node, "r")) === 4.5));
   assert.match(markup, /data-ena-code-node-position="[^"]+" tabindex="0" role="img"/u);
   assert.deepEqual([...markup.matchAll(/<text\b[^>]*data-ena-layout-label="centroid:[^"]+"[^>]*>(.*?)<\/text>/gu)].map(match => match[1]), ["TP1", "TP2", "TP3", "TP1", "TP2", "TP3"]);
 });

@@ -10,6 +10,8 @@ type AnnotationRuntime = {
 type LabelRoot = HTMLDivElement & {
   _fullData?: Array<{ visible?: boolean | string; type?: string; mode?: string; meta?: { role?: string };
     x?: ArrayLike<number | null>; y?: ArrayLike<number | null>; z?: ArrayLike<number | null>;
+    u?: ArrayLike<number | null>; v?: ArrayLike<number | null>; w?: ArrayLike<number | null>;
+    anchor?: string; sizemode?: string; sizeref?: number;
     text?: ArrayLike<string>; textfont?: { size?: number; family?: string };
     line?: { width?: number };
     marker?: { size?: number | ArrayLike<number>; line?: { width?: number } } }>;
@@ -89,6 +91,51 @@ export function readPlotlyPointAnchor(root: HTMLDivElement, point: { x: unknown;
   } catch { return null; }
 }
 
+/** Pinned Plotly 3.7.0 builds each native direction trace as one centered
+ * absolute-size cone. Its base radius is one quarter of the direction length
+ * AFTER model/aspect scaling. Bound that disk in model space, then project its
+ * enclosing cube and the tip through the native view/projection matrices. */
+function readPlotlyDirectionBounds(root: HTMLDivElement, trace: NonNullable<LabelRoot["_fullData"]>[number]): PlotLabelRect | null {
+  const full = (root as LabelRoot)._fullLayout, scene = full?.scene;
+  const size = full?._size, scale = scene?._scene?.dataScale, matrices = scene?._scene?.glplot?.cameraParams;
+  const coordinates = [trace.x, trace.y, trace.z, trace.u, trace.v, trace.w];
+  if (!size || !scene || !scale || !matrices?.model || !matrices.view || !matrices.projection
+    || !scene.xaxis?.r2l || !scene.yaxis?.r2l || !scene.zaxis?.r2l
+    || trace.anchor !== "center" || trace.sizemode !== "absolute" || !(Number.isFinite(trace.sizeref) && trace.sizeref! > 0)
+    || coordinates.some(values => values?.length !== 1 || typeof values[0] !== "number" || !Number.isFinite(values[0]))) return null;
+  try {
+    const axes = [scene.xaxis, scene.yaxis, scene.zaxis];
+    const vector = [Number(trace.u![0]), Number(trace.v![0]), Number(trace.w![0])];
+    const norm = Math.hypot(...vector);
+    if (!(norm > 0)) return null;
+    // A single cone has vectorScale=1; absolute coneScale=sizeref/_normMax.
+    const coneScale = trace.sizeref! / norm;
+    const anchor = multiply4(matrices.model, [...[trace.x![0], trace.y![0], trace.z![0]].map((value, index) => axes[index].r2l!(value) * scale[index]), 1]);
+    const direction = multiply4(matrices.model, [...vector.map((value, index) => axes[index].r2l!(value) * scale[index] * coneScale), 0]);
+    if (!anchor || !direction) return null;
+    const radius = Math.hypot(...direction.slice(0, 3)) / 4;
+    const vertices = [[...anchor.slice(0, 3).map((value, index) => value + direction[index] / 2), anchor[3]]];
+    for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) {
+      const signs = [x, y, z];
+      vertices.push([...anchor.slice(0, 3).map((value, index) => value - direction[index] / 2 + signs[index] * radius), anchor[3]]);
+    }
+    const domain = scene.domain ?? { x: [0, 1], y: [0, 1] };
+    const projected: { x: number; y: number }[] = [];
+    for (const vertex of vertices) {
+      const viewed = multiply4(matrices.view, vertex), clip = viewed && multiply4(matrices.projection, viewed);
+      // A bound crossing the camera plane cannot safely reserve a finite box.
+      if (!clip || clip[3] <= 0) return null;
+      const point = { x: size.l + domain.x[0] * size.w + 0.5 * (1 + clip[0] / clip[3]) * size.w * (domain.x[1] - domain.x[0]),
+        y: size.t + (1 - domain.y[1]) * size.h + 0.5 * (1 - clip[1] / clip[3]) * size.h * (domain.y[1] - domain.y[0]) };
+      if (![point.x, point.y].every(Number.isFinite)) return null;
+      projected.push(point);
+    }
+    const left = Math.min(...projected.map(point => point.x)), right = Math.max(...projected.map(point => point.x));
+    const top = Math.min(...projected.map(point => point.y)), bottom = Math.max(...projected.map(point => point.y));
+    return { x: left - 2, y: top - 2, width: right - left + 4, height: bottom - top + 4 };
+  } catch { return null; }
+}
+
 /** Translate a label anchor by exact Plotly-layout pixels at unchanged camera
  * depth. Inverting native matrices prevents the first drag step from jumping
  * when an automatically displaced annotation becomes a manual anchor. */
@@ -134,12 +181,21 @@ const textContexts = new WeakMap<HTMLDivElement, CanvasRenderingContext2D | null
 // CI wireframes can subdivide into many screen-space collision rectangles.
 // Bound label-layout scratch separately from the unchanged scientific traces.
 const MAX_SCENE_LABEL_OBSTACLES = 50_000;
-function fixedSceneObstacles(root: HTMLDivElement): { obstacles: PlotLabelRect[]; exceeded: boolean } {
+function fixedSceneObstacles(root: HTMLDivElement): { obstacles: PlotLabelRect[]; exceeded: boolean; unavailable?: boolean } {
   const runtime = root as LabelRoot;
   const obstacles: PlotLabelRect[] = [];
   for (const trace of runtime._fullData ?? []) {
-    if (trace.visible === false || trace.visible === "legendonly" || trace.type !== "scatter3d") continue;
+    if (trace.visible === false || trace.visible === "legendonly") continue;
     const role = trace.meta?.role;
+    const arrow = trace.type === "cone" && role === "direction-arrow";
+    if (trace.type !== "scatter3d" && !arrow) continue;
+    if (arrow) {
+      if (obstacles.length >= MAX_SCENE_LABEL_OBSTACLES) return { obstacles: [], exceeded: true };
+      const bounds = readPlotlyDirectionBounds(root, trace);
+      if (!bounds) return { obstacles: [], exceeded: false, unavailable: true };
+      obstacles.push(bounds);
+      continue;
+    }
     if (role === "confidence-interval") {
       const padding = (trace.line?.width ?? 2) / 2 + 2;
       for (let index = 1; index < (trace.x?.length ?? 0); index++) {
@@ -260,8 +316,8 @@ export function measureOpenEna3dLabels(root: HTMLDivElement, labels: readonly Op
   if (verifiedProjections && projectionError < 0.5) {
     const fixed = fixedSceneObstacles(root);
     root.setAttribute("data-ena-label-obstacle-budget", fixed.exceeded ? "exceeded" : "within-limit");
-    if (fixed.exceeded) {
-      // An incomplete collision map could place text on omitted CI edges.
+    if (fixed.exceeded || fixed.unavailable) {
+      // An incomplete collision map could place text on omitted scene geometry.
       // Empty candidates make the existing owner defer every original label
       // to its full-detail list; the plotted intervals and identities remain.
       decorateLabels(runtime, labels);

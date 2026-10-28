@@ -22,7 +22,7 @@ import {
 import type { CameraPreset, GroupNetwork, OpenEnaResult } from "./types";
 import type { OpenEnaUnitPointStyle } from "./unit-point-style";
 import { marginalMeanStudentT95 } from "./uncertainty";
-import { trajectoryCentroidDescriptionV3, trajectoryHorizonColorV3 } from "./trajectory-style-v3";
+import { trajectoryCentroidDescriptionV3 } from "./trajectory-style-v3";
 
 export const OPEN_ENA_3D_UI_REVISION = "open-ena-3d-camera-v2";
 export const OPEN_ENA_3D_DEFAULT_CAMERA_ZOOM = 1.5;
@@ -821,7 +821,7 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       showarrow: label.role !== "centroid", arrowhead: 0, arrowwidth: 0.8, arrowcolor: label.role === "code" ? "rgba(0,0,0,0)" : color,
       ax: 0, ay: 0, xanchor: "center", yanchor: "middle", xshift: 0, yshift: 0, textangle: 0,
       opacity: 0, captureevents: false, borderpad: label.role === "centroid" ? 1 : 2, borderwidth: 0,
-      bgcolor: "rgba(255,255,255,0.9)", font: { color, size: label.role === "centroid" ? labelSize * 2 / 3 : label.role === "code" ? labelSize * 5 / 6 : labelSize },
+      bgcolor: "rgba(255,255,255,0.9)", font: { color, size: label.role === "centroid" ? labelSize * 10 / 12 : label.role === "code" ? labelSize * 5 / 6 : labelSize },
     });
   };
   const trajectoryPointKey = (row: Row) => JSON.stringify([row.Unit, row.Horizon]);
@@ -1029,10 +1029,10 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       ));
       if (selected.length === 0) return;
       const color = groupColor(group, groupIndex);
-      const markerSymbol = contrast || trajectory
+      const markerSymbol = trajectory ? "square" : contrast
         ? "circle"
         : GROUP_MARKER_SYMBOLS[groupIndex % GROUP_MARKER_SYMBOLS.length];
-      const markerLabel = contrast || trajectory
+      const markerLabel = trajectory ? "square" : contrast
         ? "circle"
         : GROUP_MARKER_LABELS[groupIndex % GROUP_MARKER_LABELS.length];
       unitLegendGroupIndices.add(groupIndex);
@@ -1052,11 +1052,11 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
         }),
         textposition: "top center",
         marker: {
-          color: trajectory ? selected.map(row => trajectoryHorizonColorV3(trajectory, trajectoryPointsByKey?.get(trajectoryPointKey(row))?.horizonKey ?? "")) : color,
-          size: (trajectory ? 4 : 6) * safePointScale,
+          color,
+          size: 6 * safePointScale,
           symbol: markerSymbol,
-          opacity: trajectory ? 0.88 : 0.68,
-          line: { color: trajectory ? "#ffffff" : "#263740", width: trajectory ? 0.5 : 0.8 },
+          opacity: 0.68,
+          line: { color: "#263740", width: trajectory ? 0 : 0.8 },
         },
         hovertemplate: "%{customdata}<extra></extra>",
         legendgroup: `open-ena-group-${groupIndex}`,
@@ -1148,8 +1148,8 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       const delta = to.map((value, index) => value - from[index]);
       const length = Math.hypot(...delta);
       if (trajectory.showDirection !== false && length > 0) traces.push({ type: "cone", name: "Observed fitted direction",
-        x: [from[0] + delta[0] * 0.62], y: [from[1] + delta[1] * 0.62], z: [from[2] + delta[2] * 0.62],
-        u: [delta[0] / length], v: [delta[1] / length], w: [delta[2] / length], anchor: "center", sizemode: "absolute", sizeref: 0.13,
+        x: [from[0] + delta[0] * 0.5], y: [from[1] + delta[1] * 0.5], z: [from[2] + delta[2] * 0.5],
+        u: [delta[0] / length], v: [delta[1] / length], w: [delta[2] / length], anchor: "center", sizemode: "absolute", sizeref: Math.min(0.13, length * 0.4),
         colorscale: [[0, color], [1, color]], showscale: false, showlegend: false, hoverinfo: "skip", meta: { role: "direction-arrow", groupName: path.from.group } });
     }
     for (const centroid of trajectory.centroids) {
@@ -1158,10 +1158,10 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       const color = trajectoryGroupColor(centroid.group);
       traces.push({ type: "scatter3d", mode: "markers", name: "Observed Group centroid",
         x: [coordinate(centroid.point, xDimension)], y: [coordinate(centroid.point, yDimension)], z: [coordinate(centroid.point, zDimension)],
-        text: [literalGlText(description)], marker: { color: trajectoryHorizonColorV3(trajectory, centroid.horizonKey), size: 4.5, symbol: "square", line: { color, width: 2 } }, showlegend: false,
+        text: [literalGlText(description)], marker: { color, size: 7, symbol: "square", line: { color, width: 0 } }, showlegend: false,
         hovertemplate: `${escapeHoverText(description)}<extra></extra>`, meta: { role: "group-mean", groupName: centroid.group } });
       addTrajectoryLabel({ id: `centroid:${centroid.key}`, role: "centroid", text: centroid.horizonShortLabel,
-        description, priority: 350 }, centroid.point, color);
+        description, priority: 350 }, centroid.point);
     }
   }
   if (renderedDisplayNodeRows.length > 0) {
@@ -1183,10 +1183,10 @@ export function compileOpenEna3dPlotSpec(input: CompileOpenEna3dPlotInput): Open
       textfont: { color: "#263740", size: 12 },
       marker: {
         color: renderedDisplayNodeRows.map((row) => codeColorFor(codeColors, String(row.code ?? ""))),
-        size: trajectory ? 5.5 : 9,
+        size: trajectory ? 3.25 : 9,
         symbol: trajectory ? "circle-open" : "circle",
         opacity: 1,
-        line: { color: trajectory ? "#64748b" : "#ffffff", width: trajectory ? 1 : 1.5 },
+        line: trajectory ? undefined : { color: "#ffffff", width: 1.5 },
       },
       hovertemplate: "%{customdata}<extra></extra>",
       showlegend: false,
