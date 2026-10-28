@@ -4,7 +4,9 @@
 
 **Authorization:** The owner explicitly requested continuation through production switching. The prior independent Qwen 9/9 record and DeepSeek 5/9 record remain immutable evidence.
 
-**Current baseline:** integration branch `codex/open-ena-qwen-production` continues local candidate/evidence commit `03cb5ab` on main `52ef99c`. Fresh public readback shows both domains currently serve Plugin Lab release `9b304d2`. Deployment ownership has returned from the completed Plugin Lab release; no active switch was reported.
+**Completion reconciled on 2026-10-28:** The switch and production acceptance completed on 2026-10-26 at release `557b6962ebf9dcc810da3374e1539c122c09b603`. The retained acceptance manifest and all ten evidence hashes have been reverified. See [the production acceptance record](../../qwen-production-integration.md#production-acceptance-and-pr-118-disposition--reconciled-2026-10-28) for the 6/6 dual-domain generations, Chinese restore, settlement, health and QA-retirement evidence. The earlier DeepSeek 5/9 result is unchanged.
+
+**Historical pre-switch baseline (2026-10-26):** integration branch `codex/open-ena-qwen-production` continued local candidate/evidence commit `03cb5ab` on main `52ef99c`. Before the Qwen switch, public readback showed both domains serving Plugin Lab release `9b304d2`. Deployment ownership had returned from that completed release; no active switch was reported at the time.
 
 ## Implementation
 
@@ -31,15 +33,15 @@ Source: https://www.alibabacloud.com/help/en/model-studio/model-pricing (Qwen-Pl
 ## Verification and release
 
 - [x] Failure-first provider/route/budget/consent tests, historic record/cloud restore compatibility, and three-language disclosure checks.
-- [ ] Full repository verification and all three exact-commit CI jobs; independent code/release review; merge the reviewed integration PR.
-- [ ] Admit only the exact Linux standalone artifact with matching workflow SHA, digest, archive checksums, runtime identity and extracted smoke evidence.
-- [ ] Fresh ECS read-only preflight, backup and isolated restore verification, preserving current release, session/encryption/database keys and notification configuration.
-- [ ] Transfer only the selected Qwen secret using a protected mechanism. Plaintext credentials never enter commands, logs, screenshots, Git or public receipts.
-- [ ] Start candidate on a private local port and verify login, locale workspaces, project isolation and provider configuration without additional live generation.
-- [ ] Perform a reversible single-service switch with rollback of release pointer, environment and proxy header; do not claim zero downtime for a service restart.
-- [ ] Run one explicit real generation per locale on each public domain (six), and use an existing generated Chinese result for cross-domain save/restore with no extra generation. Verify exact release, provider/model/consent, reservation settlement and actual usage.
-- [ ] Verify service, database, notification worker and dual-domain health after the switch, then complete the goal only when production evidence proves the intended state.
+- [x] Full repository verification and all three exact-commit CI jobs; independent code/release review; merge the reviewed integration PR.
+- [x] Admit only the exact Linux standalone artifact with matching workflow SHA, digest, archive checksums, runtime identity and extracted smoke evidence.
+- [x] Fresh ECS read-only preflight, backup and isolated restore verification, preserving current release, session/encryption/database keys and notification configuration.
+- [x] Transfer only the selected Qwen secret using a protected mechanism. Plaintext credentials never enter commands, logs, screenshots, Git or public receipts.
+- [x] Start candidate on a private local port and verify login, locale workspaces, project isolation and provider configuration without additional live generation.
+- [x] Perform a reversible single-service switch with rollback of release pointer, environment and proxy header; do not claim zero downtime for a service restart.
+- [x] Run one explicit real generation per locale on each public domain (six), and use an existing generated Chinese result for cross-domain save/restore with no extra generation. Verify exact release, provider/model/consent, reservation settlement and actual usage.
+- [x] Verify service, database, notification worker and dual-domain health after the switch, then complete the goal only when production evidence proves the intended state.
 
-## Access status
+## Historical access context (2026-10-26)
 
-The existing release route uses Alibaba Cloud Assistant. The Browser Use interface reports `Local browser use is disabled in Work settings` despite the owner confirming it is enabled. The separately authorized native Chrome Computer Use interface works and opened the existing authenticated ECS console on 2026-10-26. The release can continue through this supported interface; no permission, firewall or access policy was changed.
+The release used Alibaba Cloud Assistant. At that time, the Browser Use interface reported `Local browser use is disabled in Work settings` despite the owner confirming it was enabled. The separately authorized native Chrome Computer Use interface opened the existing authenticated ECS console on 2026-10-26, and the release proceeded through that supported interface. No permission, firewall or access policy was changed. This historical access note does not describe current tool availability.

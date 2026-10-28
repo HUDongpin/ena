@@ -3,6 +3,7 @@ import type { OpenEnaAttributionCopy } from "./open-ena-attribution-types";
 /** Complete translations of the approved provenance and free-access commitment. */
 export const asianGlobalAttributionCopy = {
   ar: {
+    disclaimerLabel: "إخلاء المسؤولية",
     aboutTitle: "عن Open ENA",
     metaDescription: "تعرّف على الأسس البحثية لـ Open ENA ومصادرها العلمية والتصميمية. منصة غير تجارية للتعليم والبحث، وستبقى مجانية إلى الأبد.",
     purposeTitle: "الغاية والالتزام",
@@ -26,6 +27,7 @@ export const asianGlobalAttributionCopy = {
     shortPurpose: "غير تجارية · للتعليم والبحث · مجانية إلى الأبد.",
   },
   ko: {
+    disclaimerLabel: "면책 조항",
     aboutTitle: "Open ENA 소개",
     metaDescription: "Open ENA의 연구 기반과 학문적·디자인적 출처를 소개합니다. 교육과 연구를 위한 비상업적 플랫폼으로, 영구적으로 무료로 제공됩니다.",
     purposeTitle: "목적과 약속",
@@ -49,6 +51,7 @@ export const asianGlobalAttributionCopy = {
     shortPurpose: "비상업적 플랫폼 · 교육과 연구 목적 · 영구 무료.",
   },
   ja: {
+    disclaimerLabel: "免責事項",
     aboutTitle: "Open ENA について",
     metaDescription: "Open ENA の研究基盤と学術・デザイン上の出典を紹介します。教育と研究を目的とする非商用プラットフォームとして、永久に無料で提供します。",
     purposeTitle: "目的と約束",
@@ -72,6 +75,7 @@ export const asianGlobalAttributionCopy = {
     shortPurpose: "非商用 · 教育・研究目的 · 永久無料。",
   },
   hi: {
+    disclaimerLabel: "अस्वीकरण",
     aboutTitle: "Open ENA के बारे में",
     metaDescription: "Open ENA के शोध आधार और शैक्षणिक व डिज़ाइन संबंधी स्रोत जानें। शिक्षा और अनुसंधान के लिए यह गैर-व्यावसायिक मंच हमेशा निःशुल्क रहेगा।",
     purposeTitle: "उद्देश्य और प्रतिबद्धता",
@@ -95,6 +99,7 @@ export const asianGlobalAttributionCopy = {
     shortPurpose: "गैर-व्यावसायिक · शिक्षा और अनुसंधान के लिए · हमेशा निःशुल्क।",
   },
   id: {
+    disclaimerLabel: "Penafian",
     aboutTitle: "Tentang Open ENA",
     metaDescription: "Kenali landasan penelitian serta sumber akademis dan desain Open ENA. Platform nonkomersial untuk pendidikan dan penelitian yang akan tetap gratis selamanya.",
     purposeTitle: "Tujuan dan komitmen",
@@ -118,6 +123,7 @@ export const asianGlobalAttributionCopy = {
     shortPurpose: "Nonkomersial · Pendidikan dan penelitian · Gratis selamanya.",
   },
   bn: {
+    disclaimerLabel: "দায় অস্বীকার",
     aboutTitle: "Open ENA সম্পর্কে",
     metaDescription: "Open ENA-এর গবেষণাভিত্তি এবং একাডেমিক ও নকশাগত উৎস সম্পর্কে জানুন। শিক্ষা ও গবেষণার এই অবাণিজ্যিক প্ল্যাটফর্ম চিরকাল বিনামূল্যে থাকবে।",
     purposeTitle: "উদ্দেশ্য ও অঙ্গীকার",

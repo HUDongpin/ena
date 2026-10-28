@@ -30,7 +30,7 @@ try{
   if(kind!=='preset')await page.getByRole('button',{name:'Data',exact:true}).click();
   const input=kind==='preset'?page.getByLabel('Review presentation preset',{exact:true}):page.getByLabel('Import configuration, result or Reference',{exact:true});
   await input.setInputFiles({name:`corrupt-${kind}.json`,mimeType:'application/json',buffer});
-  await page.waitForFunction(()=>document.querySelector('[data-testid="ena-import-preview-v3"]')||document.querySelector('[role="dialog"]')||document.querySelector('[role="alert"]'));
+  await page.waitForFunction(()=>document.querySelector('[data-testid="ena-import-preview-v3"]')||document.querySelector('[role="dialog"][aria-label="Presentation preset preview"]')||document.querySelector('[role="alert"]'));
   const preview=kind==='preset'?page.getByRole('dialog',{name:'Presentation preset preview',exact:true}):page.getByTestId('ena-import-preview-v3');
   const accepted=await preview.count()>0;const alerts=await page.getByRole('alert').allTextContents();let adopted=null;
   if(accepted&&kind==='legacy'){

@@ -3,6 +3,7 @@ import test from "node:test";
 import { renderWorkspaceShellV3 } from "./helpers/open-ena-workspace-v3-ui";
 import { getDictionary, locales } from "../lib/i18n";
 import { getPluginLabCopy } from "../lib/plugin-lab/i18n";
+import { getOpenEnaAttributionCopy } from "../lib/open-ena-attribution";
 
 function escapeHtml(value: string) {
   return value.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
@@ -30,17 +31,36 @@ test("workspace website navigation opens exactly the six localized website desti
   }
 });
 
-test("website entry sits after analysis modes and above Sign out without joining the mode toolbar", () => {
-  for (const [locale, label] of [["en", "Website"], ["zh-hans", "网站"], ["zh-hant", "網站"]] as const) {
+test("Disclaimer precedes Website after analysis modes without joining the mode toolbar", () => {
+  for (const locale of locales) {
     const markup = renderWorkspaceShellV3(locale);
     const trigger = markup.match(/<button\b[^>]*data-ena-site-trigger="true"[^>]*>[\s\S]*?<\/button>/u)?.[0];
     assert.ok(trigger, "a visible text-labelled website control is required");
-    assert.ok(trigger.includes(label));
+    const disclaimer = markup.match(/<button\b[^>]*data-ena-disclaimer-trigger="true"[^>]*>[\s\S]*?<\/button>/u)?.[0];
+    assert.ok(disclaimer, `${locale}: a visible Disclaimer control is required`);
+    assert.ok(disclaimer.includes(escapeHtml(getOpenEnaAttributionCopy(locale).disclaimerLabel)));
     assert.match(trigger, /type="button"/u);
     assert.match(trigger, /popovertarget="[^"]+"/iu);
-    assert.ok(markup.indexOf(trigger) > markup.indexOf('role="toolbar"'));
+    assert.match(disclaimer, /type="button"/u);
+    assert.match(disclaimer, /popovertarget="[^"]+"/iu);
+    assert.match(disclaimer, /aria-expanded="false"/u);
+    assert.ok(markup.indexOf(disclaimer) > markup.indexOf('role="toolbar"'));
+    assert.ok(markup.indexOf(disclaimer) < markup.indexOf(trigger));
     assert.ok(markup.indexOf(trigger) < markup.indexOf('class="ena-rail-logout"'));
+    assert.doesNotMatch(markup, /class="ena-rail-(?:meta|privacy)"/u, "the visible LOCAL footer and its reserved strip remain absent");
     const toolbar = markup.match(/<div\b[^>]*role="toolbar"[^>]*>([\s\S]*?)<\/div>/u)?.[1] ?? "";
-    assert.ok(!toolbar.includes('data-ena-site-trigger'), "site navigation must not alter analysis arrow-key order");
+    assert.doesNotMatch(toolbar, /data-ena-(?:site|disclaimer)-trigger/u, "utility controls must not alter analysis arrow-key order");
+    const popup = markup.match(/<[a-z]+\b[^>]*data-ena-disclaimer-popup="true"[^>]*>/u)?.[0];
+    assert.ok(popup, `${locale}: the Disclaimer popup is mounted`);
+    assert.match(popup, /popover="auto"/u);
+    assert.match(popup, /role="dialog"/u);
+    assert.match(popup, /aria-modal="false"/u);
+    assert.match(popup, /aria-labelledby="[^"]+"/u);
+    assert.match(markup, /data-open-ena-attribution="popup"/u);
+    assert.doesNotMatch(markup, /data-open-ena-attribution="workspace"/u);
+    const brand = markup.match(/<div\b[^>]*data-ena-rail-brand="true"[^>]*>[\s\S]*?<\/div>/u)?.[0];
+    assert.ok(brand);
+    assert.match(brand, /src="\/unified-home\/logo-open-ena-mark\.svg"/u, "retain the current Open ENA mark");
+    assert.doesNotMatch(brand, /src="\/ena-mark\.svg"/u);
   }
 });

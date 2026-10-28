@@ -58,7 +58,7 @@ try{
       await input.setInputFiles({name:'held-malformed.csv',mimeType:'text/csv',buffer:bad});
       await page.waitForFunction(()=>typeof window.pendingCsvBytes==='function');
       await input.setInputFiles({name:'new-valid.csv',mimeType:'text/csv',buffer:Buffer.from('unit,A\ncurrent,1')});
-      await page.waitForFunction(()=>document.querySelector('[role="dialog"]')?.textContent.includes('current'));
+      await page.waitForFunction(()=>document.querySelector('.ena-source-preparation-dialog')?.textContent.includes('current'));
       await page.evaluate(()=>window.pendingCsvBytes());
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       assert.equal(await page.getByRole('alert').count(),0);

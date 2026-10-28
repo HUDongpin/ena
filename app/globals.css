@@ -14311,7 +14311,7 @@ html:has(.open-ena-page) {
   touch-action: none;
 }
 
-/* Website navigation sits above Sign out; the popover uses the browser top layer. */
+/* Disclaimer and Website sit above Sign out; popovers use the browser top layer. */
 .ena-site-navigation {
   flex: 0 0 auto;
   padding: 0 5px;
@@ -14411,6 +14411,52 @@ html:has(.open-ena-page) {
 }
 .ena-site-menu a:hover .ena-site-new-tab,
 .ena-site-menu a:focus-visible .ena-site-new-tab { color: #327ba1; }
+
+.ena-disclaimer-trigger { padding-inline: 0; }
+.ena-disclaimer-trigger > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.ena-disclaimer-popup {
+  position: fixed;
+  inset: auto;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  visibility: hidden;
+  border: 1px solid #c8d5dc;
+  border-radius: 4px;
+  color: #253f4b;
+  background: #fff;
+  box-shadow: 0 6px 20px rgba(24, 37, 51, 0.18);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  text-align: start;
+}
+
+.ena-disclaimer-popup[data-open="true"] { visibility: visible; }
+.ena-disclaimer-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.ena-disclaimer-heading h2 { flex: 1; margin: 0; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.ena-disclaimer-close {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.ena-disclaimer-close:hover { color: #205d7e; background: #edf8fd; }
+.ena-disclaimer-close:focus-visible { outline: 2px solid #327ba1; outline-offset: -2px; }
+.ena-disclaimer-close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 
 @media (max-width: 900px) {
   .ena-site-navigation { grid-column: 1 / -1; padding: 4px 8px; }
@@ -14519,13 +14565,13 @@ html:has(.open-ena-page) {
 }
 .open-ena-attribution-workspace a.open-ena-attribution-link { padding-block: 3px; }
 
-/* The attribution height varies by language. Keep the existing Data View
-   bottom bar outside the scrolling results so it cannot cover plot actions. */
+/* Keep the Data View bottom bar outside the scrolling results, independently
+   of the acknowledgement popup, so it cannot cover plot actions. */
 @container open-ena-viewport (min-width: 901px) {
-  .ena-visual-workspace:has(> .open-ena-attribution-workspace) {
+  .ena-visual-workspace:has(> .ena-visual-results) {
     overflow: hidden;
   }
-  .open-ena-attribution-workspace + div {
+  .ena-visual-workspace > .ena-visual-results {
     flex: 1 1 auto;
     min-height: 0;
     margin-block-end: 44px;
@@ -14538,3 +14584,7 @@ html:has(.open-ena-page) {
   .open-ena-attribution-home { width: calc(100% - 32px); }
   .open-ena-attribution-workspace { padding-inline: 10px; }
 }
+
+.open-ena-attribution-popup { color: #294452; font-size: 13px; }
+.open-ena-attribution-popup .open-ena-attribution-purpose { margin-block-start: 10px; font-weight: 700; }
+.open-ena-attribution-popup a.open-ena-attribution-link { margin-block-start: 6px; }
