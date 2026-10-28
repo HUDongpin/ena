@@ -6,6 +6,9 @@ import { bindResultV3 } from "../lib/open-ena/model-v3/result-binding";
 import type { BoundStandardResultV3 } from "../lib/open-ena/model-v3/types";
 import { buildTrajectoryPresentationV3, buildTrajectoryUncertaintyPopulationV3 } from "../lib/open-ena/trajectory-presentation-v3";
 import { openEnaGroupUnitKey } from "../lib/open-ena/group-display";
+import { computeTrajectoryUncertaintyV3 } from "../lib/open-ena/trajectory-uncertainty-v3";
+import { sha256TextV3 } from "../lib/open-ena/model-v3/canonical-json";
+import { buildPresentationArtifactV3, applyPresentationV3 } from "../lib/open-ena/presentation-artifact-v3";
 
 async function fixture() {
   const f = await bindingFixtureV3(undefined, (draft, data) => {
@@ -50,4 +53,41 @@ test("CI population honors hidden summary membership without un-hiding points", 
   assert.equal(b.groups[0].units.length, 3);
   assert.notEqual(a.populationKey, b.populationKey);
   assert.equal(buildTrajectoryPresentationV3(result, excluded).points.length, buildTrajectoryPresentationV3(result, included).points.length);
+});
+
+test("computed intervals bind to each observed centroid and stale populations never display CI", async () => {
+  const result = await fixture(), before = JSON.stringify(result);
+  const population = buildTrajectoryUncertaintyPopulationV3(result, settings);
+  const uncertainty = computeTrajectoryUncertaintyV3({ axes: population.axes, groups: population.groups, bindingKey: await sha256TextV3(population.populationKey) });
+  const baseline = buildTrajectoryPresentationV3(result, settings);
+  const displayed = buildTrajectoryPresentationV3(result, settings, { populationKey: population.populationKey, status: "ready", result: uncertainty });
+  assert.equal(displayed.uncertaintyStatus, "ready");
+  assert.ok(displayed.centroids.every(centroid => Object.keys(centroid.intervals ?? {}).length === population.axes.length));
+  for (const centroid of displayed.centroids) {
+    const computed = uncertainty.centroids.find(value => value.centroidKey === centroid.key)!;
+    assert.equal(computed.n, centroid.n);
+    for (const axis of computed.axes) {
+      assert.ok(Math.abs(axis.estimate - centroid.point[axis.axis]) < 1e-12);
+      const interval = centroid.intervals![axis.axis];
+      if (axis.status === "unavailable") assert.equal(interval.status, "not-estimable");
+      else {
+        assert.notEqual(interval.status, "not-estimable");
+        if (interval.status !== "not-estimable") assert.deepEqual([interval.lower, interval.upper], [axis.lower, axis.upper]);
+      }
+    }
+  }
+  assert.deepEqual(displayed.centroids.map(({ point, n }) => ({ point, n })), baseline.centroids.map(({ point, n }) => ({ point, n })));
+  assert.deepEqual(displayed.points, baseline.points);
+  const stale = buildTrajectoryPresentationV3(result, settings, { populationKey: "other-population", status: "ready", result: uncertainty });
+  assert.equal(stale.uncertaintyStatus, "pending");
+  assert.ok(stale.centroids.every(centroid => centroid.intervals === undefined));
+  assert.equal(JSON.stringify(result), before);
+});
+
+test("presentation presets preserve the trajectory CI toggle", async () => {
+  const result = await fixture();
+  const preset = buildPresentationArtifactV3(result, { dimensions: [...result.executionProvenance.projection.estimableAxes].slice(0, 2), hiddenCodes: [], hiddenGroups: [], codeColors: {}, nodeOverrides: [], layerOptions: { showTrajectoryConfidenceIntervals: false } });
+  const restored = applyPresentationV3(result.binding.scientificResultSha256, preset);
+  assert.equal(restored.status, "applied");
+  assert.equal(restored.presentation.layerOptions?.showTrajectoryConfidenceIntervals, false);
 });
