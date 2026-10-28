@@ -528,6 +528,7 @@ async function authenticateAndRunTrajectory(page, args) {
   await nativeProjectionControl(page).selectOption("3d");
   const plot = page.locator('[data-ena-plotly-root=true]');
   await page.waitForFunction(() => !document.querySelector('[data-ena-ci-status="pending"]')
+    && document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "false"
     && document.querySelector('[data-ena-plotly-root=true]')?.data?.some(trace => trace.meta?.role === "confidence-interval"));
   const plotAudit = await plot.evaluate(root => {
     const traces = root.data;
@@ -547,14 +548,34 @@ async function authenticateAndRunTrajectory(page, args) {
         return box.length === 6 && new Set(box.map(trace => trace.meta.intervalEdge)).size === 6
           && box.reduce((edges, trace) => edges + trace.x.length - 1, 0) === 12;
       });
-    return { confidenceWireframes, confidenceCentroidCount: intervalKeys.length, confidenceTraceCount: intervals.length, displayedCodes: traces.filter(t => t.meta?.role === "code-node").flatMap(t => t.text ?? []), centroidSquares: centroidTraces.length > 0 && centroidTraces.every(t => t.marker?.symbol === "square" && t.marker?.size === 4.5), blackTrajectories: paths.length > 0 && paths.every(t => t.line?.color === "black"), lineOnlyTrajectories: paths.every(t => t.mode === "lines" && t.marker === undefined), directionArrowTraceCount: traces.filter(t => t.meta?.role === "direction-arrow").length, participantTraceCount: traces.filter(t => t.meta?.role === "unit-points").length, networkEdgeTraceCount: traces.filter(t => t.meta?.role === "network-edge").length, errorBarTraceCount: traces.filter(t => Object.keys(t).some(k => k.startsWith("error_"))).length, unknownTraceRoles: traces.map(t => t.meta?.role).filter(role => !allowed.has(role)) };
+    return { confidenceWireframes, confidenceCentroidCount: intervalKeys.length, confidenceTraceCount: intervals.length, displayedCodes: traces.filter(t => t.meta?.role === "code-node").flatMap(t => t.text ?? []), centroidSquares: centroidTraces.length > 0 && centroidTraces.every(t => t.marker?.symbol === "square" && t.marker?.size === 7), blackTrajectories: paths.length > 0 && paths.every(t => t.line?.color === "black"), lineOnlyTrajectories: paths.every(t => t.mode === "lines" && t.marker === undefined), directionArrowTraceCount: traces.filter(t => t.meta?.role === "direction-arrow").length, defaultParticipantTraceCount: root._fullData.filter(trace => trace.meta?.role === "unit-points" && trace.visible !== false && trace.visible !== "legendonly").length, networkEdgeTraceCount: traces.filter(t => t.meta?.role === "network-edge").length, errorBarTraceCount: traces.filter(t => Object.keys(t).some(k => k.startsWith("error_"))).length, unknownTraceRoles: traces.map(t => t.meta?.role).filter(role => !allowed.has(role)) };
   });
   plotAudit.codesPresent = identities.codes.every(code => plotAudit.displayedCodes.includes(code.displayLabel));
   assert.ok(plotAudit.codesPresent && plotAudit.centroidSquares && plotAudit.blackTrajectories && plotAudit.lineOnlyTrajectories);
-  assert.ok(plotAudit.directionArrowTraceCount > 0 && plotAudit.participantTraceCount > 0);
+  assert.ok(plotAudit.directionArrowTraceCount > 0);
+  assert.equal(plotAudit.defaultParticipantTraceCount, 0);
   assert.equal(plotAudit.networkEdgeTraceCount, 0);
   assert.ok(plotAudit.errorBarTraceCount === 0 && plotAudit.unknownTraceRoles.length === 0);
   assert.ok(plotAudit.confidenceWireframes, "every centroid must have a finite, dotted, twelve-edge pointwise bootstrap CI wireframe");
+  // Record the hidden default separately from genuine opt-in Unit rendering.
+  const unitPoints = page.locator(".ena-workspace-plot-v3").getByRole("checkbox", { name: "Points", exact: true });
+  assert.equal(await unitPoints.isChecked(), false);
+  await unitPoints.check();
+  await page.waitForFunction(() => {
+    const root = document.querySelector('[data-ena-plotly-root=true]');
+    return document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "false"
+      && root?._fullData?.some(trace => trace.meta?.role === "unit-points" && trace.visible !== false && trace.visible !== "legendonly");
+  });
+  plotAudit.participantTraceCount = await plot.evaluate(root => root._fullData.filter(trace => trace.meta?.role === "unit-points" && trace.visible !== false && trace.visible !== "legendonly").length);
+  assert.ok(plotAudit.participantTraceCount > 0);
+  await unitPoints.uncheck();
+  await page.waitForFunction(() => {
+    const root = document.querySelector('[data-ena-plotly-root=true]');
+    return document.querySelector('[data-ena-interactive-camera="true"]')?.getAttribute("aria-busy") === "false"
+      && Array.isArray(root?._fullData) && !root._fullData.some(trace => trace.meta?.role === "unit-points" && trace.visible !== false && trace.visible !== "legendonly");
+  });
+  assert.equal(await plot.evaluate(root => root._fullData.filter(trace => trace.meta?.role === "unit-points" && trace.visible !== false && trace.visible !== "legendonly").length), 0,
+    "restoring the default must remove rendered Unit traces");
   await nativeScience(page);
   return { ...plotAudit, ...science, expectedCodes: identities.codes.map(code => code.displayLabel), orderedHorizons, fitted, rankDownloads, pathRows };
 }
@@ -780,7 +801,7 @@ async function exerciseCamerasAndProjections(page, args) {
     await projectionSelect.selectOption(projection);
     projectionStates[projection] = await nativeSvgAudit(page);
     assertBrowser(projectionStates[projection].codeLabels.length === args.expectedCodes.length, "2D omitted fitted Code labels");
-    assertBrowser(projectionStates[projection].centroids.every(value => value.width === "5" && value.height === "5"), "2D centroid glyph changed");
+    assertBrowser(projectionStates[projection].centroids.every(value => value.width === "7" && value.height === "7"), "2D centroid glyph changed");
     assertBrowser(projectionStates[projection].networkEdges === 0, "2D trajectory contains mean-network edges");
     await assertScientificInvariants("2D projection " + projection);
   }
