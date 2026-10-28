@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import Logo from "../Logo";
 import type { Locale } from "@/lib/i18n";
 import OpenEnaAttribution from "@/components/OpenEnaAttribution";
+import { getOpenEnaAttributionCopy } from "@/lib/open-ena-attribution";
 import styles from "./HubFooter.module.css";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
@@ -37,7 +38,7 @@ export default function HubFooter({ copy, locale, homeHref, aboutHref, featureBa
   ];
   const resourceItems = [
     { href: `${featureBase}/open-ena`, label: copy.resources.openWebtool, external: false },
-    { href: copy.resources.officialWebtoolUrl, label: "Official webENA", external: true },
+    { href: copy.resources.officialWebtoolUrl, label: getOpenEnaAttributionCopy(locale).officialWebenaLink, external: true },
     { href: copy.resources.officialResourcesUrl, label: copy.resources.browseResources, external: true },
     { href: copy.resources.tutorialUrl, label: copy.resources.tutorial, external: true },
   ];
