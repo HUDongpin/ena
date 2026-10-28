@@ -9,7 +9,7 @@ import type { Locale } from "@/lib/i18n";
 import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
 import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaSiteNavigation from "./OpenEnaSiteNavigation";
-import OpenEnaAttribution from "@/components/OpenEnaAttribution";
+import OpenEnaDisclaimer from "./OpenEnaDisclaimer";
 import OpenEnaPersistentPlotTools, { scheduleOpenEnaDomFocusRestore } from "./OpenEnaPersistentPlotTools";
 import { formatOpenEnaWorkspaceFailureV3, getOpenEnaCopy, type OpenEnaWorkspaceFailureV3 } from "@/lib/open-ena-i18n";
 import { rowsToCsv, resolveOpenEnaPlotExportDimensions, resolveOpenEnaPlotRasterDimensions, openEnaResultTableFocusTarget, resolveOpenEnaResultTableRovingKey, buildOpenEnaResultTable, buildOpenEnaResultTableViewModel, openEnaResultTableAvailability, openEnaResultTableRowCounts, exportOpenEnaResultTableCsv, type OpenEnaResultTableKey, type OpenEnaResultTableViewModel } from "@/lib/open-ena/export";
@@ -1676,6 +1676,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
               aria-label={copy.workspace.jenaSourceAriaLabel(JENA_RUNTIME_VERSION, JENA_SOURCE_COMMIT.slice(0, 7))}>jENA {JENA_RUNTIME_VERSION.split("-", 1)[0]}</a>
           </div>
           <div ref={railToolbarRef} className="ena-rail-modes" role="toolbar" aria-label={workspaceCopy.landmarks.railToolbar} aria-orientation={railOrientation} onKeyDown={onRailToolbarKeyDown}>{OPEN_ENA_RAIL_MODES.map((entry) => <button key={entry} ref={(element) => { railTriggerRefs.current[entry] = element; }} type="button" className="ena-rail-button" tabIndex={railTabStop === entry ? 0 : -1} aria-current={mode === entry ? "step" : undefined} aria-label={entry === "ai" ? copy.aiInterpretation.title : copy.modes[entry]} onFocus={() => cancelScheduledRailFocusRestore()} onClick={() => { cancelScheduledRailFocusRestore(); setRailTabStop(entry); setMode(entry); }}>{modeIcons[entry]}<span>{copy.modes[entry]}</span></button>)}</div>
+          <OpenEnaDisclaimer locale={locale} />
           <OpenEnaSiteNavigation locale={locale} />
           <form className="ena-rail-logout" action="/api/open-ena/logout" method="post" onSubmit={submitOpenEnaLogoutAsDocumentRequest}><input type="hidden" name="locale" value={locale} /><button type="submit" aria-label={authCopy.signOut} title={authCopy.signOut}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5v14h5m4-11 4 4-4 4m-5-4h9" /></svg><span>{authCopy.signOut}</span></button></form>
           <span className="sr-only">{cloudBridge ? cloudCopy.runtimePrivacy.replace("{version}", JENA_RUNTIME_VERSION) : workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span>
@@ -1695,8 +1696,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
               </div><button type="button" className="ena-compact-toolbar-button" disabled={!current || view === "3d" || endpointFrame2D.status === "pending"} onClick={exportPlotSvg}>{workspaceCopy.toolbar.exportSvg}</button><button type="button" className="ena-compact-toolbar-button" disabled={!current || view === "3d" || endpointFrame2D.status === "pending"} onClick={exportPlotPng}>{workspaceCopy.toolbar.exportPng}</button>
             </div>
           </div>
-          <OpenEnaAttribution locale={locale} aboutHref={`/${locale}/about`} variant="workspace" />
-          <div>
+          <div className="ena-visual-results">
       {presentation && result && <section aria-label={workspaceCopy.result.plotAria} data-ena-workbench-region="center">{modelState.resultStatus === "stale" && rebuildCue ? <div className="ena-stale-rebuild-callout" data-testid="open-ena-stale-rebuild" data-ena-rebuild-cue={rebuildCue.reason}><p role="status" aria-live="polite">{workspaceCopy.result.sourceReplacementNotice}</p><button type="button" ref={staleRebuildRef} className="ena-action-button ena-action-primary ena-stale-rebuild-button" data-testid="open-ena-stale-rebuild-run" aria-label={workspaceCopy.result.rebuildNowAria} aria-describedby={mode === "model" ? rebuildBlockingDescribedBy : undefined} disabled={sourceBusy || sourcePreview !== null || modelState.runStatus === "running"} onClick={requestRebuildAfterSourceReplacement}>{workspaceCopy.result.rebuildNow}<span aria-hidden="true">→</span></button></div> : <p>{modelState.resultStatus === "stale" ? workspaceCopy.result.historicalGeometry : workspaceCopy.result.boundGeometry}</p>}
         {endpointFrame2D.status === "pending" && <p role="status" data-ena-2d-frame-status="pending">{locale === "zh-hans" ? "正在准备 2D 图形比例…" : locale === "zh-hant" ? "正在準備 2D 圖形比例…" : "Preparing the 2D plot scale…"}</p>}
         {endpointFrame2D.status === "unavailable" && <p role="status" data-ena-2d-frame-status="unavailable">{locale === "zh-hans" ? "此模型暂无可用的 R 兼容 2D 图形比例，目前显示原生比例。" : locale === "zh-hant" ? "此模型暫無可用的 R 相容 2D 圖形比例，目前顯示原生比例。" : "The R-compatible 2D plot scale is unavailable for this model. The plot uses its native scale."}</p>}

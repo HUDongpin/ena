@@ -1,5 +1,6 @@
 /** Public provenance and service commitments, translated for every site locale. */
 export interface OpenEnaAttributionCopy {
+  disclaimerLabel: string;
   aboutTitle: string;
   metaDescription: string;
   purposeTitle: string;

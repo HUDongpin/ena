@@ -35,7 +35,7 @@ import LocaleLayout from "./app/[locale]/layout";
 import HomePage from "./app/[locale]/page";
 import AboutPage from "./app/[locale]/about/page";
 import OpenEnaWorkspace from "./components/open-ena/OpenEnaWorkspace";
-import { getLocaleMeta } from "./lib/i18n";
+import { getDictionary, getLocaleMeta } from "./lib/i18n";
 import { getOpenEnaAttributionCopy } from "./lib/open-ena-attribution";
 import { runStandardPlanV3 } from "./lib/open-ena/analyze";
 import { bindResultV3 } from "./lib/open-ena/model-v3/result-binding";
@@ -44,7 +44,7 @@ import { migrateCanonicalConfigurationToDraftV3 } from "./lib/open-ena/model-v3/
 import { parsedDatasetFromSourceProofV3 } from "./lib/open-ena/model-v3/execution-plan";
 const [locale, surface = "home"] = location.pathname.split("/").filter(Boolean);
 const copy = getOpenEnaAttributionCopy(locale);
-window.__attributionExpected = { copy, meta: getLocaleMeta(locale) };
+window.__attributionExpected = { copy, meta: getLocaleMeta(locale), close: getDictionary(locale).nav.close };
 const values = [[1,2,1,0],[2,1,3,1],[1,3,1,2],[3,1,2,1],[1,1,4,2],[2,4,1,3],[4,2,3,1],[3,2,1,4]];
 const codes = ["A", "B", "C", "D"];
 const dataset = { name: "attribution-synthetic.csv", source: "upload", sizeBytes: 1024,
@@ -106,7 +106,7 @@ const script = bundle.outputFiles.find(file => file.path.endsWith(".js")).text;
 const css = await readFile(`${projectRoot}/app/globals.css`, "utf8") + "\n" + bundle.outputFiles.filter(file => file.path.endsWith(".css")).map(file => file.text).join("\n");
 const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/harness.css"><script defer src="/harness.js"></script></head><body><div id="root"></div></body></html>';
 const mime = { ".js": "application/javascript", ".wasm": "application/wasm", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".csv": "text/csv", ".json": "application/json" };
-const report = { baseline: liveBaseline, exactHeroSourceMatch: true, harness: "real React components; local Next adapters; actual Standard ENA compute and binding in an injected worker", surfaces: [], chromeChecks: [], workflow: {}, screenshots: [], errors: [], externalRequests: [] };
+const report = { baseline: liveBaseline, exactHeroSourceMatch: true, harness: "real React components; local Next adapters; actual Standard ENA compute and binding in an injected worker", surfaces: [], chromeChecks: [], disclaimers: [], workflow: {}, screenshots: [], errors: [], externalRequests: [] };
 await mkdir(outputDir, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce" });
@@ -193,6 +193,104 @@ async function checkLiveChrome(locale, surface, width) {
   report.chromeChecks.push({ locale, surface, width, currentHeader: true, sevenNavigationLinks: true, languageMenu: true, currentLogos: true });
 }
 
+async function checkDisclaimer(locale, width, zoom = 1) {
+  const expected = await page.evaluate(() => window.__attributionExpected);
+  const trigger = page.locator('[data-ena-disclaimer-trigger="true"]');
+  const popup = page.locator('[data-ena-disclaimer-popup="true"]');
+  const website = page.locator('[data-ena-site-trigger="true"]');
+  const websiteMenu = page.locator('[data-ena-site-navigation="true"]');
+  assert.equal(await trigger.textContent(), expected.copy.disclaimerLabel);
+  assert.equal(await trigger.getAttribute("aria-expanded"), "false");
+  assert.equal(await popup.isVisible(), false, `${locale}: disclaimer starts closed`);
+  assert.equal(await page.locator('.ena-visual-workspace [data-open-ena-attribution]').count(), 0, "the upper acknowledgement block is absent");
+  assert.equal(await page.locator('.ena-tool-rail .ena-rail-meta, .ena-tool-rail .ena-rail-privacy').count(), 0,
+    "the visible LOCAL footer and its reserved strip are absent");
+  const logo = page.locator('[data-ena-rail-brand="true"] img');
+  assert.equal(await logo.getAttribute("src"), "/unified-home/logo-open-ena-mark.svg");
+  await logo.evaluate(image => image.decode());
+  assert.ok(await logo.evaluate(image => image.complete && image.naturalWidth > 0), "the current rail logo loads");
+  const dataView = page.getByTestId("open-ena-data-view");
+  const dataViewBefore = await dataView.isVisible() ? await dataView.boundingBox() : null;
+  const placement = await trigger.evaluate(button => {
+    const site = document.querySelector('[data-ena-site-trigger="true"]');
+    const own = button.getBoundingClientRect();
+    const next = site.getBoundingClientRect();
+    return { above: own.bottom <= next.top + 1, outsideToolbar: !button.closest('[role="toolbar"]'), width: own.width };
+  });
+  assert.ok(placement.above && placement.outsideToolbar, `${locale}/${width}/${zoom}: Disclaimer sits directly above Website outside the mode toolbar`);
+  assert.ok(placement.width > 0);
+
+  async function expectOpen() {
+    await popup.waitFor({ state: "visible" });
+    await page.waitForFunction(() => document.querySelector('[data-ena-disclaimer-trigger="true"]').getAttribute("aria-expanded") === "true");
+    assert.equal(await popup.getAttribute("role"), "dialog");
+    assert.equal(await popup.getAttribute("aria-modal"), "false");
+    await popup.getByRole("heading", { name: expected.copy.disclaimerLabel, exact: true }).waitFor({ state: "visible" });
+    await popup.getByRole("button", { name: expected.close, exact: true }).waitFor({ state: "visible" });
+    await popup.getByRole("button", { name: expected.close, exact: true }).locator("svg").waitFor({ state: "visible" });
+    const content = popup.locator('[data-open-ena-attribution="popup"]');
+    assert.ok((await content.textContent()).includes(expected.copy.shortCredit));
+    assert.ok((await content.textContent()).includes(expected.copy.shortPurpose));
+    assert.ok(Number(await content.locator("p").nth(1).evaluate(element => getComputedStyle(element).fontWeight)) >= 600, "purpose statement remains bold");
+    const link = content.getByRole("link");
+    assert.equal(await link.getAttribute("href"), `/${locale}/about#acknowledgements`);
+    assert.equal(await link.getAttribute("target"), "_blank");
+    assert.equal(await link.getAttribute("rel"), "noopener noreferrer");
+    const box = await popup.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: innerWidth, height: innerHeight,
+        overflow: element.scrollWidth - element.clientWidth };
+    });
+    assert.ok(box.left >= -1 && box.right <= box.width + 1 && box.top >= -1 && box.bottom <= box.height + 1,
+      `${locale}/${width}/${zoom}: popup stays inside viewport ${JSON.stringify(box)}`);
+    assert.ok(box.overflow <= 1, `${locale}/${width}/${zoom}: popup has no horizontal overflow`);
+  }
+  async function expectClosed(restoreFocus = false) {
+    await popup.waitFor({ state: "hidden" });
+    await page.waitForFunction(() => document.querySelector('[data-ena-disclaimer-trigger="true"]').getAttribute("aria-expanded") === "false");
+    if (restoreFocus) await page.waitForFunction(() => document.activeElement?.matches('[data-ena-disclaimer-trigger="true"]'));
+  }
+
+  await trigger.click();
+  await expectOpen();
+  await trigger.click();
+  await expectClosed(true);
+  await trigger.click();
+  await expectOpen();
+  await popup.getByRole("button", { name: expected.close, exact: true }).click();
+  await expectClosed(true);
+  await trigger.press("Enter");
+  await expectOpen();
+  await page.keyboard.press("Escape");
+  await expectClosed(true);
+  await trigger.click();
+  await expectOpen();
+  await page.mouse.click(width - 2, 2);
+  await expectClosed();
+  await trigger.click();
+  await expectOpen();
+  await website.click();
+  await websiteMenu.waitFor({ state: "visible" });
+  await expectClosed();
+  await trigger.click();
+  await expectOpen();
+  assert.equal(await websiteMenu.isVisible(), false, "opening Disclaimer closes Website");
+  const previewName = `disclaimer-${locale}-${width}.png`;
+  if (zoom === 1 && ["en", "ar"].includes(locale) && !report.screenshots.includes(previewName)) {
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await screenshot(previewName, false);
+  }
+  await popup.getByRole("button", { name: expected.close, exact: true }).click();
+  await expectClosed(true);
+  if (dataViewBefore) {
+    const dataViewAfter = await dataView.boundingBox();
+    assert.ok(dataViewAfter, "Data View stays visible after Disclaimer interactions");
+    for (const key of ["x", "y", "width", "height"]) assert.ok(Math.abs(dataViewAfter[key] - dataViewBefore[key]) <= 1,
+      `Data View ${key} is unchanged by Disclaimer interactions`);
+  }
+  report.disclaimers.push({ locale, width, cssZoom: zoom, aboveWebsite: true, triggerToggle: true, close: true, escape: true, outsideClick: true, exclusiveWithWebsite: true, contained: true });
+}
+
 async function checkAttributions(locale, surface, width) {
   await checkLiveChrome(locale, surface, width);
   const expected = await page.evaluate(() => window.__attributionExpected);
@@ -208,11 +306,11 @@ async function checkAttributions(locale, surface, width) {
       assert.ok(!(await block.textContent()).includes(expected.copy.purpose), "footer omits the purpose statement at the owner's request");
       assert.equal(await block.locator("p").count(), 1, "footer keeps only the credit paragraph");
     } else {
-      assert.ok((await block.textContent()).includes(variant === "workspace" ? expected.copy.shortPurpose : expected.copy.purpose));
+      assert.ok((await block.textContent()).includes(variant === "popup" ? expected.copy.shortPurpose : expected.copy.purpose));
     }
     const link = block.locator("a");
     assert.equal(await link.getAttribute("href"), `/${locale}/about#acknowledgements`);
-    assert.equal(await block.isVisible(), !(surface === "workspace" && variant === "footer"), `${locale}/${surface}: ${variant} visibility follows existing workspace chrome`);
+    assert.equal(await block.isVisible(), surface !== "workspace", `${locale}/${surface}: ${variant} visibility follows existing workspace chrome and closed Disclaimer`);
   }
   assert.equal(await page.getByRole("main").count(), 1);
   assert.equal(await page.getByRole("contentinfo").count(), surface === "workspace" ? 0 : 1);
@@ -240,16 +338,8 @@ async function checkAttributions(locale, surface, width) {
     await page.waitForFunction(() => [...document.querySelectorAll("[data-open-ena-about] img")].every(img => img.complete && img.naturalWidth > 0));
   }
   if (surface === "workspace") {
-    const geometry = await page.locator('[data-open-ena-attribution="workspace"]').evaluate(block => {
-      const toolbar = block.previousElementSibling;
-      const result = block.nextElementSibling;
-      const rect = block.getBoundingClientRect();
-      return { toolbarClass: toolbar.className, top: rect.top, bottom: rect.bottom, toolbarBottom: toolbar.getBoundingClientRect().bottom, resultTop: result.getBoundingClientRect().top, position: getComputedStyle(block).position, flex: getComputedStyle(block).flexShrink };
-    });
-    assert.ok(geometry.toolbarClass.includes("ena-visual-toolbar"));
-    assert.ok(geometry.top >= geometry.toolbarBottom - 1 && geometry.bottom <= geometry.resultTop + 1, `${locale}: no attribution overlay`);
-    assert.ok(!["absolute", "fixed"].includes(geometry.position));
-    assert.equal(geometry.flex, "0");
+    assert.equal(await page.locator('[data-open-ena-attribution="workspace"]').count(), 0);
+    await checkDisclaimer(locale, width);
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert.ok(overflow <= 1, `${locale}/${surface}/${width}: horizontal overflow ${overflow}px`);
@@ -275,6 +365,13 @@ try {
     }
     console.log(`Attribution responsive: ${locale} passed`);
   }
+  for (const locale of ["en", "ar"]) {
+    for (const zoom of [0.8, 1.25, 2]) {
+      await mount(locale, "workspace", 1440);
+      await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, zoom);
+      await checkDisclaimer(locale, 1440, zoom);
+    }
+  }
   await mount("en", "workspace", 1440, true);
   await page.getByRole("button", { name: "Model", exact: true }).click();
   await page.waitForFunction(() => { const button = document.querySelector('[data-testid="open-ena-run-model"]'); return button && !button.disabled; });
@@ -289,8 +386,10 @@ try {
   await page.getByTestId("open-ena-data-view").waitFor();
   await checkAttributions("en", "workspace", 1440);
   const sourceUrl = page.url();
+  await page.locator('[data-ena-disclaimer-trigger="true"]').click();
+  await page.locator('[data-ena-disclaimer-popup="true"]').waitFor({ state: "visible" });
   const popupPromise = context.waitForEvent("page");
-  await page.locator('[data-open-ena-attribution="workspace"] a').click();
+  await page.locator('[data-open-ena-attribution="popup"] a').click();
   const popup = await popupPromise;
   await popup.locator("#acknowledgements").waitFor();
   assert.ok(popup.url().endsWith("/en/about#acknowledgements"));
@@ -299,6 +398,9 @@ try {
   assert.equal(await page.getByTestId("open-ena-data-view-toggle").getAttribute("aria-pressed"), "true");
   assert.equal(await page.evaluate(() => JSON.stringify(window.__attributionJobs[0].result.binding)), identity);
   await popup.close();
+  await page.bringToFront();
+  await page.keyboard.press("Escape");
+  await page.locator('[data-ena-disclaimer-popup="true"]').waitFor({ state: "hidden" });
   await screenshot("workspace-data-view.png", false);
   await page.getByTestId("open-ena-data-view-toggle").click();
   const threeD = page.locator(".ena-visual-toolbar").getByRole("button", { name: "3D ENA", exact: true });
@@ -336,7 +438,7 @@ try {
   assert.equal(report.workflow.workerJobs, 1);
   assert.deepEqual(report.errors, [], "browser script/React errors");
   report.status = "passed";
-  console.log(`Attribution acceptance PASS: ${report.surfaces.length} surface/locale/viewport checks; real result, Data View, 2D/3D surface and popup preservation.`);
+  console.log(`Attribution acceptance PASS: ${report.surfaces.length} surface/locale/viewport checks; ${report.disclaimers.length} Disclaimer interaction/geometry checks; real result, Data View, 2D/3D surface and popup preservation.`);
 } catch (error) {
   report.status = "failed";
   report.failure = String(error.stack || error);
