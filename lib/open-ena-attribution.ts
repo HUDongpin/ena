@@ -16,6 +16,7 @@ export const attributionSources = {
 } as const;
 
 const en: OpenEnaAttributionCopy = {
+  disclaimerLabel: "Disclaimer",
   aboutTitle: "About Open ENA",
   metaDescription: "Explore Open ENA's QE and ENA foundations, acknowledgements and webENA design origins. A non-commercial platform for education and research, free forever.",
   purposeTitle: "Education and research, free forever",
@@ -40,6 +41,7 @@ const en: OpenEnaAttributionCopy = {
 };
 
 const zhHant: OpenEnaAttributionCopy = {
+  disclaimerLabel: "免責聲明",
   aboutTitle: "關於 Open ENA",
   metaDescription: "了解 Open ENA 的 QE 與 ENA 理論基礎、學術致謝和 webENA 介面來源。本平台為非商業的教育與研究平台，並將永久免費。",
   purposeTitle: "服務教育與研究，永久免費",
@@ -64,6 +66,7 @@ const zhHant: OpenEnaAttributionCopy = {
 };
 
 const zhHans: OpenEnaAttributionCopy = {
+  disclaimerLabel: "免责声明",
   aboutTitle: "关于 Open ENA",
   metaDescription: "了解 Open ENA 的 QE 与 ENA 理论基础、学术致谢和 webENA 界面来源。本平台为非商业的教育与研究平台，并将永久免费。",
   purposeTitle: "服务教育与研究，永久免费",

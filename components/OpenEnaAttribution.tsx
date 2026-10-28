@@ -13,11 +13,11 @@ export function AttributionText({ children }: { children: string }) {
 export default function OpenEnaAttribution({ locale, aboutHref, variant = "home" }: {
   locale: Locale;
   aboutHref: string;
-  variant?: "home" | "footer" | "workspace";
+  variant?: "home" | "footer" | "workspace" | "popup";
 }) {
   const copy = getOpenEnaAttributionCopy(locale);
   const meta = getLocaleMeta(locale);
-  const workspace = variant === "workspace";
+  const workspace = variant === "workspace" || variant === "popup";
   const href = `${aboutHref}#acknowledgements`;
 
   return (

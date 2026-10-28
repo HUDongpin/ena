@@ -2,6 +2,7 @@ import type { OpenEnaAttributionCopy } from './open-ena-attribution-types';
 
 export const westernAttributionCopy = {
   es: {
+    disclaimerLabel: 'Descargo de responsabilidad',
     aboutTitle: 'Acerca de Open ENA',
     metaDescription: 'Conoce los fundamentos de QE y ENA, los reconocimientos a sus creadores y el origen del diseño de Open ENA: una plataforma no comercial para la educación y la investigación que será gratuita para siempre.',
     purposeTitle: 'Educación, investigación y acceso gratuito para siempre',
@@ -25,6 +26,7 @@ export const westernAttributionCopy = {
     shortPurpose: 'Sin fines comerciales · Educación e investigación · Gratis para siempre',
   },
   fr: {
+    disclaimerLabel: 'Clause de non-responsabilité',
     aboutTitle: 'À propos d’Open ENA',
     metaDescription: 'Découvrez les fondements de QE et d’ENA, les contributions reconnues et l’origine du design d’Open ENA : une plateforme non commerciale pour l’enseignement et la recherche, qui restera gratuite pour toujours.',
     purposeTitle: 'Enseignement, recherche et gratuité permanente',
@@ -48,6 +50,7 @@ export const westernAttributionCopy = {
     shortPurpose: 'Sans vocation commerciale · Enseignement et recherche · Gratuit pour toujours',
   },
   pt: {
+    disclaimerLabel: 'Isenção de responsabilidade',
     aboutTitle: 'Sobre o Open ENA',
     metaDescription: 'Conheça os fundamentos de QE e ENA, os créditos aos seus criadores e a origem do design do Open ENA: uma plataforma não comercial para educação e pesquisa que permanecerá gratuita para sempre.',
     purposeTitle: 'Educação, pesquisa e acesso gratuito para sempre',
@@ -71,6 +74,7 @@ export const westernAttributionCopy = {
     shortPurpose: 'Sem fins comerciais · Educação e pesquisa · Gratuito para sempre',
   },
   de: {
+    disclaimerLabel: 'Haftungsausschluss',
     aboutTitle: 'Über Open ENA',
     metaDescription: 'Erfahren Sie mehr über die Grundlagen von QE und ENA, die Würdigung ihrer Urheber und die Herkunft des Designs von Open ENA: eine nichtkommerzielle Plattform für Bildung und Forschung, die für immer kostenlos bleibt.',
     purposeTitle: 'Bildung, Forschung und dauerhaft kostenloser Zugang',
@@ -94,6 +98,7 @@ export const westernAttributionCopy = {
     shortPurpose: 'Nichtkommerziell · Bildung und Forschung · Für immer kostenlos',
   },
   ru: {
+    disclaimerLabel: 'Отказ от ответственности',
     aboutTitle: 'Об Open ENA',
     metaDescription: 'Теоретические основы QE и ENA, признание вклада их создателей и происхождение дизайна Open ENA — некоммерческой платформы для образования и исследований, которая навсегда останется бесплатной.',
     purposeTitle: 'Образование, исследования и бесплатный доступ навсегда',

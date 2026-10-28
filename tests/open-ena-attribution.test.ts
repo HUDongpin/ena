@@ -77,13 +77,15 @@ test("verified foundational references and official source links remain stable",
 });
 
 test("all public entry points and the workspace receive the original route locale", () => {
-  for (const path of ["components/home-source/UnifiedHome.tsx", "components/shared-home-footer/HubFooter.tsx", "components/Footer.tsx", "components/open-ena/OpenEnaWorkspace.tsx"]) {
+  for (const path of ["components/home-source/UnifiedHome.tsx", "components/shared-home-footer/HubFooter.tsx", "components/Footer.tsx"]) {
     assert.match(read(path), /<OpenEnaAttribution locale=\{locale\}/, path);
   }
   const workspace = read("components/open-ena/OpenEnaWorkspace.tsx");
-  const attributionIndex = workspace.indexOf('variant="workspace"');
-  assert.ok(attributionIndex > workspace.indexOf('className={`ena-visual-toolbar'));
-  assert.ok(attributionIndex < workspace.indexOf('{presentation && result && <section'));
+  assert.match(workspace, /<OpenEnaDisclaimer locale=\{locale\}/);
+  assert.doesNotMatch(workspace, /<OpenEnaAttribution\b/, "the former upper acknowledgement block is removed");
+  const disclaimer = read("components/open-ena/OpenEnaDisclaimer.tsx");
+  assert.match(disclaimer, /<OpenEnaAttribution locale=\{locale\}/);
+  assert.match(disclaimer, /variant="popup"/);
   const component = read("components/OpenEnaAttribution.tsx");
   assert.match(component, /#acknowledgements/);
   assert.match(component, /target="_blank" rel="noopener noreferrer"/);
