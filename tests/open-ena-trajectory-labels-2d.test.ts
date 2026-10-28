@@ -62,7 +62,7 @@ test("native labels scale without changing fitted geometry and retain a keyboard
   const firstBase = boxes(base).find((box) => box.id?.startsWith("code:"))!;
   const firstLarger = boxes(larger).find((box) => box.id === firstBase.id)!;
   assert.ok(firstLarger.height > firstBase.height, "text size controls actual label metrics");
-  const geometry = (markup: string) => [...markup.matchAll(/<rect x="([^"]+)" y="([^"]+)" width="5" height="5"/gu)].map((match) => match[0]);
+  const geometry = (markup: string) => [...markup.matchAll(/<rect x="([^"]+)" y="([^"]+)" width="7" height="7"/gu)].map((match) => match[0]);
   assert.equal(geometry(base).length, props.result.trajectoryPresentation.centroids.length, "every smaller centroid square retains its fitted centre");
   assert.deepEqual(geometry(larger), geometry(base), "label placement cannot change centroid coordinates");
   assert.doesNotMatch(base, /data-ena-label-leader="true"/, "automatic Code and period labels do not use callout leaders");
@@ -86,7 +86,7 @@ test("trajectory Code-label hiding retains six hollow nodes with human names ava
     assert.match(attrs, /tabindex="0"/u);
     assert.match(attrs, /role="img"/u);
     assert.match(attrs, /aria-label="[^"]+"/u);
-    assert.match(contents, /<circle\b[^>]*class="ena-result-node"[^>]*fill="#fff"/u);
+    assert.match(contents, /<circle\b[^>]*class="ena-result-node"[^>]*fill="none"/u);
     assert.doesNotMatch(contents, /data-ena-label-leader/u);
   }
   assert.ok(nodes.some(([, attrs, contents]) => /aria-label="EX"/u.test(attrs) && contents.includes("<title>EX</title>")), "the EX node must expose its actual Code name without a visible text label");
@@ -98,7 +98,7 @@ test("native trajectory Code dots are moderately smaller while hover names and n
   const markup = render({ ...props, showLabels: false });
   const circles = [...markup.matchAll(/<circle\b[^>]*class="ena-result-node"[^>]*>/gu)].map(match => match[0]);
   assert.equal(circles.length, 6);
-  assert.ok(circles.every(circle => /\br="8"/u.test(circle)), "native trajectory Code radius must be 8 SVG units");
+  assert.ok(circles.every(circle => /\br="4\.5"/u.test(circle)), "native trajectory Code radius must be 4.5 SVG units");
   assert.ok(markup.includes("<title>EX</title>"));
   const nontrajectory = renderToStaticMarkup(createElement(OpenEnaPlot, { ...props, result: { ...props.result, trajectoryPresentation: undefined }, showLabels: false }));
   const unchanged = [...nontrajectory.matchAll(/<circle\b[^>]*class="ena-result-node"[^>]*>/gu)].map(match => match[0]);

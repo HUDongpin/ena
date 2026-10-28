@@ -1355,7 +1355,7 @@ export default function OpenEnaInteractive3DPlot({
           const dataUrl = await runPlotlyOperation(() => current() ? (Plotly as PlotlyImageApi).toImage(plotRoot, { format: "png", filename: `open-ena-3d-${plotKind}`, width: Math.max(1, Math.round(plotRoot.clientWidth)), height: Math.max(1, Math.round(plotRoot.clientHeight)), scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)) }) : null);
           if (dataUrl === null) return null;
           const exportedDataUrl = result.trajectoryPresentation
-            ? await appendTrajectoryLegendToPng(dataUrl, result.trajectoryPresentation, result.groups, locale) : dataUrl;
+            ? await appendTrajectoryLegendToPng(dataUrl, result.trajectoryPresentation, result.groups, locale, showPoints) : dataUrl;
           if (!current()) return null;
           return { dataUrl: exportedDataUrl, png: pngBlobFromDataUrl(exportedDataUrl) };
         },
@@ -1676,7 +1676,7 @@ export default function OpenEnaInteractive3DPlot({
         </div>
       </div>
 
-      {result.trajectoryPresentation ? <OpenEnaTrajectoryLegend trajectory={result.trajectoryPresentation} groups={result.groups} locale={locale} /> : null}
+      {result.trajectoryPresentation ? <OpenEnaTrajectoryLegend trajectory={result.trajectoryPresentation} groups={result.groups} locale={locale} showUnitPoints={showPoints} /> : null}
       </div>
 
       {spec.trajectoryLabelAnnotations?.length ? (

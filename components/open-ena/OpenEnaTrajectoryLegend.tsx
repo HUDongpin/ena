@@ -6,17 +6,18 @@ import { groupFigureName2D } from "../../lib/open-ena/group-label-layout-2d";
 
 function LegendSymbol({ kind, color = "#526269" }: { kind: "group" | "centroid" | "unit" | "ci"; color?: string }) {
   return <svg className="ena-trajectory-key-icon" width="26" height="18" viewBox="0 0 26 18" aria-hidden="true" focusable="false">
-    {kind === "group" ? <><line x1="1" y1="9" x2="25" y2="9" stroke="#000" strokeWidth="1.5" /><rect x="9" y="5" width="8" height="8" fill="#fff" stroke={color} strokeWidth="1.4" /></>
-      : kind === "centroid" ? <rect x="9" y="5" width="8" height="8" fill="#eef2f3" stroke={color} strokeWidth="1.2" />
-        : kind === "unit" ? <circle cx="13" cy="9" r="3.5" fill="#eef2f3" stroke={color} strokeWidth="1.2" />
+    {kind === "group" ? <><line x1="1" y1="9" x2="25" y2="9" stroke="#000" strokeWidth="1.5" /><rect x="9" y="5" width="8" height="8" fill={color} stroke="none" /></>
+      : kind === "centroid" ? <rect x="9" y="5" width="8" height="8" fill={color} stroke="none" />
+        : kind === "unit" ? <rect x="8" y="4" width="10" height="10" fill={color} stroke="none" />
           : <line x1="3" y1="9" x2="23" y2="9" stroke={color} strokeWidth="1.5" strokeDasharray="0.1 3" strokeLinecap="round" />}
   </svg>;
 }
 
-export default function OpenEnaTrajectoryLegend({ trajectory, groups, locale = "en" }: {
+export default function OpenEnaTrajectoryLegend({ trajectory, groups, locale = "en", showUnitPoints = true }: {
   trajectory: ReturnType<typeof buildTrajectoryPresentationV3>;
   groups: readonly GroupNetwork[];
   locale?: Locale;
+  showUnitPoints?: boolean;
 }) {
   const copy = trajectoryCopyV3(locale);
   const unavailable = trajectory.uncertaintyStatus === "unavailable" || trajectory.centroids.some(centroid =>
@@ -26,11 +27,11 @@ export default function OpenEnaTrajectoryLegend({ trajectory, groups, locale = "
       <LegendSymbol kind="group" color={group.color} /><span className="ena-trajectory-key-label">{groupFigureName2D(group.name, trajectory.groupLabels)}</span>
     </li>)}</ul></section>
     <section><h3>{copy.periods}</h3><ul className="ena-trajectory-period-keys">{trajectory.horizonStyles.map(period => <li key={period.horizonKey} title={period.detail}>
-      <span className="ena-trajectory-period-key" style={{ backgroundColor: period.color }} aria-hidden="true" /><span>{period.label}</span>
+      <span>{period.label}</span>
     </li>)}</ul></section>
     <div className="ena-trajectory-symbol-keys">
       <span><LegendSymbol kind="centroid" /><span>{copy.centroid}</span></span>
-      <span><LegendSymbol kind="unit" /><span>{copy.units}</span></span>
+      {showUnitPoints && <span><LegendSymbol kind="unit" /><span>{copy.units}</span></span>}
       {trajectory.showConfidenceIntervals && <span data-ena-ci-legend="true"><LegendSymbol kind="ci" /><span>{copy.ci}</span></span>}
     </div>
     {trajectory.uncertaintyStatus === "pending" && trajectory.showConfidenceIntervals && <p role="status" data-ena-ci-status="pending">{copy.pending}</p>}
@@ -48,7 +49,6 @@ export default function OpenEnaTrajectoryLegend({ trajectory, groups, locale = "
       .ena-trajectory-group-keys li { display: grid; grid-template-columns: 26px minmax(0,1fr); min-height: 22px; }
       .ena-trajectory-key-icon { display: block; flex-shrink: 0; }
       .ena-trajectory-key-label { font-weight: 600; }
-      .ena-trajectory-period-key { display: inline-block; width: 9px; height: 9px; border: 1px solid #65777c; border-radius: 50%; flex: 0 0 auto; }
 
       .ena-trajectory-symbol-keys { display: grid; gap: 7px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #e6eced; }
       .ena-trajectory-symbol-keys > span { display: grid; grid-template-columns: 26px minmax(0,1fr); gap: 8px; align-items: center; line-height: 1.4; }

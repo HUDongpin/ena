@@ -115,6 +115,7 @@ async function audit2d({ all = false } = {}) {
           layoutX: Number(node.getAttribute("data-label-x")), layoutY: Number(node.getAttribute("data-label-y")), ...rect(text ?? node) };
       }),
       titles: [...svg.querySelectorAll('[data-ena-trajectory-centroid="true"] title')].map(node => node.textContent),
+      unitPointCount: svg.querySelectorAll('[data-ena-unit-point="true"]').length,
       codeNodes: [...svg.querySelectorAll('[data-ena-code]')].map(node => ({ code: node.getAttribute("data-ena-code"), title: node.querySelector("title")?.textContent ?? node.parentElement.querySelector("title")?.textContent ?? "", fill: getComputedStyle(node).fill, radius: Number(node.getAttribute("r")) })),
       geometry: [...svg.querySelectorAll('[data-ena-code-node-position], [data-ena-trajectory-centroid] rect, [data-ena-trajectory-path], [data-ena-centroid-path]')].map(node => [node.tagName, ...["transform", "x", "y", "x1", "x2", "y1", "y2", "width", "height"].map(key => node.getAttribute(key))]),
     };
@@ -152,6 +153,7 @@ async function audit3d({ all = false } = {}) {
       }),
       camera: root._fullLayout.scene._scene.getCamera(),
       codeNodeSize: root.data.find(trace => trace.meta?.role === "code-node")?.marker?.size,
+      unitPointCount: root.data.filter(trace => trace.meta?.role === "unit-points").reduce((total, trace) => total + trace.x.length, 0),
       geometry: root.data.filter(trace => !["code-label", "axis-label"].includes(trace.meta?.role)).map(trace => ({ role: trace.meta?.role, x: trace.x, y: trace.y, z: trace.z, u: trace.u, v: trace.v, w: trace.w })),
     };
   });
@@ -316,10 +318,11 @@ try {
   if (!["3d", "3d-drag"].includes(process.env.OPEN_ENA_TRAJECTORY_LABELS_PHASE)) {
   await stage("2D default compact labels and full accessible details", async () => {
     const value = await audit2d({ all: true });
-    assert.equal(value.labels.filter(label => label.id.startsWith("code:")).length, 6, "trajectory defaults show the six small Code names");
-    assert.equal(value.labels.length, 12, "default public sample keeps six Code names and six TP labels");
+    assert.equal(value.labels.filter(label => label.id.startsWith("code:")).length, 0, "trajectory defaults hide Code labels");
+    assert.equal(value.labels.length, 6, "default public sample keeps the six TP labels");
+    assert.equal(value.unitPointCount, 0, "individual points are hidden by default");
     assert.equal(value.codeNodes.length, 6, "hiding Code text retains the six scientific nodes");
-    assert.ok(value.codeNodes.every(node => node.radius === 8 && node.fill === "rgb(255, 255, 255)"), "default trajectory Code markers are small hollow dots");
+    assert.ok(value.codeNodes.every(node => node.radius === 4.5 && node.fill === "none"), "default trajectory Code markers are small hollow dots");
     assert.ok(value.codeNodes.some(node => /\bEX\b/.test(node.title)), "Code-node hover must retain EX when labels are hidden");
     const details = page.locator('[data-ena-trajectory-label-details="true"]');
     await details.locator("summary").click();
@@ -334,6 +337,22 @@ try {
     await details.locator("summary").click();
     await screenshot("2d-default", svgRoot());
     return { labels: value.labels.length, centroids: value.titles.length };
+  });
+  await stage("trajectory Unit points can be shown explicitly and reset restores the hidden default", async () => {
+    await selectView("2d");
+    const baseline = await audit2d();
+    await plotControls().getByRole("checkbox", { name: "Points", exact: true }).check();
+    const visible = await audit2d();
+    assert.equal(visible.unitPointCount, 18);
+    assert.deepEqual(visible.geometry, baseline.geometry);
+    const tools = page.getByTestId("open-ena-persistent-plot-tools");
+    await tools.getByRole("button", { name: "Plot Settings", exact: true }).click();
+    await tools.getByRole("button", { name: "Reset display settings", exact: true }).click();
+    await tools.getByRole("button", { name: "Close Plot Settings", exact: true }).click();
+    const reset = await audit2d();
+    assert.equal(reset.unitPointCount, 0);
+    assert.deepEqual(reset.geometry, baseline.geometry);
+    return { defaultPoints: 0, enabledPoints: 18, resetPoints: 0 };
   });
   await stage("2D six ordered axis combinations", async () => {
     await selectView("2d");
@@ -364,7 +383,9 @@ try {
     assert.ok(larger.labels[0].height > baseline.labels[0].height, "Text Size must reach actual trajectory labels");
     await setRange(size, 13);
     const units = plotControls().getByRole("checkbox", { name: "Unit labels", exact: true });
+    await plotControls().getByRole("checkbox", { name: "Points", exact: true }).check();
     await units.check(); const dense = await audit2d(); await units.uncheck();
+    await plotControls().getByRole("checkbox", { name: "Points", exact: true }).uncheck();
     await drag(svgRoot().locator('[data-ena-drag-code] text[data-ena-layout-label]').first());
     assert.deepEqual((await audit2d()).geometry, baseline.geometry, "Code-label drag cannot move scientific geometry");
     await resetLabels(); await audit2d();
@@ -408,10 +429,11 @@ try {
   } else {
   await stage("3D default annotations, seven camera presets and drag rotation", async () => {
     await selectView("3d"); const initial = await audit3d({ all: true });
-    assert.equal(initial.labels.filter(label => label.role === "code").length, 6, "trajectory defaults show the six small Code names in 3D");
-    assert.equal(initial.labels.length, 12, "default 3D sample shows six Code names and six TP labels");
+    assert.equal(initial.labels.filter(label => label.role === "code").length, 0, "trajectory defaults hide Code labels in 3D");
+    assert.equal(initial.labels.length, 6, "default 3D sample shows six TP labels");
+    assert.equal(initial.unitPointCount, 0, "3D shares the hidden Unit-point default");
     assert.equal(initial.geometry.find(trace => trace.role === "code-node")?.x.length, 6, "3D Code nodes remain visible");
-    assert.equal(initial.codeNodeSize, 5.5, "trajectory 3D Code markers use the smaller dot size");
+    assert.equal(initial.codeNodeSize, 3.25, "trajectory 3D Code markers use the smaller dot size");
     const hover = await hover3dCode("EX"); assert.ok(hover.some(text => text.includes("EX")));
     const details = page.locator('[data-ena-label-details="true"]');
     await details.locator("summary").click();
@@ -447,7 +469,9 @@ try {
     assert.ok(larger.labels[0].height > baseline.labels[0].height);
     await setRange(size, 13);
     const units = plotControls().getByRole("checkbox", { name: "Unit labels", exact: true });
+    await plotControls().getByRole("checkbox", { name: "Points", exact: true }).check();
     await units.check(); await audit3d(); await units.uncheck(); await audit3d();
+    await plotControls().getByRole("checkbox", { name: "Points", exact: true }).uncheck();
     const filter = plotControls().getByRole("checkbox", { name: /^Display Horizon Period=TP2$/ });
     await filter.uncheck(); assert.equal((await audit3d()).labels.some(label => label.text === "TP2"), false);
     await filter.check(); await audit3d();

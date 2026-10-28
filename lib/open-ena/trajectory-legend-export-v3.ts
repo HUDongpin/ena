@@ -24,27 +24,27 @@ function wrapText(text: string, width: number, size: number): string[] {
 }
 
 /** One layout feeds both SVG and raster exports, including the scientific key. */
-export function trajectoryLegendExportLayoutV3(trajectory: Trajectory, groups: readonly GroupNetwork[], locale: Locale, width: number) {
+export function trajectoryLegendExportLayoutV3(trajectory: Trajectory, groups: readonly GroupNetwork[], locale: Locale, width: number, showUnitPoints = true) {
   const copy = trajectoryCopyV3(locale), items: LegendItem[] = [];
   const columns = Math.max(1, Math.floor((width - 32) / 210)), cellWidth = (width - 32) / columns;
   let y = 25;
-  const block = (title: string, entries: { text: string; color: string; square: boolean }[]) => {
+  const block = (title: string, entries: { text: string; color?: string; square?: boolean }[]) => {
     items.push({ x: 16, y, text: title, bold: true }); y += 23;
     for (let start = 0; start < entries.length; start += columns) {
       let rowHeight = 20;
       entries.slice(start, start + columns).forEach((entry, column) => {
-        const lines = wrapText(entry.text, cellWidth - 38, 12);
+        const lines = wrapText(entry.text, cellWidth - (entry.color ? 38 : 10), 12);
         rowHeight = Math.max(rowHeight, lines.length * 17 + 4);
-        lines.forEach((text, index) => items.push({ x: 16 + column * cellWidth + (index > 0 ? 28 : 0), y: y + index * 17, text,
-          ...(index === 0 ? { color: entry.color, square: entry.square } : {}) }));
+        lines.forEach((text, index) => items.push({ x: 16 + column * cellWidth + (index > 0 && entry.color ? 28 : 0), y: y + index * 17, text,
+          ...(index === 0 && entry.color ? { color: entry.color, square: entry.square } : {}) }));
       });
       y += rowHeight;
     }
     y += 7;
   };
   block(copy.groups, groups.map(group => ({ text: groupFigureName2D(group.name, trajectory.groupLabels), color: group.color, square: true })));
-  block(copy.periods, trajectory.horizonStyles.map(period => ({ text: period.label, color: period.color, square: false })));
-  for (const [symbol, description] of [["centroid", copy.centroid], ["unit", copy.units], ...(trajectory.showConfidenceIntervals ? [["ci", copy.ci]] : [])] as Array<["centroid" | "unit" | "ci", string]>) {
+  block(copy.periods, trajectory.horizonStyles.map(period => ({ text: period.label })));
+  for (const [symbol, description] of [["centroid", copy.centroid], ...(showUnitPoints ? [["unit", copy.units]] : []), ...(trajectory.showConfidenceIntervals ? [["ci", copy.ci]] : [])] as Array<["centroid" | "unit" | "ci", string]>) {
     const lines = wrapText(description, width - 60, 12);
     lines.forEach((text, index) => items.push({ x: index ? 44 : 16, y: y + index * 17, text, ...(index === 0 ? { symbol } : {}) }));
     y += lines.length * 17 + 4;
@@ -63,11 +63,11 @@ export function trajectoryLegendExportLayoutV3(trajectory: Trajectory, groups: r
   return { items, height, fontSize: 12 };
 }
 
-export function appendTrajectoryLegendToSvg(svg: SVGSVGElement, trajectory: Trajectory, groups: readonly GroupNetwork[], locale: Locale) {
+export function appendTrajectoryLegendToSvg(svg: SVGSVGElement, trajectory: Trajectory, groups: readonly GroupNetwork[], locale: Locale, showUnitPoints = true) {
   const viewBox = (svg.getAttribute("viewBox") ?? "").trim().split(/[\s,]+/u).map(Number);
   const width = viewBox.length === 4 ? viewBox[2] : Number(svg.getAttribute("width"));
   const height = viewBox.length === 4 ? viewBox[3] : Number(svg.getAttribute("height"));
-  const layout = trajectoryLegendExportLayoutV3(trajectory, groups, locale, width);
+  const layout = trajectoryLegendExportLayoutV3(trajectory, groups, locale, width, showUnitPoints);
   const ns = "http://www.w3.org/2000/svg", doc = svg.ownerDocument;
   const footer = doc.createElementNS(ns, "g"); footer.setAttribute("transform", `translate(0 ${height})`);
   footer.setAttribute("data-ena-trajectory-export-legend", "true");
@@ -76,12 +76,12 @@ export function appendTrajectoryLegendToSvg(svg: SVGSVGElement, trajectory: Traj
   footer.append(background);
   for (const item of layout.items) {
     if (item.symbol) {
-      const mark = doc.createElementNS(ns, item.symbol === "ci" ? "line" : item.symbol === "centroid" ? "rect" : "circle");
+      const mark = doc.createElementNS(ns, item.symbol === "ci" ? "line" : "rect");
       const attributes = item.symbol === "ci" ? { x1: item.x + 3, x2: item.x + 23, y1: item.y - 4.5, y2: item.y - 4.5 }
         : item.symbol === "centroid" ? { x: item.x + 9, y: item.y - 8.5, width: 8, height: 8 }
-          : { cx: item.x + 13, cy: item.y - 4.5, r: 3.5 };
+          : { x: item.x + 8, y: item.y - 9.5, width: 10, height: 10 };
       for (const [key, value] of Object.entries(attributes)) mark.setAttribute(key, String(value));
-      mark.setAttribute("fill", "#eef2f3"); mark.setAttribute("stroke", "#526269"); mark.setAttribute("stroke-width", "1.2");
+      mark.setAttribute("fill", item.symbol === "ci" ? "none" : "#526269"); mark.setAttribute("stroke", item.symbol === "ci" ? "#526269" : "none"); mark.setAttribute("stroke-width", "1.2");
       if (item.symbol === "ci") { mark.setAttribute("stroke-dasharray", "0.1 3"); mark.setAttribute("stroke-linecap", "round"); }
       footer.append(mark);
     } else if (item.color) {
@@ -93,7 +93,7 @@ export function appendTrajectoryLegendToSvg(svg: SVGSVGElement, trajectory: Traj
         for (const [key, value] of Object.entries({ x1: item.x + 1, x2: item.x + 25, y1: item.y - 4.5, y2: item.y - 4.5, stroke: "#000", "stroke-width": 1.5 })) line.setAttribute(key, String(value));
         footer.append(line);
       }
-      mark.setAttribute("fill", item.square ? "#fff" : item.color); mark.setAttribute("stroke", item.square ? item.color : "#526269"); mark.setAttribute("stroke-width", "1"); footer.append(mark);
+      mark.setAttribute("fill", item.color); mark.setAttribute("stroke", "none"); mark.setAttribute("stroke-width", "1"); footer.append(mark);
     }
     const text = doc.createElementNS(ns, "text"); text.setAttribute("x", String(item.x + (item.color || item.symbol ? 28 : 0))); text.setAttribute("y", String(item.y));
     text.setAttribute("style", `fill:#263740;stroke:none;font: ${item.bold ? "bold " : ""}${layout.fontSize}px Arial,Helvetica,sans-serif`);
@@ -105,11 +105,11 @@ export function appendTrajectoryLegendToSvg(svg: SVGSVGElement, trajectory: Traj
   return { width, height: height + layout.height };
 }
 
-export async function appendTrajectoryLegendToPng(dataUrl: string, trajectory: Trajectory, groups: readonly GroupNetwork[], locale: Locale) {
+export async function appendTrajectoryLegendToPng(dataUrl: string, trajectory: Trajectory, groups: readonly GroupNetwork[], locale: Locale, showUnitPoints = true) {
   const source = new Image();
   await new Promise<void>((resolve, reject) => { source.onload = () => resolve(); source.onerror = () => reject(new Error("Unable to compose trajectory image")); source.src = dataUrl; });
   const scale = Math.min(3, Math.max(1, source.width / 900)), width = source.width / scale;
-  const layout = trajectoryLegendExportLayoutV3(trajectory, groups, locale, width);
+  const layout = trajectoryLegendExportLayoutV3(trajectory, groups, locale, width, showUnitPoints);
   const canvas = document.createElement("canvas"); canvas.width = source.width; canvas.height = source.height + Math.ceil(layout.height * scale);
   if (canvas.height > 32767 || canvas.width * canvas.height > 100_000_000) throw new RangeError("Trajectory image exceeds raster export limits");
   const ctx = canvas.getContext("2d"); if (!ctx) throw new Error("Canvas image export is unavailable");
@@ -117,20 +117,20 @@ export async function appendTrajectoryLegendToPng(dataUrl: string, trajectory: T
   ctx.translate(0, source.height); ctx.scale(scale, scale);
   for (const item of layout.items) {
     if (item.symbol) {
-      ctx.strokeStyle = "#526269"; ctx.lineWidth = 1.2; ctx.fillStyle = "#eef2f3"; ctx.beginPath();
+      ctx.strokeStyle = "#526269"; ctx.lineWidth = 1.2; ctx.fillStyle = "#526269"; ctx.beginPath();
       if (item.symbol === "ci") {
         ctx.save(); ctx.lineCap = "round"; ctx.setLineDash([.1, 3]); ctx.moveTo(item.x + 3, item.y - 4.5); ctx.lineTo(item.x + 23, item.y - 4.5); ctx.stroke(); ctx.restore();
       } else {
-        if (item.symbol === "centroid") ctx.rect(item.x + 9, item.y - 8.5, 8, 8); else ctx.arc(item.x + 13, item.y - 4.5, 3.5, 0, Math.PI * 2);
-        ctx.fill(); ctx.stroke();
+        if (item.symbol === "centroid") ctx.rect(item.x + 9, item.y - 8.5, 8, 8); else ctx.rect(item.x + 8, item.y - 9.5, 10, 10);
+        ctx.fill();
       }
     } else if (item.color) {
       if (item.square) {
         ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(item.x + 1, item.y - 4.5); ctx.lineTo(item.x + 25, item.y - 4.5); ctx.stroke();
       }
-      ctx.fillStyle = item.square ? "#fff" : item.color; ctx.beginPath();
+      ctx.fillStyle = item.color; ctx.beginPath();
       if (item.square) ctx.rect(item.x + 9, item.y - 8.5, 8, 8); else ctx.arc(item.x + 13, item.y - 4.5, 4.5, 0, Math.PI * 2);
-      ctx.fill(); ctx.strokeStyle = item.square ? item.color : "#526269"; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fill();
     }
     ctx.fillStyle = "#263740"; ctx.font = `${item.bold ? "bold " : ""}${layout.fontSize}px Arial,Helvetica,sans-serif`;
     ctx.fillText(item.text, item.x + (item.color || item.symbol ? 28 : 0), item.y);

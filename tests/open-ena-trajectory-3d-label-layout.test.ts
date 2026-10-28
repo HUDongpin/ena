@@ -50,7 +50,7 @@ test("coincident native trajectory centroids use short measured annotations whil
     assert.equal(annotation.ax, 0);
     assert.equal(annotation.ay, 0);
     assert.equal(annotation.showarrow, false, "period labels must not have diagonal leader lines");
-    assert.equal(annotation.font.size, 8);
+    assert.equal(annotation.font.size, 10);
     assert.equal(annotation.opacity, 0, "unmeasured labels must not flash on top of each other");
     assert.deepEqual([annotation.x, annotation.y, annotation.z], [0, 0, 0]);
     assert.match(annotation.hovertext, /Horizon Period = TP[12]/);
@@ -67,7 +67,7 @@ test("trajectory Code and optional Unit labels share annotations and respect dis
   assert.ok(!baseline.trajectoryLabelAnnotations!.some(label => label.role === "unit"));
   const scaled = compileOpenEna3dPlotSpec({ ...input, showUnitLabels: true, textScale: 1.5 });
   assert.ok(scaled.trajectoryLabelAnnotations!.some(label => label.role === "unit"));
-  assert.ok(scaled.layout.scene.annotations!.every(annotation => annotation.font.size === (annotation.name.startsWith("unit:") ? 18 : annotation.name.startsWith("centroid:") ? 12 : 15)));
+  assert.ok(scaled.layout.scene.annotations!.every(annotation => annotation.font.size === (annotation.name.startsWith("unit:") ? 18 : 15)));
   assert.ok(scaled.data.filter(trace => trace.meta.role === "unit-points").every(trace => trace.mode === "markers"));
   const withoutCodes = compileOpenEna3dPlotSpec({ ...input, showLabels: false });
   assert.ok(!withoutCodes.trajectoryLabelAnnotations!.some(label => label.role === "code"));
@@ -98,7 +98,7 @@ test("endpoint plots keep their existing rendering contract", async () => {
 test("native trajectory Code dots are smaller while their identities and hover labels remain intact", async () => {
   const input = await fixture();
   const node = compileOpenEna3dPlotSpec({ ...input, showLabels: false }).data.find(trace => trace.meta.role === "code-node")!;
-  assert.equal(node.marker?.size, 5.5);
+  assert.equal(node.marker?.size, 3.25);
   assert.equal(node.mode, "markers");
   assert.equal(node.ids?.length, input.result.set.rotation.nodes!.length);
   assert.equal(node.customdata?.length, node.ids?.length);

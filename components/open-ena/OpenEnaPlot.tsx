@@ -17,7 +17,7 @@ import { codeColorFor, type OpenEnaCodeColors } from "@/lib/open-ena/plot-style"
 import type { CameraPreset, GroupNetwork, OpenEnaResult, OpenEnaView } from "@/lib/open-ena/types";
 import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 import { useSvgTrajectoryLabels, type SvgTrajectoryLabel } from "./useSvgTrajectoryLabels";
-import { trajectoryCentroidDescriptionV3, trajectoryHorizonColorV3 } from "@/lib/open-ena/trajectory-style-v3";
+import { trajectoryCentroidDescriptionV3 } from "@/lib/open-ena/trajectory-style-v3";
 import OpenEnaTrajectoryLegend from "./OpenEnaTrajectoryLegend";
 
 interface OpenEnaPlotProps extends OpenEnaCodeGraphPresentation {
@@ -57,15 +57,16 @@ const HEIGHT = 590;
 const PAD_X = 72;
 const PAD_Y = 58;
 
-/** The head is sized in normalized viewport coordinates and sits midway between centroids. */
-function trajectoryDirectionHead(from: ScreenPoint, to: ScreenPoint) {
-  const dx = (to.x - from.x) / WIDTH, dy = (to.y - from.y) / HEIGHT;
-  const distance = Math.hypot(dx, dy);
-  if (distance <= 1e-12) return null;
-  const ux = dx / distance, uy = dy / distance;
-  const length = Math.min(0.0224, distance * 0.224), wing = length * 0.45;
-  const tip = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
-  return `${tip.x - (ux * length + uy * wing) * WIDTH},${tip.y - (uy * length - ux * wing) * HEIGHT} ${tip.x},${tip.y} ${tip.x - (ux * length - uy * wing) * WIDTH},${tip.y - (uy * length + ux * wing) * HEIGHT}`;
+function trajectoryArrowPoints(from: ScreenPoint, to: ScreenPoint) {
+  const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy);
+  if (length === 0) return [];
+  const midpoint = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+  const ux = dx / length, uy = dy / length;
+  const halfLength = Math.min(9, length * 0.4) / 2;
+  return [
+    { x: midpoint.x + ux * halfLength, y: midpoint.y + uy * halfLength },
+    { x: midpoint.x - ux * halfLength - uy * halfLength, y: midpoint.y - uy * halfLength + ux * halfLength },
+    { x: midpoint.x - ux * halfLength + uy * halfLength, y: midpoint.y - uy * halfLength - ux * halfLength }];
 }
 
 type GroupMarkerShape = "circle" | "square" | "triangle" | "diamond" | "cross" | "hexagon";
@@ -457,9 +458,22 @@ export default function OpenEnaPlot({
     : null;
 
   const labelScale = Number.isFinite(textScale) ? Math.max(8 / 12, Math.min(20 / 12, textScale)) : 1;
+  const trajectoryPathMarks = (trajectory?.centroidPaths ?? []).flatMap((path, index) => {
+    if (!nativePlotGroupSettingsV3(result, path.from.group).showMean) return [];
+    const from = positions.get(`trajectory-centroid-${trajectory!.centroids.findIndex(point => point.key === path.from.key)}`);
+    const to = positions.get(`trajectory-centroid-${trajectory!.centroids.findIndex(point => point.key === path.to.key)}`);
+    return from && to ? [{ path, index, from, to, arrow: trajectory!.showDirection !== false ? trajectoryArrowPoints(from, to) : [] }] : [];
+  });
   const trajectoryLabels: SvgTrajectoryLabel[] = [];
   const labelObstacles: { x: number; y: number; width: number; height: number; soft?: boolean }[] = [];
   if (trajectory) {
+    for (const { arrow } of trajectoryPathMarks) {
+      if (!arrow.length) continue;
+      const x = Math.min(...arrow.map(point => point.x)), y = Math.min(...arrow.map(point => point.y));
+      labelObstacles.push({ x: x - 1, y: y - 1,
+        width: Math.max(...arrow.map(point => point.x)) - x + 2,
+        height: Math.max(...arrow.map(point => point.y)) - y + 2 });
+    }
     // Prefer avoiding the thin CI edges; adjacent text may mask a few dots when the local region is crowded.
     for (const rect of trajectoryIntervals) labelObstacles.push(
       { x: rect.x - 1, y: rect.y - 1, width: rect.width + 2, height: 2, soft: true },
@@ -469,7 +483,7 @@ export default function OpenEnaPlot({
     );
     for (const node of canonicalNodes.filter((item) => openEnaRenderedCodeIsVisible(codePresentation, item.label))) {
       const point = positions.get(node.key)!;
-      labelObstacles.push({ x: point.x - 11, y: point.y - 11, width: 22, height: 22 });
+      labelObstacles.push({ x: point.x - 7.5, y: point.y - 7.5, width: 15, height: 15 });
       if (!showLabels) continue;
       const labelPoint = positions.get(`label-${node.label}`)!;
       const text = openEnaRenderedCodeLabel(codePresentation, node.label);
@@ -481,7 +495,7 @@ export default function OpenEnaPlot({
     for (const [index, centroid] of trajectory.centroids.entries()) {
       if (!nativePlotGroupSettingsV3(result, centroid.group).showMean) continue;
       const point = positions.get(`trajectory-centroid-${index}`)!;
-      labelObstacles.push({ x: point.x - 4.5, y: point.y - 4.5, width: 9, height: 9 });
+      labelObstacles.push({ x: point.x - 3.5, y: point.y - 3.5, width: 7, height: 7 });
       trajectoryLabels.push({ id: `centroid:${centroid.key}`, kind: "centroid", text: centroid.horizonShortLabel,
         detail: trajectoryCentroidDescriptionV3(centroid), anchor: point, fontSize: 10 * labelScale, priority: 90, placement: "adjacent" });
     }
@@ -490,7 +504,7 @@ export default function OpenEnaPlot({
       if (!visibleTrajectoryPoints?.has(trajectoryPointKey(unit.row))) continue;
       const group = groupColumn ? result.groups.find((item) => item.name === String(unit.row[groupColumn])) ?? result.groups[0] : result.groups[0];
       if (!nativePlotGroupSettingsV3(result, group?.name ?? "").showUnitPoints || result.groupPresentation?.hiddenUnits.has(String(unit.row.ENA_UNIT))) continue;
-      const radius = 4 * pointScale + 2;
+      const radius = 7.5 * pointScale + 2;
       labelObstacles.push({ x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2, soft: true });
       if (showUnitLabels) trajectoryLabels.push({ id: `unit:${trajectoryPointKey(unit.row)}`, kind: "unit", text: String(unit.row.ENA_UNIT ?? ""),
         detail: `${String(unit.row.ENA_UNIT ?? "")} · ${String(unit.row.Horizon ?? "")} · ${group?.name ?? ""}`, anchor: point,
@@ -515,7 +529,7 @@ export default function OpenEnaPlot({
         <title id="open-ena-plot-title">{`${copy.workspace.comparison}, ${view === "2d" ? copy.views.twoD : copy.views.threeD}${referenceFigureNote ? ` — ${referenceFigureNote}` : ""}`}</title>
         <desc id="open-ena-plot-description">
           {new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size} {copy.workspace.units.toLowerCase()}, {result.set.points.length} projected points, {result.groups.length} {copy.workspace.groups.toLowerCase()}, {result.set.codes.length} {copy.workspace.codes.toLowerCase()}.
-          {trajectory ? " Horizon colors identify periods; circles show observed individual points and squares show group centroids. Main centroid paths and direction arrows are black; Group colors identify centroid outlines and confidence intervals." : ` Group encodings: ${result.groups.map((group, index) => groupEncodingDescription(group.name, index)).join("; ")}.`}
+          {trajectory ? ` Group colors identify filled square centroids and confidence intervals. Small hollow circles show Code nodes. Main centroid paths and direction arrows are black. ${showPoints ? "Larger group-colored squares show observed individual points." : "Individual points are hidden."} TP labels identify periods.` : ` Group encodings: ${result.groups.map((group, index) => groupEncodingDescription(group.name, index)).join("; ")}.`}
           {referenceFigureNote ? ` ${referenceFigureNote}` : ""}
         </desc>
         <defs>
@@ -604,7 +618,7 @@ export default function OpenEnaPlot({
         {trajectoryIntervals.map(rect => {
           const color = result.groups.find(group => group.name === rect.centroid.group)?.color ?? "#39736e";
           const description = trajectoryCentroidDescriptionV3(rect.centroid);
-          return <rect key={rect.centroid.key} data-ena-trajectory-ci="true" x={rect.x} y={rect.y} width={rect.width} height={rect.height}
+          return <rect key={rect.centroid.key} data-ena-trajectory-ci="true" x={rect.x} y={rect.y} width={rect.width} height={rect.height} role="img" tabIndex={0}
             style={{ fill: "none", stroke: color, strokeWidth: 1.2, strokeDasharray: "0.1 2.4", strokeLinecap: "round", opacity: 0.8 }} aria-label={description}>
             <title>{description}</title>
           </rect>;
@@ -616,15 +630,9 @@ export default function OpenEnaPlot({
           const color = result.groups.find(group => group.name === path.group)?.color ?? "#39736e";
           return from && to ? <line key={index} className="ena-individual-trajectory-path" data-ena-trajectory-path="true" data-from-ordinal={path.fromOrdinal} data-to-ordinal={path.toOrdinal} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={color} opacity={0.25} strokeWidth={1.2} style={{ stroke: color, opacity: 0.25, strokeWidth: 1.2, strokeLinecap: "round" }} /> : null;
         })}
-        {trajectory?.centroidPaths.map((path, index) => {
-          if (!nativePlotGroupSettingsV3(result, path.from.group).showMean) return null;
-          const from = positions.get(`trajectory-centroid-${trajectory.centroids.findIndex((point) => point.key === path.from.key)}`);
-          const to = positions.get(`trajectory-centroid-${trajectory.centroids.findIndex((point) => point.key === path.to.key)}`);
-          if (!from || !to) return null;
-          const color = "black";
-          const head = trajectory.showDirection ? trajectoryDirectionHead(from, to) : null;
-          return <g key={index}><line className="ena-group-centroid-path" data-ena-centroid-path="true" x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={color} strokeWidth={3} style={{ stroke: color, strokeWidth: 3, opacity: 1, strokeLinecap: "round" }}><title>{`${path.from.horizon} → ${path.to.horizon}; ${path.sharedContributorCount} observed shared contributors. Available-population centroids; not a matched change estimate.`}</title></line>
-            {head && <polyline data-ena-trajectory-direction="true" points={head} style={{ fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }} />}</g>;
+        {trajectoryPathMarks.map(({ path, index, from, to, arrow }) => {
+          return <g key={index}><line className="ena-group-centroid-path" data-ena-centroid-path="true" x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="black" strokeWidth={3} style={{ stroke: "black", strokeWidth: 3, opacity: 1, strokeLinecap: "round" }}><title>{`${path.from.horizon} → ${path.to.horizon}; ${path.sharedContributorCount} observed shared contributors. Available-population centroids; not a matched change estimate.`}</title></line>
+            {arrow.length > 0 && <polygon data-ena-trajectory-direction="true" points={arrow.map(point => `${point.x},${point.y}`).join(" ")} fill="black" style={{ fill: "black", stroke: "none" }} />}</g>;
         })}
         {showPoints && unitPoints.map((unit) => {
           const point = positions.get(unit.key);
@@ -638,8 +646,8 @@ export default function OpenEnaPlot({
           const markSize = (view === "3d" ? Math.max(5.5, 7.5 + point.depth * 1.2) : 7.5) * pointScale;
           const trajectoryPoint = trajectoryPointDetails.get(trajectoryPointKey(unit.row));
           const title = `${String(unit.row.ENA_UNIT)} · ${group?.name ?? ""}${trajectoryPoint ? ` · ${trajectoryPoint.horizon}` : ""}: ${xDimension} ${unit.x.toFixed(3)}, ${yDimension} ${unit.y.toFixed(3)}${view === "3d" ? `, ${zDimension} ${unit.z.toFixed(3)}` : ""}`;
-          const markerShape = trajectory ? "circle" : encoding.markerShape;
-          const markerLabel = trajectory ? "circle" : encoding.markerLabel;
+          const markerShape = trajectory ? "square" : encoding.markerShape;
+          const markerLabel = trajectory ? "square" : encoding.markerLabel;
           return (
             <g
               key={unit.label}
@@ -649,16 +657,11 @@ export default function OpenEnaPlot({
               data-ena-unit-point="true"
             >
               <title>{`${title}. ${markerLabel} marker.`}</title>
-              {trajectory ? <circle cx={point.x} cy={point.y} r={4 * pointScale}
-                style={{ fill: trajectoryHorizonColorV3(trajectory, trajectoryPoint?.horizonKey ?? ""), stroke: "#fff", strokeWidth: 0.8, opacity: 0.88 }} /> : <GroupMarkerGlyph
-                shape={encoding.markerShape}
-                x={point.x}
-                y={point.y}
-                size={markSize}
-                fill={group?.color ?? "#39736e"}
-                stroke="#263740"
-                strokeWidth={1.5}
-              />}
+              <GroupMarkerGlyph
+                shape={markerShape} x={point.x} y={point.y} size={markSize}
+                fill={group?.color ?? "#39736e"} stroke={trajectory ? "none" : "#263740"}
+                strokeWidth={trajectory ? 0 : 1.5}
+              />
               {showUnitLabels && !trajectory ? (
                 <text
                   x={point.x + markSize + 4}
@@ -677,8 +680,8 @@ export default function OpenEnaPlot({
           const point = positions.get(`trajectory-centroid-${index}`);
           const color = result.groups.find(group => group.name === centroid.group)?.color ?? "#39736e";
           const description = trajectoryCentroidDescriptionV3(centroid);
-          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true" tabIndex={0} role="img" aria-label={description}>
-            <rect x={point.x - 2.5} y={point.y - 2.5} width={5} height={5} style={{ fill: trajectoryHorizonColorV3(trajectory, centroid.horizonKey), stroke: color, strokeWidth: 1.2 }} />
+          return point ? <g key={centroid.key} data-ena-trajectory-centroid="true" data-ena-centroid-shape="square" tabIndex={0} role="img" aria-label={description}>
+            <rect x={point.x - 3.5} y={point.y - 3.5} width={7} height={7} fill={color} stroke="none" style={{ fill: color, stroke: "none" }} />
             <title>{description}</title>
           </g> : null;
         })}
@@ -738,7 +741,7 @@ export default function OpenEnaPlot({
             <g
               key={node.label}
               transform={`translate(${point.x} ${point.y})`}
-              filter="url(#ena-node-shadow)"
+              filter={trajectory ? undefined : "url(#ena-node-shadow)"}
               data-ena-code-node-position={node.label}
               tabIndex={trajectory ? 0 : undefined}
               role={trajectory ? "img" : undefined}
@@ -746,12 +749,12 @@ export default function OpenEnaPlot({
             >
               {trajectory ? <title>{openEnaRenderedCodeLabel(codePresentation, node.label)}</title> : null}
               <circle
-                r={trajectory && view === "2d" ? 8 : view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
+                r={trajectory && view === "2d" ? 4.5 : view === "3d" ? Math.max(11, 14 + point.depth * 2) : 14}
                 className="ena-result-node"
                 data-ena-code={node.label}
-                fill={trajectory ? "#fff" : nodeColor}
-                stroke={trajectory ? "#263740" : nodeColor}
-                style={{ fill: trajectory ? "#fff" : nodeColor, stroke: trajectory ? "#263740" : nodeColor, ...(trajectory ? { strokeWidth: 1.2 } : {}) }}
+                fill={trajectory ? "none" : nodeColor}
+                stroke={nodeColor}
+                style={{ fill: trajectory ? "none" : nodeColor, stroke: nodeColor, ...(trajectory ? { strokeWidth: 1.5 } : {}) }}
               />
               {showLabels && !trajectory ? (
                 <OpenEnaSvgDraggableNode
@@ -807,7 +810,7 @@ export default function OpenEnaPlot({
         ) : null}
       </svg>
       </div>
-      {trajectory ? <OpenEnaTrajectoryLegend trajectory={trajectory} groups={result.groups} locale={locale} /> : null}
+      {trajectory ? <OpenEnaTrajectoryLegend trajectory={trajectory} groups={result.groups} locale={locale} showUnitPoints={showPoints} /> : null}
       </div>
       {trajectory ? <details data-ena-trajectory-label-details="true"><summary>{copy.workspace.plotLabels}</summary><p>{copy.workspace.plotLabelsHelp}</p>
         <ul>{trajectoryLabels.map((label) => <li key={label.id} tabIndex={0} data-ena-label-detail-id={label.id}

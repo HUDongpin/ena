@@ -509,12 +509,18 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const [primaryGroupName, setPrimaryGroupName] = useState(restoredView?.primaryGroupName ?? "");
   const [secondaryGroupName, setSecondaryGroupName] = useState(restoredView?.secondaryGroupName ?? "");
   const [axes, setAxes] = useState<string[]>(restoredView?.axes ?? []);
-  const [showPoints, setShowPoints] = useState(restoredView?.showPoints ?? true), [showNetworks, setShowNetworks] = useState(restoredView?.showNetworks ?? true);
+  const [unitPointVisibility, setUnitPointVisibility] = useState(() => {
+    const restoredResult = initialCloudWorkspace?.result;
+    const restoredTrajectory = restoredResult?.configuration.analysisFamily === "standard" && restoredResult.configuration.analysis.model.type !== "EndPoint";
+    return { other: restoredTrajectory ? true : restoredView?.showPoints ?? true,
+      trajectory: restoredTrajectory ? restoredView?.showPoints ?? false : false };
+  });
+  const [showNetworks, setShowNetworks] = useState(restoredView?.showNetworks ?? true);
   const [codeLabelVisibility, setCodeLabelVisibility] = useState(() => {
     const restoredResult = initialCloudWorkspace?.result;
     const restoredTrajectory = restoredResult?.configuration.analysisFamily === "standard" && restoredResult.configuration.analysis.model.type !== "EndPoint";
     return { other: restoredTrajectory ? true : restoredView?.showLabels ?? true,
-      trajectory: restoredTrajectory ? restoredView?.showLabels ?? true : true };
+      trajectory: restoredTrajectory ? restoredView?.showLabels ?? false : false };
   });
   const [showUnitLabels, setShowUnitLabels] = useState(restoredView?.showUnitLabels ?? false), [showVariance, setShowVariance] = useState(restoredView?.showVariance ?? true), [showTrajectories, setShowTrajectories] = useState(restoredView?.showTrajectories ?? false);
   const [showGroupCentroidPaths, setShowGroupCentroidPaths] = useState(restoredView?.showGroupCentroidPaths ?? true);
@@ -633,6 +639,8 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     ? { primaryGroup: primary.fields[0].value, secondaryGroup: secondary.fields[0].value, axes: [twoDAxes[0], twoDAxes[1]] } : null;
   const isTrajectory = result?.configuration.analysisFamily === "standard" && result.configuration.analysis.model.type !== "EndPoint";
   const codeLabelKind = isTrajectory ? "trajectory" : "other";
+  const showPoints = unitPointVisibility[codeLabelKind];
+  const setShowPoints = (visible: boolean) => setUnitPointVisibility(previous => ({ ...previous, [codeLabelKind]: visible }));
   const showLabels = codeLabelVisibility[codeLabelKind];
   const setShowLabels = (visible: boolean) => setCodeLabelVisibility(previous => ({ ...previous, [codeLabelKind]: visible }));
   // A comparison selection remains inspectable after restore even though the
@@ -1107,7 +1115,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     `;
     clone.insertBefore(styles, clone.firstChild);
     if (trajectoryPresentation && plotResult) {
-      appendTrajectoryLegendToSvg(clone, trajectoryPresentation, plotResult.groups, locale);
+      appendTrajectoryLegendToSvg(clone, trajectoryPresentation, plotResult.groups, locale, showPoints);
       dimensions = resolveOpenEnaPlotExportDimensions(clone.getAttribute("viewBox"));
       clone.setAttribute("width", String(dimensions.width)); clone.setAttribute("height", String(dimensions.height));
     }
@@ -1354,7 +1362,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
     onShowUnitLabelsChange={setShowUnitLabels} onShowPointsChange={setShowPoints} onUnitCircleChange={setUnitCircle}
     onFlipXChange={setFlipX} onFlipYChange={setFlipY} onPlotZoomChange={setPlotZoom}
     onResetNodeLayout={() => setNodeOverrides({ hash: resultHash, positions: new Map() })}
-    onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric", isTrajectory ? OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM : 1)); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(true); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(true); setUnitCircle(false); }}
+    onReset={() => { setEdgeScale(1); setEdgeThreshold(0); setPointScale(1); setTextScale(1); setFlipX(false); setFlipY(false); setPlotZoom(1); setThreeDAxes([]); setCameraPreset("isometric"); setCamera(cameraForPreset("isometric", isTrajectory ? OPEN_ENA_TRAJECTORY_DEFAULT_CAMERA_ZOOM : 1)); setAspectRatio(null); setHiddenUnitKeys([]); setShowLabels(!isTrajectory); setShowGroupLabels(true); setShowUnitLabels(false); setShowPoints(!isTrajectory); setShowTrajectoryConfidenceIntervals(true); setUnitCircle(false); }}
     settingsOpen={plotSettingsOpen} onSettingsOpenChange={setPlotSettingsOpen} disabled={!result} />;
   const panelHeading = mode === "data"
     ? { kicker: restoredCopy.dataKicker, title: copy.data.title, description: copy.data.description }

@@ -41,3 +41,11 @@ test("export legend uses typed short Group names and includes actual glyph descr
   assert.ok(layout.items.some(item => item.text === '95% bootstrap CI'));
   assert.ok(!layout.items.some(item => item.text.includes('Per-axis')));
 });
+
+test("hidden Unit points omit their export key and periods do not imply a separate color encoding", () => {
+  const groups = [{ name: "G", color: "#cc423a", count: 3, pointCount: 9, meanPoint: {}, meanWeights: {} }];
+  const layout = trajectoryLegendExportLayoutV3(fixture(), groups, "en", 920, false);
+  assert.deepEqual(layout.items.filter(item => item.symbol).map(item => item.symbol), ["centroid", "ci"]);
+  assert.deepEqual(layout.items.filter(item => item.color).map(item => item.color), ["#cc423a"]);
+  assert.ok(layout.items.some(item => item.text === "TP1" && item.color === undefined));
+});

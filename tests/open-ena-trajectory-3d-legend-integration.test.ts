@@ -16,7 +16,7 @@ test("3D PNG copy and fallback download compose a legend before returning the ex
   const source = readFileSync("components/open-ena/OpenEnaInteractive3DPlot.tsx", "utf8");
   const start = source.indexOf("function copyPlotImage()"), end = source.indexOf("function downloadPluginReceipt()", start);
   const copy = source.slice(start, end);
-  assert.match(copy, /await appendTrajectoryLegendToPng\(dataUrl, result\.trajectoryPresentation, result\.groups, locale\)/);
+  assert.match(copy, /await appendTrajectoryLegendToPng\(dataUrl, result\.trajectoryPresentation, result\.groups, locale, showPoints\)/);
   assert.match(copy, /if \(!current\(\)\) return null;[\s\S]*return \{ dataUrl: exportedDataUrl, png: pngBlobFromDataUrl\(exportedDataUrl\) \}/);
   assert.ok(copy.indexOf("appendTrajectoryLegendToPng") > copy.indexOf(".toImage("));
   assert.ok(copy.indexOf("appendTrajectoryLegendToPng") < copy.indexOf("pngBlobFromDataUrl(exportedDataUrl)"));

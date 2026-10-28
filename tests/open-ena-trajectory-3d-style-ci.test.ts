@@ -44,28 +44,28 @@ async function fixture(): Promise<CompileOpenEna3dPlotInput> {
   };
 }
 
-test("3D trajectories encode period fill and Group outlines without changing fitted coordinates", async () => {
+test("3D trajectories use borderless Group-colored squares without changing fitted coordinates", async () => {
   const input = await fixture(), before = JSON.stringify(input.result);
   const spec = compileOpenEna3dPlotSpec(input);
   const centroids = spec.data.filter(trace => trace.meta.role === "group-mean");
-  assert.deepEqual(centroids.map(trace => trace.marker?.color), ["#22A884", "#FDE725"]);
-  assert.ok(centroids.every(trace => trace.marker?.symbol === "square" && trace.marker.line?.color === "#CC2277"));
+  assert.deepEqual(centroids.map(trace => trace.marker?.color), ["#CC2277", "#CC2277"]);
+  assert.ok(centroids.every(trace => trace.marker?.symbol === "square" && trace.marker.line?.width === 0));
   const path = spec.data.find(trace => trace.meta.role === "trajectory-path")!;
   assert.deepEqual(path.line, { color: "black", width: 3 });
   const units = spec.data.filter(trace => trace.meta.role === "unit-points");
-  assert.ok(units.every(trace => trace.marker?.symbol === "circle" && trace.marker.opacity === 0.88 && trace.marker.line?.color === "#ffffff"));
-  assert.ok(units.every(trace => Array.isArray(trace.marker?.color) && trace.marker.color.every(color => ["#22A884", "#FDE725"].includes(color))));
+  assert.ok(units.every(trace => trace.marker?.symbol === "square" && trace.marker.opacity === 0.68 && trace.marker.line?.width === 0));
+  for (const trace of units) assert.equal(trace.marker?.color, input.result.groups.find(group => group.name === trace.meta.groupName)!.color);
   const code = spec.data.find(trace => trace.meta.role === "code-node")!;
   assert.equal(code.marker?.symbol, "circle-open");
-  assert.equal(code.marker?.size, 5.5);
+  assert.equal(code.marker?.size, 3.25);
   assert.equal(spec.layout.scene.zaxis.color, "#008B00");
   assert.equal(JSON.stringify(input.result), before);
 });
 
-test("3D direction cones sit at 62 percent with normalized vectors and optional visibility", async () => {
+test("3D direction cones sit at the midpoint with normalized vectors and optional visibility", async () => {
   const input = await fixture();
   const cone = compileOpenEna3dPlotSpec(input).data.find(trace => trace.meta.role === "direction-arrow")!;
-  assert.ok([cone.x[0], cone.y[0], cone.z[0]].every((value, index) => Math.abs(value! - [1.86, 2.48, 0][index]) < 1e-12));
+  assert.ok([cone.x[0], cone.y[0], cone.z[0]].every((value, index) => Math.abs(value! - [1.5, 2, 0][index]) < 1e-12));
   assert.deepEqual([cone.u?.[0], cone.v?.[0], cone.w?.[0]], [0.6, 0.8, 0]);
   assert.equal(cone.anchor, "center");
   assert.equal(cone.sizeref, 0.13);
