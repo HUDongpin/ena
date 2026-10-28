@@ -30,7 +30,7 @@ The consent receipt and production ledger remain separate from the optional save
 
 The dedicated UI/config contract suite covers the fixed Qwen descriptor, legacy DeepSeek selection, rejection of unknown or mismatched configuration, three-language disclosure, retained historical provider identity, and the explicit environment pair. Existing consent/retry and completed-record suites remain regression gates.
 
-The deployment owner must bind the final integration commit, current CI, pricing configuration and actual ECS release/readback evidence before marking the production switch complete. A passing fixed-nine candidate and this disclosure implementation alone are not a production deployment receipt.
+Every production switch must bind its integration commit, CI, pricing configuration and actual ECS release/readback evidence. A passing fixed-nine candidate alone is not a production deployment receipt. The completed 2026-10-26 switch is recorded below.
 
 ## Accounting and local verification
 
@@ -41,3 +41,21 @@ The production request bodies match the three frozen candidate request hashes. I
 The prompt verifier's route-test source registration was refreshed after a provider-neutral payment-message assertion changed. The named aggregate-consent test and approved prompt artifacts remain unchanged; all 13 source registrations verify. The original DeepSeek 5/9 and independent Qwen 9/9 receipts remain immutable. Full CI and production receipts are separate release gates.
 
 Full local `npm run verify` completed with exit 0: application tests 3,615 passed, zero failed, two existing conditional skips; jENA tests 230/230 and release-receipt tests 20/20 passed. Prompt verification, dependency custody, type checking and production build passed. Existing synthetic-provider replay fixtures now use the supported DeepSeek descriptor so their unchanged assertions exercise reservation and replay protection.
+
+## Production acceptance and PR #118 disposition — reconciled 2026-10-28
+
+The Qwen production switch completed on **2026-10-26 at 21:31:16 Asia/Taipei**, at merged commit `557b6962ebf9dcc810da3374e1539c122c09b603` ([PR #123](https://github.com/HUDongpin/ena/pull/123)). All three checks in [the exact-commit CI run](https://github.com/HUDongpin/ena/actions/runs/40324290695) passed. The original private production receipts were preserved when their worktree was archived; all ten acceptance-manifest hashes were reverified on 2026-10-28.
+
+| Acceptance layer | Retained result | Scope |
+| --- | --- | --- |
+| Fixed synthetic candidate | 9/9 accepted | Three consecutive generations per supported language; original V2 prompt bytes, fixed model and evidence, one POST per case, no retry or fallback |
+| Production application | 6/6 accepted | One explicit generation in English, Simplified Chinese and Traditional Chinese on each of `www.ena.hk` and `www.open-ena.com` |
+| Chinese cross-domain restore | Passed | Saved content, original language, model, generation time, receipt and request hash matched; restored content stayed historical and no seventh generation occurred |
+| Consent and billing | Passed | Exactly six Qwen reservations matched the six consent receipts and settled; no missing-usage, lease-expiry or dispatch-failure warning |
+| QA retirement | Passed | The synthetic account was disabled, both old sessions were rejected, and its saved evidence project was retained |
+
+The [redacted reconciliation record](evidence/qwen-production-20261026/acceptance-reconciliation-20261028.json) records the six case outcomes, source receipt hashes and current-contract checks. It contains no credentials, provider prose, participant records or QA account identifiers. Raw receipts remain in the retained private evidence archive.
+
+The 2026-10-28 local preflight matched all ten execution-contract fields against the original nine-call plan, including the evidence, model, prompts, transport schemas and no-retry policy. The Qwen client, provider selector/descriptor, strict interpretation parser and prompt-governance code are byte-identical to the accepted release. The Disclaimer integration also passed the current full repository verification. Public HTTP readback on 2026-10-28 found both domains serving the later Disclaimer release `02f55c5cf780ba9487d3c4f851a255386b12d375`; that readback is not a new live-model matrix. No new paid generation or deployment was performed during this reconciliation.
+
+**PR #118 is superseded by the accepted Qwen production path and is to be closed without merging its DeepSeek projection.** Its original DeepSeek result remains **5/9**, and its nine-call receipt and candidate commits remain intact. Qwen's 9/9 and 6/6 results must not be relabeled as a successful DeepSeek repair. The legacy DeepSeek adapter remains available for historical configurations, but its separate multilingual gate in [#108](https://github.com/HUDongpin/ena/issues/108) is still unmet. This disposition resolves the obsolete PR; it does not close #108 as fixed.

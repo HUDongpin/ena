@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "open-ena-qwen-acceptance-reconciliation-v1",
+  "verifiedAt": "2026-10-28T18:57:27.068273+08:00",
+  "scope": "Offline verification of retained 2026-10-26 real-provider evidence and current integration contract; no new paid generations or deployment",
+  "release": "557b6962ebf9dcc810da3374e1539c122c09b603",
+  "currentCandidate": "19652c1c9a1eca7519f24a9696ab62b47ba76ce4",
+  "candidateGate": {
+    "attempted": 9,
+    "accepted": 9,
+    "receiptSha256": "7671389865936ea5c522a8fbeedc536eb33fab39a8b8f498b0f065e98ebc77b8"
+  },
+  "productionGate": {
+    "attempted": 6,
+    "accepted": 6,
+    "cases": [
+      {
+        "caseId": "A-en",
+        "origin": "https://www.ena.hk",
+        "locale": "en",
+        "status": "PASS",
+        "provider": "qwen",
+        "model": "qwen3.7-plus-2026-05-26"
+      },
+      {
+        "caseId": "A-hans",
+        "origin": "https://www.ena.hk",
+        "locale": "zh-hans",
+        "status": "PASS",
+        "provider": "qwen",
+        "model": "qwen3.7-plus-2026-05-26"
+      },
+      {
+        "caseId": "A-hant",
+        "origin": "https://www.ena.hk",
+        "locale": "zh-hant",
+        "status": "PASS",
+        "provider": "qwen",
+        "model": "qwen3.7-plus-2026-05-26"
+      },
+      {
+        "caseId": "B-en",
+        "origin": "https://www.open-ena.com",
+        "locale": "en",
+        "status": "PASS",
+        "provider": "qwen",
+        "model": "qwen3.7-plus-2026-05-26"
+      },
+      {
+        "caseId": "B-hans",
+        "origin": "https://www.open-ena.com",
+        "locale": "zh-hans",
+        "status": "PASS",
+        "provider": "qwen",
+        "model": "qwen3.7-plus-2026-05-26"
+      },
+      {
+        "caseId": "B-hant",
+        "origin": "https://www.open-ena.com",
+        "locale": "zh-hant",
+        "status": "PASS",
+        "provider": "qwen",
+        "model": "qwen3.7-plus-2026-05-26"
+      }
+    ]
+  },
+  "crossDomainChineseRestoreVerified": true,
+  "ledger": {
+    "settledReservations": 6,
+    "usageWarnings": 0,
+    "dispatchFailureAlerts": 0,
+    "seventhGeneration": false
+  },
+  "syntheticQaAccountRetired": true,
+  "retainedEvidenceFiles": {
+    "ci-admission.json": "23c33ffbba2b3a8862e1699d704e9e9f7f53ac4a4fb949a24c968d26ecb71df9",
+    "artifact-metadata.json": "91aabd305fa92178f194001f34581613c5fd245e9746086a762fd5106c58be83",
+    "local-artifact-check.json": "8d098c1bf7313e9d4a4d6b4d9e0a2f34dbe8886b702ff841181780331bed2ff0",
+    "deployment-visible-readback.json": "56ccc0a5cc090a9d6d8b5c577e3d777045db8794b53a031d3f63b9a8243ed620",
+    "rollback-integrity-readback.json": "fd65b275f0e0c207ccd06e7014586c031d6d2d4dc947fa10240c5ffbad209bca",
+    "live-acceptance-receipt.json": "7938c7ed6d94e7ca9ef65e36957610c59f059bde66ab9c351bdf39baa7e4f749",
+    "final-health-ledger-receipt.json": "57da8046b8039fbe008e563bbddb30c24fbec109ac0df89a19fbe7c26407dc3d",
+    "qa-retirement-receipt.json": "3c386d5b14cfd1052457c2f463921a5c87c8ddb9343380621e8f2128c194a0c1",
+    "ACCEPTANCE.md": "c8bfaabac9b28a6fc91657d165f967b766a8bbefb44df48110a4f89bde5846d6",
+    "final-public-readback.json": "5a7557728285a061c431eff896202c8213c5b0ad97da53ab6006f0743b071a81"
+  },
+  "currentContract": {
+    "matchingPlanFields": [
+      "candidate",
+      "fixedFixtureSha256",
+      "evidenceSha256",
+      "promptVersion",
+      "cases",
+      "localeContracts",
+      "retries",
+      "repairCalls",
+      "fallbackCalls",
+      "maximumGenerationPosts"
+    ],
+    "byteIdenticalRuntimeFilesSinceAcceptedRelease": [
+      "lib/server/qwen-client.ts",
+      "lib/server/open-ena-ai-provider.ts",
+      "lib/open-ena/ai-provider.ts",
+      "lib/open-ena/ai-interpretation.ts",
+      "lib/server/open-ena-ai-prompt-governance.ts"
+    ]
+  },
+  "deepseek": {
+    "originalAttempted": 9,
+    "originalAccepted": 5,
+    "repairedByQwen": false,
+    "evidencePreserved": true
+  },
+  "productionReadback20261028": {
+    "bothDomainsHttp200": true,
+    "release": "02f55c5cf780ba9487d3c4f851a255386b12d375",
+    "newGenerationPerformed": false
+  },
+  "pr118Disposition": {
+    "status": "superseded-close-without-merge",
+    "replacementPullRequest": 123,
+    "deepseekPassed": false,
+    "issue108DeepseekGateStillUnmet": true
+  }
+}
