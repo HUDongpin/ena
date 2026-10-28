@@ -5,6 +5,7 @@ import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 import { siteConfig } from "@/lib/site";
 import Logo from "./Logo";
 import OpenEnaAttribution from "./OpenEnaAttribution";
+import { getOpenEnaAttributionCopy } from "@/lib/open-ena-attribution";
 
 interface FooterProps {
   locale: Locale;
@@ -23,7 +24,7 @@ export default function Footer({ locale, dictionary }: FooterProps) {
   ];
   const resourceItems = [
     { href: `/${locale}/open-ena`, label: dictionary.common.openWebtool, external: false },
-    { href: siteConfig.officialWebtoolUrl, label: "Official webENA", external: true },
+    { href: siteConfig.officialWebtoolUrl, label: getOpenEnaAttributionCopy(locale).officialWebenaLink, external: true },
     { href: siteConfig.officialResourcesUrl, label: dictionary.common.browseResources, external: true },
     { href: siteConfig.tutorialUrl, label: dictionary.footer.tutorialTitle, external: true },
   ];
