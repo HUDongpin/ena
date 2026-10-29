@@ -80,7 +80,7 @@ test("the canonical ENA identity is consistent", () => {
   assert.equal(siteConfig.brandName, "Open ENA");
   assert.equal(siteConfig.longName, "Epistemic Network Analysis");
   assert.equal(siteConfig.tagline, "Epistemic Network Analysis Hub of Knowledge");
-  assert.equal(siteConfig.url, "https://www.ena.hk");
+  assert.equal(siteConfig.url, "https://www.open-ena.com");
   assert.doesNotMatch(JSON.stringify(siteConfig), /www\.aied\.hk/i);
 });
 

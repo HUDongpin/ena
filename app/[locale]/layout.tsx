@@ -49,6 +49,13 @@ export async function generateMetadata({
       description: dictionary.meta.siteDescription,
       locale: getLocaleMeta(typedLocale).htmlLang,
       url: `/${typedLocale}`,
+      images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: `${siteConfig.brandName}, ${siteConfig.tagline}` }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: dictionary.meta.siteTitle,
+      description: dictionary.meta.siteDescription,
+      images: ["/opengraph-image"],
     },
   };
 }

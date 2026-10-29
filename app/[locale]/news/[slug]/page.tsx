@@ -34,7 +34,7 @@ export async function generateMetadata({ params }: NewsDetailPageProps): Promise
   return {
     title: { absolute: `${article.title} | ${siteConfig.brandName}` },
     description: article.shortSummary,
-    authors: [{ name: "ENA.HK Editorial Team", url: siteConfig.url }],
+    authors: [{ name: `${siteConfig.brandName} Editorial Team`, url: siteConfig.url }],
     alternates: {
       canonical,
       languages: Object.fromEntries(locales.map((item) => [getLocaleMeta(item).htmlLang, `/${item}/news/${article.slug}`])),
@@ -47,7 +47,7 @@ export async function generateMetadata({ params }: NewsDetailPageProps): Promise
       url: canonical,
       locale: getLocaleMeta(locale).htmlLang,
       publishedTime: article.createdAt,
-      authors: ["ENA.HK Editorial Team"],
+      authors: [`${siteConfig.brandName} Editorial Team`],
       tags: article.tags,
       images: [{ url: image, alt: article.imageAlt }],
     },

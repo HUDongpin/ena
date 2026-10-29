@@ -1126,6 +1126,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   }
 
   function exportPlotSvg() {
+    if (centerSurface === "data") return;
     const lease = captureImageExport();
     if (!lease?.()) return;
     const serialized = serializedPlotSvg();
@@ -1133,6 +1134,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   }
 
   function exportPlotPng() {
+    if (centerSurface === "data") return;
     const lease = captureImageExport();
     if (!lease?.()) return;
     const serialized = serializedPlotSvg();
@@ -1696,6 +1698,8 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
               onExportCsv={() => void attempt(async () => { if (!result || !currentPlan || !current) return; await buildDataViewV3(result, currentPlan); if (mounted.current && latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) downloadCsv("bound-data-view.csv", rowsToCsv(dataViewPresentation.rows.map((row) => Object.fromEntries(Object.entries(row.values).map(([key, value]) => [key, value ?? null]))))); })} />
             <ResearchTableV3 {...researchTableCopy} rows={dataViewPresentation.sourceTraversal} label={workspaceCopy.stats.globalTraversal} columnLabels={workspaceCopy.dataView.sourceTraversalLabels} />
           </>;
+  const imageExportNoteId = `${workspaceId}-image-export-note`;
+  const imageExportNote = centerSurface === "data" && view === "2d" ? workspaceCopy.toolbar.returnToPlotForImageExport : null;
   return <div className="open-ena-page" lang={locale} data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
     <OpenEnaFallbackNotice locale={locale} />
     {cloudControls}
@@ -1725,9 +1729,10 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
           <div className="ena-visual-toolbar-actions"><button type="button" data-testid="open-ena-data-view-toggle" disabled={!result} aria-pressed={centerSurface === "data"} aria-label={centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnAriaLabel : workspaceCopy.dataView.returnAriaLabel) : workspaceCopy.toolbar.dataView} onClick={() => setCenterSurface((value) => value === "plot" ? "data" : "plot")}>{centerSurface === "data" ? (completedResultKind === "ona" ? copy.ona.dataView.returnLabel : workspaceCopy.dataView.returnLabel) : workspaceCopy.toolbar.dataView}</button>
               <div className="ena-analysis-toolbar-cluster"><div className="ena-view-toggle"><button type="button" aria-pressed={view === "2d"} onClick={() => setView("2d")}>{completedResultKind === "ona" ? copy.ona.workspace.twoD : copy.views.twoD}</button><button type="button" aria-pressed={view === "3d"} disabled={!genericThreeDAvailable} onClick={() => setView("3d")}>{completedResultKind === "ona" ? copy.ona.workspace.threeD : copy.views.threeD}</button></div>
                 <button type="button" className="ena-download-model-button ena-compact-toolbar-button" disabled={!current || Boolean(currentAnalysisDisclosure?.disabled)} aria-describedby={currentAnalysisNote ? currentAnalysisNoteId : undefined} title={currentAnalysisNote || undefined} onClick={() => void attempt(async () => { if (currentAnalysisDisclosure?.disabled) return; if (result && currentPlan) { const value = await exportCurrentAnalysisV3(result, currentPlan); if (mounted.current && latest.current.current && latest.current.state.model.result === result && confirmCurrentIdentityBearingExport()) saveDescriptor(value); } })}><span className="ena-download-model-button-icon" aria-hidden="true">↓</span>{workspaceCopy.toolbar.downloadModel}</button>
-              </div><button type="button" className="ena-compact-toolbar-button" disabled={!current || view === "3d" || endpointFrame2D.status === "pending"} onClick={exportPlotSvg}>{workspaceCopy.toolbar.exportSvg}</button><button type="button" className="ena-compact-toolbar-button" disabled={!current || view === "3d" || endpointFrame2D.status === "pending"} onClick={exportPlotPng}>{workspaceCopy.toolbar.exportPng}</button>
+              </div><button type="button" className="ena-compact-toolbar-button" disabled={!current || centerSurface === "data" || view === "3d" || endpointFrame2D.status === "pending"} aria-describedby={imageExportNote ? imageExportNoteId : undefined} title={imageExportNote ?? undefined} onClick={exportPlotSvg}>{workspaceCopy.toolbar.exportSvg}</button><button type="button" className="ena-compact-toolbar-button" disabled={!current || centerSurface === "data" || view === "3d" || endpointFrame2D.status === "pending"} aria-describedby={imageExportNote ? imageExportNoteId : undefined} title={imageExportNote ?? undefined} onClick={exportPlotPng}>{workspaceCopy.toolbar.exportPng}</button>
             </div>
           </div>
+          {imageExportNote && <p id={imageExportNoteId} className="ena-export-applicability ena-image-export-note" role="note">{imageExportNote}</p>}
           <div className="ena-visual-results">
       {presentation && result && <section aria-label={workspaceCopy.result.plotAria} data-ena-workbench-region="center">{modelState.resultStatus === "stale" && rebuildCue ? <div className="ena-stale-rebuild-callout" data-testid="open-ena-stale-rebuild" data-ena-rebuild-cue={rebuildCue.reason}><p role="status" aria-live="polite">{workspaceCopy.result.sourceReplacementNotice}</p><button type="button" ref={staleRebuildRef} className="ena-action-button ena-action-primary ena-stale-rebuild-button" data-testid="open-ena-stale-rebuild-run" aria-label={workspaceCopy.result.rebuildNowAria} aria-describedby={mode === "model" ? rebuildBlockingDescribedBy : undefined} disabled={sourceBusy || sourcePreview !== null || modelState.runStatus === "running"} onClick={requestRebuildAfterSourceReplacement}>{workspaceCopy.result.rebuildNow}<span aria-hidden="true">→</span></button></div> : <p>{modelState.resultStatus === "stale" ? workspaceCopy.result.historicalGeometry : workspaceCopy.result.boundGeometry}</p>}
         {endpointFrame2D.status === "pending" && <p role="status" data-ena-2d-frame-status="pending">{locale === "zh-hans" ? "正在准备 2D 图形比例…" : locale === "zh-hant" ? "正在準備 2D 圖形比例…" : "Preparing the 2D plot scale…"}</p>}

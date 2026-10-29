@@ -12,6 +12,8 @@ export interface OpenEnaDataViewColumn {
   label: string;
   kind: "provenance" | "metadata" | "code" | "directed-edge";
   align?: "left" | "center" | "right";
+  /** Display only; values remain exact for export and scientific identity. */
+  format?: "decimal" | "horizons";
 }
 
 export interface OpenEnaDataViewRow {
@@ -68,6 +70,7 @@ export interface OpenEnaDataViewCopy {
   directedEdgeGroup: string;
   yes: string;
   no: string;
+  precisionNote?: string;
 }
 
 const DEFAULT_COPY: OpenEnaDataViewCopy = {
@@ -94,6 +97,7 @@ const DEFAULT_COPY: OpenEnaDataViewCopy = {
   directedEdgeGroup: "Directed contributions",
   yes: "Yes",
   no: "No",
+  precisionNote: "Coordinates and edge weights show up to 6 significant digits. Hover for exact values; CSV exports retain full precision and typed Horizon identities.",
 };
 
 const DEFAULT_CONTEXT_OPTIONS: ReadonlyArray<OpenEnaDataViewContextOption> = [
@@ -113,8 +117,29 @@ function formatRange(
   ));
 }
 
-function displayCell(value: OpenEnaDataViewCell, copy: OpenEnaDataViewCopy) {
+function displayHorizons(value: string): string {
+  try {
+    const horizons: unknown = JSON.parse(value);
+    if (!Array.isArray(horizons) || horizons.length === 0) return value;
+    const labels = horizons.map((fields: unknown) => {
+      if (!Array.isArray(fields) || fields.length === 0) throw new TypeError("Expected Horizon fields");
+      return fields.map(field => {
+        if (!field || typeof field.column !== "string" || !field.value) throw new TypeError("Expected a typed Horizon field");
+        const scalar: unknown = field.value.value;
+        if (!["string", "number", "boolean"].includes(typeof scalar) || field.value.type !== typeof scalar
+          || (typeof scalar === "number" && !Number.isFinite(scalar))) throw new TypeError("Expected a typed scalar");
+        const column = /[=,;"\r\n]/u.test(field.column) ? JSON.stringify(field.column) : field.column;
+        return `${column}=${JSON.stringify(scalar)}`;
+      }).join(", ");
+    });
+    return labels.join("; ");
+  } catch { return value; }
+}
+
+function displayCell(value: OpenEnaDataViewCell, copy: OpenEnaDataViewCopy, format?: OpenEnaDataViewColumn["format"]) {
   if (value === null || value === undefined || value === "") return "—";
+  if (format === "horizons" && typeof value === "string") return displayHorizons(value);
+  if (format === "decimal" && typeof value === "number" && Number.isFinite(value)) return Number(value.toPrecision(6)).toString();
   if (typeof value === "boolean") return value ? copy.yes : copy.no;
   return String(value);
 }
@@ -206,6 +231,7 @@ export default function OpenEnaDataView({
       </div>
       {exportApplicabilityNote && exportApplicabilityNoteId ? <OpenEnaExportApplicabilityNote id={exportApplicabilityNoteId} action="bound-data-view" text={exportApplicabilityNote} reason={exportApplicabilityReason} familyApplies={exportApplicabilityFamilyApplies} /> : null}
       {notice ? <div className="ena-data-view-notice" role="note">{notice}</div> : null}
+      {columns.some(column => column.format === "decimal") && <p className="ena-export-applicability" role="note">{copy.precisionNote}</p>}
       <div
         className="ena-data-view-pagination"
         data-testid="open-ena-data-view-pagination"
@@ -305,11 +331,13 @@ export default function OpenEnaDataView({
               {visibleRows.map((row) => (
                 <tr key={row.id} data-record-id={row.id}>
                   {orderedColumns.map((column, columnIndex) => {
-                    const content = displayCell(row.values[column.key], copy);
+                    const value = row.values[column.key];
+                    const content = displayCell(value, copy, column.format);
+                    const title = column.format && value !== null && value !== undefined && content !== String(value) ? String(value) : undefined;
                     const style = { textAlign: column.align ?? "left" } as const;
                     return columnIndex === 0
-                      ? <th key={column.key} scope="row" style={style}>{content}</th>
-                      : <td key={column.key} style={style}>{content}</td>;
+                      ? <th key={column.key} scope="row" style={style} title={title}>{content}</th>
+                      : <td key={column.key} style={style} title={title}>{content}</td>;
                   })}
                 </tr>
               ))}

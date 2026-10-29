@@ -105,6 +105,21 @@ test("Academy filtering searches tutorial semantics and clamps pagination", () =
   assert.deepEqual(paged.items.map((lesson) => lesson.id), academyLessons.slice((paged.page - 1) * 2).map((lesson) => lesson.id));
 });
 
+test("Academy search understands simplified and traditional Chinese categories and method keywords", () => {
+  const search = (q: string) => filterAcademyLessons(academyLessons, { q, pageSize: 24 }).items.map(lesson => lesson.id);
+  assert.deepEqual(search("建模"), filterAcademyLessons(academyLessons, { track: "modeling", pageSize: 24 }).items.map(lesson => lesson.id));
+  assert.deepEqual(search("資料準備"), search("数据准备"));
+  assert.ok(search("数据准备").length > 0);
+  assert.deepEqual(search("入門"), search("入门"));
+  assert.ok(search("编码信度").includes("academy-006"));
+  assert.ok(search("編碼信度").includes("academy-006"));
+  assert.ok(search("纵向轨迹").includes("academy-021"));
+  assert.ok(search("縱向軌跡").includes("academy-021"));
+  assert.ok(search("缺失数据").includes("academy-025"));
+  assert.equal(filterAcademyLessons(academyLessons, { q: "建模", track: "interpretation" }).total, 0);
+  assert.equal(filterAcademyLessons(academyLessons, { q: "不存在的教学主题" }).total, 0);
+});
+
 test("the synthetic practice dataset is complete, ordered, balanced, and explicitly coded", () => {
   const datasetPath = publicPath("/data/academy/ena-design-talk-sample.csv");
   const lines = readFileSync(datasetPath, "utf8").trim().split("\n");

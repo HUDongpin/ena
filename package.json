@@ -53,6 +53,9 @@
     "verify:xlsx-writer": "node scripts/patch-xlsx-writer.mjs --check",
     "test:plugin-workflow": "node --import tsx --test tests/ena-plugin-workflow-*.test.ts tests/ena-plugin-workflow-store.integration.ts",
     "test:browser:plugin-workflow": "node --import tsx tests/ena-plugin-workflow-browser.mjs",
+    "test:browser:proposal-export": "node --import tsx tests/open-ena-proposal-export-browser.mjs",
+    "test:browser:account-language": "node --import tsx tests/open-ena-account-language-browser.mjs",
+    "test:browser:discovery-data-view": "node --import tsx tests/open-ena-discovery-data-view-browser.mjs",
     "plugin-lab:deliver": "node scripts/plugin-lab-notifications.mjs",
     "plugin-lab:backfill": "node --import tsx scripts/plugin-lab-backfill-owners.ts"
   },

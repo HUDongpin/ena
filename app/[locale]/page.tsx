@@ -4,22 +4,24 @@ import UnifiedHome from "@/components/home-source/UnifiedHome";
 import HubFooter from "@/components/shared-home-footer/HubFooter";
 import { getDictionary, getLocaleMeta, isLocale, locales } from "@/lib/i18n";
 import { getHomeFooterCopy } from "@/lib/home-footer";
+import { siteConfig } from "@/lib/site";
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
   return {
     title: { absolute: "Open ENA" },
-    description: "Explore the Open ENA interface for transparent, browser-based Epistemic Network Analysis prepared for jENA integration.",
+    description: "Browser-based Epistemic Network Analysis powered by jENA, with transparent modeling, visualization and research exports.",
     alternates: {
       canonical: `/${locale}`,
       languages: Object.fromEntries(locales.map(item => [getLocaleMeta(item).htmlLang, `/${item}`])),
     },
-    openGraph: { type: "website", siteName: "ENA.HK", locale: getLocaleMeta(locale).htmlLang, title: "Open ENA", description: "Explore a transparent Open ENA interface prepared for future jENA integration.", url: `/${locale}` },
+    openGraph: { type: "website", siteName: siteConfig.brandName, locale: getLocaleMeta(locale).htmlLang, title: siteConfig.brandName, description: siteConfig.description, url: `/${locale}`, images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: `${siteConfig.brandName}, ${siteConfig.longName}` }] },
     twitter: {
-      card: "summary",
-      title: "Open ENA",
-      description: "Explore a transparent Open ENA interface prepared for future jENA integration.",
+      card: "summary_large_image",
+      title: siteConfig.brandName,
+      description: siteConfig.description,
+      images: ["/opengraph-image"],
     },
   };
 }

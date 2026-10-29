@@ -60,6 +60,7 @@ export async function generateMetadata({ params }: OpenEnaPageProps): Promise<Me
       ),
     },
     openGraph: {
+      ...metadata.openGraph,
       title: `${copy.title} | ${siteConfig.brandName}`,
       description: copy.intro,
       url: canonical,

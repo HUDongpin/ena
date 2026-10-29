@@ -2,7 +2,7 @@ import type { Dictionary } from "./i18n";
 
 const ko: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | 인식론적 네트워크 분석",
+    siteTitle: "Open ENA | 인식론적 네트워크 분석",
     siteDescription:
       "인식론적 네트워크 분석을 배우고, 적용하고, 논의하기 위한 다국어 지식 사이트입니다.",
   },
@@ -199,7 +199,7 @@ const ko: Dictionary = {
 
 const ja: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | 認識論的ネットワーク分析",
+    siteTitle: "Open ENA | 認識論的ネットワーク分析",
     siteDescription:
       "認識論的ネットワーク分析を学び、応用し、議論するための多言語知識サイトです。",
   },
@@ -396,7 +396,7 @@ const ja: Dictionary = {
 
 const hi: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | ज्ञानमीमांसात्मक नेटवर्क विश्लेषण",
+    siteTitle: "Open ENA | ज्ञानमीमांसात्मक नेटवर्क विश्लेषण",
     siteDescription:
       "ज्ञानमीमांसात्मक नेटवर्क विश्लेषण को सीखने, लागू करने और उस पर विमर्श करने के लिए एक बहुभाषी ज्ञान वेबसाइट।",
   },

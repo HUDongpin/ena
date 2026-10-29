@@ -4,22 +4,15 @@ import { useEffect, useRef, useState, type FormEvent, type ChangeEvent } from "r
 import type { Locale } from "@/lib/i18n";
 import { getPluginWorkflowCopy, pluginWorkflowError } from "@/lib/plugin-lab/workflow-i18n";
 import PluginEmailVerification from "./PluginEmailVerification";
-import { emptyProposalDraft, focusFirstWorkflowError, proposalPayload, proposalTextLimits, validateProposalDraft, verifiedForEmail, workflowAttempt, workflowJson, workflowWriteIsAmbiguous, type DraftErrors, type ProposalDraft, type ProposalTextField, type VerifiedEmailSession, type WorkflowAttempt } from "./workflow-client";
-
-type Receipt = { proposalId: string };
+import { usePluginProposalSession } from "./PluginProposalSession";
+import { focusFirstWorkflowError, proposalPayload, proposalTextLimits, validateProposalDraft, verifiedForEmail, workflowAttempt, workflowJson, workflowWriteIsAmbiguous, type DraftErrors, type ProposalDraft, type ProposalTextField, type WorkflowAttempt } from "./workflow-client";
 
 export default function PluginProposalForm({ locale }: { locale: Locale }) {
   const copy = getPluginWorkflowCopy(locale);
-  const [draft, setDraft] = useState(emptyProposalDraft);
-  const [session, setSession] = useState<VerifiedEmailSession | null>(null);
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const { draft, setDraft, session, setSession, receipt, setReceipt, busy, setBusy, pending, setPending, attempt, busyRef } = usePluginProposalSession();
   const [errors, setErrors] = useState<DraftErrors>({});
   const [focusErrors, setFocusErrors] = useState(0);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState(false);
-  const attempt = useRef<WorkflowAttempt | null>(null);
-  const busyRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const receiptRef = useRef<HTMLHeadingElement>(null);
   const locked = busy || pending;

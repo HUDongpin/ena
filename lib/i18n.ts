@@ -152,7 +152,7 @@ export interface Dictionary {
 
 const en: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | Epistemic Network Analysis",
+    siteTitle: "Open ENA | Epistemic Network Analysis",
     siteDescription:
       "A multilingual knowledge site for learning, applying, and discussing Epistemic Network Analysis.",
   },
@@ -349,7 +349,7 @@ const en: Dictionary = {
 
 const zhHant: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | 認知網絡分析",
+    siteTitle: "Open ENA | 認知網絡分析",
     siteDescription: "一個用於學習、應用和討論認知網絡分析的多語言知識網站。",
   },
   nav: {
@@ -476,7 +476,7 @@ const zhHant: Dictionary = {
 
 const zhHans: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | 认知网络分析",
+    siteTitle: "Open ENA | 认知网络分析",
     siteDescription: "一个用于学习、应用和讨论认知网络分析的多语言知识网站。",
   },
   nav: {

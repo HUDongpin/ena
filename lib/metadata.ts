@@ -23,10 +23,19 @@ export function pageMetadata({
       ),
     },
     openGraph: {
+      type: "website",
+      siteName: siteConfig.brandName,
       title: `${title} | ${siteConfig.brandName}`,
       description,
       url: `/${locale}${path}`,
       locale: getLocaleMeta(locale).htmlLang,
+      images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: `${siteConfig.brandName}, ${siteConfig.tagline}` }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${title} | ${siteConfig.brandName}`,
+      description,
+      images: ["/opengraph-image"],
     },
   };
 }
