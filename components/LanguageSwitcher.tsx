@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { localeMeta, locales, type Locale } from "@/lib/i18n";
 import { buildLocalePath } from "@/lib/locale-path";
 
@@ -11,7 +11,12 @@ interface LanguageSwitcherProps {
   label: string;
   align?: "left" | "right";
   onSelect?: () => void;
+  navigationFocusRef?: RefObject<HTMLButtonElement | null>;
 }
+
+// Set only by browser click handlers; carries no form data and is never persisted.
+// The incoming [locale] layout consumes the intent after its controls mount.
+let pendingNavigationFocus: { from: string; to: string; align: "left" | "right" } | null = null;
 
 export function LanguageSwitcherFallback({ locale, label }: Pick<LanguageSwitcherProps, "locale" | "label">) {
   return (
@@ -27,6 +32,7 @@ export default function LanguageSwitcher({
   label,
   align = "right",
   onSelect,
+  navigationFocusRef,
 }: LanguageSwitcherProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -38,6 +44,16 @@ export default function LanguageSwitcher({
   const optionRefs = useRef<Array<HTMLAnchorElement | null>>([]);
   const menuId = useId();
   const currentMeta = localeMeta[locale];
+  const currentHref = `${pathname}${queryString ? `?${queryString}` : ""}`;
+
+  useEffect(() => {
+    const intent = pendingNavigationFocus;
+    if (!intent || currentHref === intent.from) return;
+    if (currentHref !== intent.to) { pendingNavigationFocus = null; return; }
+    if (intent.align !== align) return;
+    pendingNavigationFocus = null;
+    (navigationFocusRef?.current ?? buttonRef.current)?.focus();
+  }, [currentHref, align, navigationFocusRef]);
 
   useEffect(() => {
     if (open) optionRefs.current[activeIndex]?.focus();
@@ -144,7 +160,9 @@ export default function LanguageSwitcher({
                 tabIndex={index === activeIndex ? 0 : -1}
                 className="language-option focus-ring"
                 onFocus={() => setActiveIndex(index)}
-                onClick={() => {
+                onClick={(event) => {
+                  pendingNavigationFocus = !active && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+                    ? { from: currentHref, to: buildLocalePath(pathname, queryString, item), align } : null;
                   closeMenu();
                   onSelect?.();
                 }}

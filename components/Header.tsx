@@ -98,6 +98,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
                 locale={locale}
                 label={dictionary.nav.language}
                 align="left"
+                navigationFocusRef={menuButtonRef}
                 onSelect={() => { setOpen(false); menuButtonRef.current?.focus(); }}
               />
             </Suspense>

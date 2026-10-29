@@ -99,27 +99,38 @@ try {
     const attempts = [];
     let releaseFirstResponse;
     const firstResponseGate = new Promise(resolve => { releaseFirstResponse = resolve; });
-    let firstWriteCommitted;
-    const committed = new Promise(resolve => { firstWriteCommitted = resolve; });
+    let firstWriteCommitted, firstWriteFailed;
+    const committed = new Promise((resolve, reject) => { firstWriteCommitted = resolve; firstWriteFailed = reject; });
+    // A route can fail before the click resolves; retain that rejection for the
+    // bounded wait below without creating an unhandled rejection in the meantime.
+    void committed.catch(() => {});
     await page.route("**/api/plugin-lab/proposals", async route => {
-      attempts.push({ key: route.request().headers()["idempotency-key"], body: route.request().postData() });
-      const response = await route.fetch();
-      if (attempts.length === 1) {
-        assert.equal(response.status(), 201);
-        firstWriteCommitted();
-        await firstResponseGate;
-        await route.abort("failed");
+      try {
+        attempts.push({ key: route.request().headers()["idempotency-key"], body: route.request().postData() });
+        const response = await route.fetch();
+        if (attempts.length === 1) {
+          assert.equal(response.status(), 201);
+          firstWriteCommitted();
+          await firstResponseGate;
+          await route.abort("failed");
+        }
+        else await route.fulfill({ response });
+      } catch (error) {
+        firstWriteFailed(error);
+        await route.abort("failed").catch(() => {});
       }
-      else await route.fulfill({ response });
     });
     await page.getByRole("button", { name: getPluginWorkflowCopy("en").submit, exact: true }).click();
+    let submissionTimer;
     try {
-      await committed;
+      await Promise.race([committed, new Promise((_, reject) => {
+        submissionTimer = setTimeout(() => reject(new Error("The synthetic proposal did not commit within 15 seconds")), 15_000);
+      })]);
       await language(page, "zh-hant");
       await assertDraft(page, "retry-language@example.org");
       assert.equal(await page.locator("#plugin-title").isDisabled(), true, "The in-flight submission remains locked");
       assert.equal(await page.locator('.plugin-proposal-form button[type="submit"]').isDisabled(), true);
-    } finally { releaseFirstResponse(); }
+    } finally { clearTimeout(submissionTimer); releaseFirstResponse(); }
     await page.getByRole("button", { name: getPluginWorkflowCopy("zh-hant").retrySubmission, exact: true }).waitFor();
     await language(page, "zh-hans");
     await assertDraft(page, "retry-language@example.org");

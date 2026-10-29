@@ -90,11 +90,14 @@ try {
     await page.keyboard.press("Enter");
     await page.waitForURL(`${fixture.origin}/zh-hans/academy?track=modeling&page=2`);
     await trigger.getByText(localeMeta["zh-hans"].label, { exact: true }).waitFor();
+    await focusIs(page, trigger);
     await trigger.press("Space");
     await focusIs(page, options.nth(2));
     await page.keyboard.press("Home");
     await page.keyboard.press("Space");
     await page.waitForURL(`${fixture.origin}/en/academy?track=modeling&page=2`);
+    await trigger.getByText(localeMeta.en.label, { exact: true }).waitFor();
+    await focusIs(page, trigger);
   });
   await check("Escape restores trigger focus and Tab/outside clicks close without stealing focus", async () => {
     const page = await newPage("/en/academy");
@@ -138,6 +141,13 @@ try {
     assert.equal(await mobileMenu.getAttribute("aria-expanded"), "true", "Escape closes only the language list");
     await trigger.press("Enter");
     await page.keyboard.press("Enter"); // Activate the current language without changing page.
+    await focusIs(page, mobileMenu);
+    assert.equal(await mobileMenu.getAttribute("aria-expanded"), "false");
+    await mobileMenu.click(); await trigger.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForURL(`${fixture.origin}/zh-hant/academy`);
+    await mobileMenu.getByText("選單", { exact: true }).waitFor();
     await focusIs(page, mobileMenu);
     assert.equal(await mobileMenu.getAttribute("aria-expanded"), "false");
     await mobileMenu.click(); await trigger.press("ArrowDown");
