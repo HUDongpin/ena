@@ -33,6 +33,13 @@ export async function generateMetadata({ params }: AboutPageProps): Promise<Meta
       url,
       siteName: siteConfig.brandName,
       locale: getLocaleMeta(typedLocale).htmlLang,
+      images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: `${siteConfig.brandName}, ${siteConfig.tagline}` }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: ["/opengraph-image"],
     },
   };
 }

@@ -1,3 +1,5 @@
+import { siteConfig } from "./site";
+
 export function personJsonLd(input: {
   name: string;
   url: string;
@@ -61,8 +63,8 @@ export function reviewArticleJsonLd(input: {
     description: input.description,
     author: {
       "@type": "Organization",
-      name: "ENA.HK Editorial Team",
-      url: "https://www.ena.hk",
+      name: `${siteConfig.brandName} Editorial Team`,
+      url: siteConfig.url,
     },
     datePublished: input.datePublished,
     dateModified: input.datePublished,
@@ -70,7 +72,7 @@ export function reviewArticleJsonLd(input: {
     keywords: input.keywords,
     inLanguage: "en",
     isAccessibleForFree: true,
-    publisher: { "@type": "Organization", name: "ENA.HK", url: "https://www.ena.hk" },
+    publisher: { "@type": "Organization", name: siteConfig.brandName, url: siteConfig.url },
     citation: input.sourceUrl,
     isBasedOn: {
       "@type": "ScholarlyArticle",
@@ -113,8 +115,8 @@ export function learningResourceJsonLd(input: {
     dateModified: input.datePublished,
     inLanguage: "en",
     isAccessibleForFree: true,
-    author: { "@type": "Organization", name: "ENA.HK Academy", url: "https://www.ena.hk" },
-    publisher: { "@type": "Organization", name: "ENA.HK", url: "https://www.ena.hk" },
+    author: { "@type": "Organization", name: `${siteConfig.brandName} Academy`, url: siteConfig.url },
+    publisher: { "@type": "Organization", name: siteConfig.brandName, url: siteConfig.url },
     citation: input.sourceUrls,
     hasPart: input.steps.map((step, index) => ({
       "@type": "HowToStep",
@@ -135,7 +137,7 @@ export function pluginSoftwareApplicationJsonLd(input: {
 }) {
   const { plugin } = input;
   const contentLocale = input.locale === "zh-hant" || input.locale === "zh-hans" ? input.locale : "en";
-  const url = `https://www.ena.hk/${encodeURIComponent(input.locale)}/plugins/${plugin.slug}`;
+  const url = `${siteConfig.url}/${encodeURIComponent(input.locale)}/plugins/${plugin.slug}`;
   return {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",

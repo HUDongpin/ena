@@ -49,7 +49,16 @@ export default function OpenEnaAccountForm({ locale, initialMode, enabled, regis
     } catch { setError(copy.unavailable); }
     finally { setBusy(false); }
   }
-  function switchMode(next: Mode) { setMode(next); setError(""); setSuccess(""); setToken(""); setPassword(""); setConfirmation(""); }
+  function switchMode(next: "register" | "forgot-password") {
+    // Next's native History integration also updates the language switcher's
+    // search params. Keep only the public entry mode in the URL, never an action token.
+    const query = new URLSearchParams(window.location.search);
+    if (next === "forgot-password") query.set("mode", "reset");
+    else query.delete("mode");
+    const search = query.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
+    setMode(next); setError(""); setSuccess(""); setToken(""); setPassword(""); setConfirmation("");
+  }
   return <div className="open-ena-account-page" lang={locale === "zh-hans" ? "zh-Hans" : locale === "zh-hant" ? "zh-Hant" : "en"}>
     <OpenEnaFallbackNotice locale={locale} />
     <section className="open-ena-account-card" aria-labelledby={`${id}-title`}>

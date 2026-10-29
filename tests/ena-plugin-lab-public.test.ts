@@ -105,7 +105,7 @@ test("plugin JSON-LD projects only public manifest metadata", () => {
   });
   assert.equal(data["@type"], "SoftwareApplication");
   assert.equal(data.softwareVersion, plugin.version);
-  assert.equal(data.url, `https://www.ena.hk/en/plugins/${plugin.slug}`);
+  assert.equal(data.url, `https://www.open-ena.com/en/plugins/${plugin.slug}`);
   assert.equal(JSON.stringify(data).includes("private"), false);
 });
 

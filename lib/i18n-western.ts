@@ -2,7 +2,7 @@ import type { Dictionary } from "./i18n";
 
 const es: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | Análisis de Redes Epistémicas",
+    siteTitle: "Open ENA | Análisis de Redes Epistémicas",
     siteDescription:
       "Un sitio de conocimiento multilingüe para aprender, aplicar y debatir el Análisis de Redes Epistémicas.",
   },
@@ -199,7 +199,7 @@ const es: Dictionary = {
 
 const fr: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | Analyse des Réseaux Épistémiques",
+    siteTitle: "Open ENA | Analyse des Réseaux Épistémiques",
     siteDescription:
       "Un site de connaissances multilingue pour apprendre, appliquer et discuter l'Analyse des Réseaux Épistémiques.",
   },
@@ -396,7 +396,7 @@ const fr: Dictionary = {
 
 const pt: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | Análise de Redes Epistémicas",
+    siteTitle: "Open ENA | Análise de Redes Epistémicas",
     siteDescription:
       "Um sítio de conhecimento multilingue para aprender, aplicar e discutir a Análise de Redes Epistémicas.",
   },
@@ -593,7 +593,7 @@ const pt: Dictionary = {
 
 const de: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | Epistemische Netzwerkanalyse",
+    siteTitle: "Open ENA | Epistemische Netzwerkanalyse",
     siteDescription:
       "Eine mehrsprachige Wissensplattform zum Erlernen, Anwenden und Diskutieren der Epistemischen Netzwerkanalyse.",
   },

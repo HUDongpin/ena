@@ -2,7 +2,7 @@ import type { Dictionary } from "./i18n";
 
 const ar: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | تحليل الشبكات المعرفية",
+    siteTitle: "Open ENA | تحليل الشبكات المعرفية",
     siteDescription: "موقع معرفي متعدد اللغات لتعلم تحليل الشبكات المعرفية وتطبيقه ومناقشته.",
   },
   nav: {
@@ -197,7 +197,7 @@ const ar: Dictionary = {
 
 const ru: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | Эпистемический сетевой анализ",
+    siteTitle: "Open ENA | Эпистемический сетевой анализ",
     siteDescription:
       "Многоязычный информационный сайт для изучения, применения и обсуждения эпистемического сетевого анализа.",
   },
@@ -394,7 +394,7 @@ const ru: Dictionary = {
 
 const id: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | Analisis Jaringan Epistemik",
+    siteTitle: "Open ENA | Analisis Jaringan Epistemik",
     siteDescription:
       "Situs pengetahuan multibahasa untuk mempelajari, menerapkan, dan mendiskusikan Analisis Jaringan Epistemik.",
   },
@@ -591,7 +591,7 @@ const id: Dictionary = {
 
 const bn: Dictionary = {
   meta: {
-    siteTitle: "ENA.HK | এপিস্টেমিক নেটওয়ার্ক বিশ্লেষণ",
+    siteTitle: "Open ENA | এপিস্টেমিক নেটওয়ার্ক বিশ্লেষণ",
     siteDescription:
       "এপিস্টেমিক নেটওয়ার্ক বিশ্লেষণ শেখা, প্রয়োগ করা ও আলোচনা করার জন্য একটি বহুভাষিক জ্ঞানভিত্তিক ওয়েবসাইট।",
   },

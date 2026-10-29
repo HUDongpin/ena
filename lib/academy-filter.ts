@@ -4,12 +4,13 @@ import type {
   AcademyLesson,
 } from "./academy-types";
 import { ACADEMY_LEVELS, ACADEMY_TRACKS } from "./academy-types";
+import { academySearchKeywords } from "./academy-search";
 
 export function filterAcademyLessons(
   lessons: AcademyLesson[],
   options: AcademyFilterOptions = {},
 ): AcademyFilterResult {
-  const query = options.q?.trim().toLocaleLowerCase() ?? "";
+  const query = options.q?.normalize("NFKC").trim().toLocaleLowerCase() ?? "";
   const track = ACADEMY_TRACKS.includes(options.track as (typeof ACADEMY_TRACKS)[number])
     ? options.track
     : undefined;
@@ -36,7 +37,8 @@ export function filterAcademyLessons(
       lesson.analysisChecks.join(" "),
       lesson.methodBoundary,
       lesson.sources.map((source) => source.label).join(" "),
-    ].join(" ").toLocaleLowerCase();
+      academySearchKeywords(lesson),
+    ].join(" ").normalize("NFKC").toLocaleLowerCase();
 
     return searchable.includes(query);
   });

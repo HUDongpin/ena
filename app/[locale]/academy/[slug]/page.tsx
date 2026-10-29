@@ -39,7 +39,7 @@ export async function generateMetadata({ params }: AcademyDetailPageProps): Prom
   return {
     title: { absolute: `${lesson.title} | ${siteConfig.brandName}` },
     description: lesson.shortSummary,
-    authors: [{ name: "ENA.HK Academy", url: siteConfig.url }],
+    authors: [{ name: `${siteConfig.brandName} Academy`, url: siteConfig.url }],
     alternates: {
       canonical,
       languages: Object.fromEntries(locales.map((item) => [getLocaleMeta(item).htmlLang, `/${item}/academy/${lesson.slug}`])),
@@ -52,7 +52,7 @@ export async function generateMetadata({ params }: AcademyDetailPageProps): Prom
       url: canonical,
       locale: getLocaleMeta(locale).htmlLang,
       publishedTime: lesson.publishedAt,
-      authors: ["ENA.HK Academy"],
+      authors: [`${siteConfig.brandName} Academy`],
       tags: lesson.tags,
       images: [{
         url: socialImage,

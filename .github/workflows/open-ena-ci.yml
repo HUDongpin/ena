@@ -337,6 +337,12 @@ jobs:
         run: npm run build:app
       - name: Verify proposal submission, private review and localized Plugin Lab screens
         run: npm run test:browser:plugin-workflow
+      - name: Verify proposal language retention and Data View image exports
+        run: npm run test:browser:proposal-export
+      - name: Verify account mode and language menu keyboard navigation
+        run: npm run test:browser:account-language
+      - name: Verify Chinese search, Data View precision and primary-domain metadata
+        run: npm run test:browser:discovery-data-view
       - name: Upload Plugin Lab browser evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -347,6 +353,19 @@ jobs:
             output/plugin-lab-workflow/fixture.json
             output/plugin-lab-workflow/cleanup.json
             output/plugin-lab-workflow/*.png
+            output/playwright/priority-fixes/report.json
+            output/playwright/priority-fixes/fixture.json
+            output/playwright/priority-fixes/cleanup.json
+            output/playwright/priority-fixes/*.png
+            output/playwright/account-language/report.json
+            output/playwright/account-language/fixture.json
+            output/playwright/account-language/cleanup.json
+            output/playwright/account-language/*.png
+            output/playwright/discovery-data-view/report.json
+            output/playwright/discovery-data-view/metadata.json
+            output/playwright/discovery-data-view/fixture.json
+            output/playwright/discovery-data-view/cleanup.json
+            output/playwright/discovery-data-view/*.png
           if-no-files-found: warn
           retention-days: 14
 

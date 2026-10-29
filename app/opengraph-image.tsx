@@ -1,107 +1,74 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
+import { siteConfig } from "@/lib/site";
 
-export const alt = "ENA.HK, Epistemic Network Analysis Hub of Knowledge";
+export const alt = `${siteConfig.brandName}, ${siteConfig.longName}`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
+export const runtime = "nodejs";
 
-const nodes = [
-  { left: 76, top: 104 },
-  { left: 310, top: 52 },
-  { left: 510, top: 176 },
-  { left: 354, top: 370 },
-  { left: 90, top: 338 },
-];
+export default async function OpenGraphImage() {
+  const [regular, italic, sans, logo] = await Promise.all([
+    // Instrument Serif is distributed with its SIL Open Font License.
+    readFile(join(process.cwd(), "public/fonts/instrument-serif/InstrumentSerif-Regular.ttf")),
+    readFile(join(process.cwd(), "public/fonts/instrument-serif/InstrumentSerif-Italic.ttf")),
+    readFile(join(process.cwd(), "node_modules/next/dist/compiled/@vercel/og/Geist-Regular.ttf")),
+    // Exact rasterization of public/unified-home/logo-open-ena-compact.svg.
+    // Embedding it avoids remote fetches and server-dependent SVG text rendering.
+    readFile(join(process.cwd(), "public/social/open-ena-logo.png")),
+  ]);
 
-export default function OpenGraphImage() {
   return new ImageResponse(
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        alignItems: "stretch",
-        background: "#f7fbfe",
-        color: "#1f293d",
-        fontFamily: "Arial, Helvetica, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          width: 690,
-          padding: "74px 72px",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-          <div
-            style={{
-              width: 76,
-              height: 76,
-              borderRadius: 18,
-              border: "2px solid #d5ebf6",
-              background: "#edf8fd",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#1f293d",
-              fontSize: 28,
-              fontWeight: 800,
-            }}
-          >
-            ENA
-          </div>
-          <div style={{ width: 430, fontSize: 20, lineHeight: 1.2, fontWeight: 700, color: "#6f7c91" }}>
-            Epistemic Network Analysis Hub of Knowledge
-          </div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-          <div style={{ fontSize: 72, lineHeight: 0.98, fontWeight: 800, letterSpacing: -4 }}>
-            See how ideas connect.
-          </div>
-          <div style={{ fontSize: 27, lineHeight: 1.35, color: "#3e4b63", maxWidth: 555 }}>
-            A multilingual knowledge site for learning, applying, and discussing ENA.
-          </div>
-        </div>
-        <div style={{ fontSize: 22, color: "#3e4b63", fontWeight: 700 }}>www.ena.hk</div>
+    <div style={{
+      width: "100%", height: "100%", display: "flex", position: "relative",
+      overflow: "hidden", background: "#F7FBFE", color: "#0F172A", fontFamily: "Geist",
+    }}>
+      <div style={{
+        display: "flex", position: "absolute", left: 650, top: -200,
+        width: 960, height: 1030, borderRadius: "50%", background: "#E5F4FC",
+      }} />
+      <div style={{
+        display: "flex", position: "absolute", left: 68, top: 93,
+        fontSize: 15, letterSpacing: 3.1, color: "#526477",
+      }}>
+        EPISTEMIC NETWORK ANALYSIS
       </div>
-      <div
-        style={{
-          width: 510,
-          position: "relative",
-          background: "#1f293d",
-          borderLeft: "8px solid #89cff0",
-          display: "flex",
-        }}
-      >
-        <div
-          style={{ position: "absolute", left: 48, top: 90, width: 380, height: 6, background: "#89cff0", transform: "rotate(-12deg)", opacity: 0.65 }}
-        />
-        <div
-          style={{ position: "absolute", left: 126, top: 285, width: 350, height: 12, background: "#89cff0", transform: "rotate(20deg)", opacity: 0.9 }}
-        />
-        <div
-          style={{ position: "absolute", left: 178, top: 158, width: 298, height: 5, background: "#73c2e8", transform: "rotate(68deg)", opacity: 0.55 }}
-        />
-        {nodes.map((node, index) => (
-          <div
-            key={`${node.left}-${node.top}`}
-            style={{
-              position: "absolute",
-              left: node.left - 40,
-              top: node.top - 40,
-              width: index === 2 ? 86 : 66,
-              height: index === 2 ? 86 : 66,
-              borderRadius: 999,
-              border: "6px solid #89cff0",
-              background: index === 2 ? "#89cff0" : "#1f293d",
-              display: "flex",
-            }}
-          />
-        ))}
+      <div style={{
+        display: "flex", position: "absolute", left: 63, top: 143,
+        width: 600, flexDirection: "column", fontFamily: "Instrument Serif",
+        fontSize: 108, fontWeight: 400, lineHeight: 0.97, letterSpacing: -1.6,
+      }}>
+        <div style={{ display: "flex" }}>See how</div>
+        <div style={{ display: "flex", fontStyle: "italic" }}>ideas connect.</div>
       </div>
+      <div style={{
+        display: "flex", position: "absolute", left: 68, top: 387,
+        flexDirection: "column", fontSize: 22, lineHeight: 1.5, color: "#526477",
+      }}>
+        <div style={{ display: "flex" }}>Explore patterns in coded data.</div>
+        <div style={{ display: "flex" }}>Build, compare, and interpret networks.</div>
+      </div>
+      <div style={{ display: "flex", position: "absolute", left: 68, top: 515, width: 520, height: 1, background: "#D5EBF6" }} />
+      <div style={{ display: "flex", position: "absolute", left: 68, top: 514, width: 56, height: 3, background: "#89CFF0" }} />
+      <div style={{ display: "flex", position: "absolute", left: 68, top: 539, fontSize: 20, letterSpacing: 0.3, color: "#33465C" }}>
+        {new URL(siteConfig.url).hostname}
+      </div>
+      <img
+        src={`data:image/png;base64,${logo.toString("base64")}`}
+        alt={siteConfig.brandName}
+        width={440}
+        height={440 * 80 / 165}
+        style={{ position: "absolute", left: 718, top: 222 }}
+      />
     </div>,
-    size
+    {
+      ...size,
+      fonts: [
+        { name: "Geist", data: sans, weight: 400, style: "normal" },
+        { name: "Instrument Serif", data: regular, weight: 400, style: "normal" },
+        { name: "Instrument Serif", data: italic, weight: 400, style: "italic" },
+      ],
+    },
   );
 }

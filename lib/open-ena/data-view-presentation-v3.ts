@@ -10,14 +10,16 @@ export function buildDataViewPresentationV3(result: BoundResultV3, group: Scalar
   const view = buildHistoricalDataViewV3(result);
   const source = new Map(result.executionProvenance.labels.codes.map((code) => [code.column, code.sourceColumn]));
   const metadata = view.rows[0] ? Object.keys(view.rows[0]) : [];
+  const coordinateKeys = new Set(Object.values(view.coordinateColumns));
   const used = new Set(metadata);
   const edges = result.set.adjacencyKey.map((edge, index) => {
     let key = `Normalized edge ${index + 1}`; while (used.has(key)) key += " (edge)"; used.add(key);
     return { edge, key, label: `${source.get(edge.source)} ${result.configuration.analysisFamily === "ona" ? "→" : "↔"} ${source.get(edge.target)}` };
   });
   const columns: OpenEnaDataViewColumn[] = [
-    ...metadata.map((key) => ({ key, label: key, kind: "metadata" as const })),
-    ...edges.map(({ key, label }) => ({ key, label, kind: result.configuration.analysisFamily === "ona" ? "directed-edge" as const : "code" as const })),
+    ...metadata.map((key) => ({ key, label: key, kind: "metadata" as const,
+      format: key === view.metadataColumns.observedHorizons ? "horizons" as const : coordinateKeys.has(key) ? "decimal" as const : undefined })),
+    ...edges.map(({ key, label }) => ({ key, label, kind: result.configuration.analysisFamily === "ona" ? "directed-edge" as const : "code" as const, format: "decimal" as const })),
   ];
   const rows: OpenEnaDataViewRow[] = view.rows.flatMap((row, index) => {
     const groupConfig = result.configuration.units.group;

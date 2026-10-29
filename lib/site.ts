@@ -3,7 +3,7 @@ export const siteConfig = {
   brandName: "Open ENA",
   longName: "Epistemic Network Analysis",
   tagline: "Epistemic Network Analysis Hub of Knowledge",
-  url: "https://www.ena.hk",
+  url: "https://www.open-ena.com",
   description:
     "A multilingual knowledge site for learning, applying, and discussing Epistemic Network Analysis.",
   openEnaPath: "/open-ena",

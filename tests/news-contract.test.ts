@@ -179,7 +179,7 @@ test("structured data distinguishes each ENA.HK review from its cited paper", ()
 
   assert.equal(data["@type"], "NewsArticle");
   assert.equal(data.inLanguage, "en");
-  assert.equal(data.author.name, "ENA.HK Editorial Team");
+  assert.equal(data.author.name, "Open ENA Editorial Team");
   assert.equal(data.citation, article.sourceUrl);
   assert.equal(data.isBasedOn["@type"], "ScholarlyArticle");
   assert.equal(data.isBasedOn.identifier.value, article.doi);

@@ -3795,6 +3795,12 @@ body:has(.open-ena-login-page) .back-to-top {
   line-height: 1.4;
 }
 
+.ena-image-export-note {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 16px;
+}
+
 .ena-export-applicability[data-export-applicability-reason="not-applicable-family"],
 .ena-export-applicability[data-export-applicability-reason="would-be-empty"],
 .ena-export-applicability[data-export-applicability-reason="requires-rebuild"],

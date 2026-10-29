@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { type Dictionary, type Locale } from "@/lib/i18n";
 import { getOpenEnaNavLabel } from "@/lib/open-ena-i18n";
 import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
@@ -20,6 +20,7 @@ function normalizePath(path: string) {
 
 export default function Header({ locale, dictionary }: HeaderProps) {
   const [open, setOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
   const currentPath = normalizePath(pathname);
   const isOpenEnaPath = currentPath === `/${locale}/open-ena`
@@ -63,6 +64,7 @@ export default function Header({ locale, dictionary }: HeaderProps) {
           </Suspense>
         </div>
         <button
+          ref={menuButtonRef}
           type="button"
           className="menu-button focus-ring"
           aria-expanded={open}
@@ -96,7 +98,8 @@ export default function Header({ locale, dictionary }: HeaderProps) {
                 locale={locale}
                 label={dictionary.nav.language}
                 align="left"
-                onSelect={() => setOpen(false)}
+                navigationFocusRef={menuButtonRef}
+                onSelect={() => { setOpen(false); menuButtonRef.current?.focus(); }}
               />
             </Suspense>
           </div>

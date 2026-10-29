@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { siteConfig } from "@/lib/site";
 import AnalyticsConsent from "@/components/AnalyticsConsent";
+import { PluginProposalSessionProvider } from "@/components/plugin-lab/PluginProposalSession";
 import "./globals.css";
 import "./premium-public.css";
 import "./plugin-lab.css";
@@ -21,11 +22,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
-    default: "ENA.HK | Epistemic Network Analysis",
-    template: "%s | ENA.HK",
+    default: `${siteConfig.brandName} | ${siteConfig.longName}`,
+    template: `%s | ${siteConfig.brandName}`,
   },
   description: siteConfig.description,
-  applicationName: "ENA.HK",
+  applicationName: siteConfig.brandName,
   icons: {
     icon: "/icon.svg",
     shortcut: "/icon.svg",
@@ -33,15 +34,15 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   openGraph: {
     type: "website",
-    siteName: "ENA.HK",
-    title: "ENA.HK | Epistemic Network Analysis",
+    siteName: siteConfig.brandName,
+    title: `${siteConfig.brandName} | ${siteConfig.longName}`,
     description: siteConfig.description,
     url: siteConfig.url,
-    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "ENA.HK, Epistemic Network Analysis Hub of Knowledge" }],
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: `${siteConfig.brandName}, ${siteConfig.tagline}` }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ENA.HK | Epistemic Network Analysis",
+    title: `${siteConfig.brandName} | ${siteConfig.longName}`,
     description: siteConfig.description,
     images: ["/opengraph-image"],
   },
@@ -52,7 +53,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en-HK" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className={`${geist.variable} ${geistMono.variable}`}>
-        {children}
+        <PluginProposalSessionProvider>{children}</PluginProposalSessionProvider>
         <AnalyticsConsent disabled={analyticsDisabledForSmoke} />
       </body>
     </html>
