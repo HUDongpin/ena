@@ -68,19 +68,19 @@
     "nodemailer": "10.2.1",
     "pg": "8.22.0",
     "plotly.js-gl3d-dist-min": "3.7.0",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
     "read-excel-file": "9.3.5",
     "saxen": "11.1.1",
     "write-excel-file": "4.1.1"
   },
   "devDependencies": {
-    "@types/node": "24.10.15",
+    "@types/node": "24.19.2",
     "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
-    "smtp-server": "3.21.1",
+    "smtp-server": "3.21.3",
     "esbuild": "0.28.2",
     "tsx": "^4.23.15",
     "typescript": "5.8.3"
