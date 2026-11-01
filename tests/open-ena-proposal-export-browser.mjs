@@ -146,6 +146,8 @@ try {
     // Leaving a completed proposal starts a fresh form when the researcher returns.
     await page.locator(".desktop-nav a[href='/zh-hant/plugins']").click();
     await page.waitForURL(`${fixture.origin}/zh-hant/plugins`);
+    await page.locator(".nova-nav-item[href='/zh-hant/plugins/catalog']").click();
+    await page.waitForURL(`${fixture.origin}/zh-hant/plugins/catalog`);
     await page.getByRole("link", { name: getPluginLabCopy("zh-hant").propose, exact: true }).click();
     await page.locator("#plugin-title").waitFor();
     assert.equal(await page.locator("#plugin-title").inputValue(), "");

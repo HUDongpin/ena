@@ -97,6 +97,6 @@ export default function PluginProposalForm({ locale }: { locale: Locale }) {
     {(["dataSafetyConfirmed", "privacyConsent"] as const).map((name) => <div key={name}><label className="plugin-form-check" htmlFor={`plugin-${name}`}><input id={`plugin-${name}`} name={name} type="checkbox" checked={draft[name]} disabled={locked} required onChange={(event) => update(name, event.target.checked)} aria-invalid={!!errors[name]} aria-describedby={errors[name] ? `plugin-${name}-error` : undefined} />{name === "dataSafetyConfirmed" ? copy.dataSafetyConfirmation : copy.privacyConsent}</label>{errors[name] ? <p className="plugin-field-error" id={`plugin-${name}-error`}>{errors[name]}</p> : null}</div>)}
     {pending ? <aside className="plugin-pending-write" role="status"><p>{copy.pendingSubmission}</p><a href={`/${locale}/plugins/status`} target="_blank" rel="noopener noreferrer">{copy.myProposals}</a></aside> : null}
     {error ? <p className="plugin-form-error" role="alert">{error}</p> : null}
-    <div className="button-row"><button className="button button-primary" disabled={busy} type="submit">{busy ? copy.submitting : pending ? copy.retrySubmission : copy.submit}</button><a href={`/${locale}/plugins`}>{copy.backCatalog}</a></div>
+    <div className="button-row"><button className="button button-primary" disabled={busy} type="submit">{busy ? copy.submitting : pending ? copy.retrySubmission : copy.submit}</button><a href={`/${locale}/plugins/catalog`}>{copy.backCatalog}</a></div>
   </form>;
 }

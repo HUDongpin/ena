@@ -7,7 +7,7 @@ import { openEnaLocalizedLocales } from "@/lib/open-ena-i18n";
 import { OPEN_ENA_PLUGIN_CATALOG } from "@/lib/open-ena/plugins/catalog";
 import { siteConfig } from "@/lib/site";
 
-const routes = ["", "/mission", "/open-ena", "/plugins", "/news", "/academy", "/about"] as const;
+const routes = ["", "/mission", "/open-ena", "/plugins/catalog", "/news", "/academy", "/about"] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const indexRoutes: MetadataRoute.Sitemap = routes.flatMap((route) => {

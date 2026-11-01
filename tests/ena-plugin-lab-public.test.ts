@@ -48,6 +48,7 @@ test("reviewed Chinese Plugin Lab surfaces localize workflow and scientific-stat
 test("public Plugin Lab routes exist while private workflow routes opt out of indexing and analytics", () => {
   for (const path of [
     ["app", "[locale]", "plugins", "page.tsx"],
+    ["app", "[locale]", "plugins", "catalog", "page.tsx"],
     ["app", "[locale]", "plugins", "[slug]", "page.tsx"],
     ["app", "[locale]", "plugins", "propose", "page.tsx"],
     ["app", "[locale]", "plugins", "status", "page.tsx"],
@@ -55,7 +56,9 @@ test("public Plugin Lab routes exist while private workflow routes opt out of in
   ]) assert.equal(existsSync(join(projectRoot, ...path)), true, path.join("/"));
   assert.equal(existsSync(join(projectRoot, "app", "[locale]", "plugins", "status", "consent", "route.ts")), true);
 
-  assert.equal(isOpenEnaAnalyticsDisabledPath("/en/plugins"), false);
+  assert.equal(isOpenEnaAnalyticsDisabledPath("/en/plugins"), true);
+  assert.equal(isOpenEnaAnalyticsDisabledPath("/zh-hans/plugins/"), true);
+  assert.equal(isOpenEnaAnalyticsDisabledPath("/en/plugins/catalog"), false);
   assert.equal(isOpenEnaAnalyticsDisabledPath("/en/plugins/3d-ena"), false);
   assert.equal(isOpenEnaAnalyticsDisabledPath("/en/plugins/propose"), true);
   assert.equal(isOpenEnaAnalyticsDisabledPath("/zh-hant/plugins/status"), true);
@@ -75,12 +78,12 @@ test("researcher publication consent stays inside the status cookie path", () =>
 });
 
 test("database-backed public proposal summaries are never baked into the static catalog", () => {
-  const index = readFileSync(join(projectRoot, "app", "[locale]", "plugins", "page.tsx"), "utf8");
+  const index = readFileSync(join(projectRoot, "app", "[locale]", "plugins", "catalog", "page.tsx"), "utf8");
   assert.match(index, /export const dynamic = "force-dynamic"/u);
 });
 
 test("catalog and detail pages expose independent-extension and analysis-change boundaries", () => {
-  const index = readFileSync(join(projectRoot, "app", "[locale]", "plugins", "page.tsx"), "utf8");
+  const index = readFileSync(join(projectRoot, "app", "[locale]", "plugins", "catalog", "page.tsx"), "utf8");
   const detail = readFileSync(join(projectRoot, "app", "[locale]", "plugins", "[slug]", "page.tsx"), "utf8");
   assert.match(index, /OPEN_ENA_PLUGIN_CATALOG/u);
   assert.match(getPluginLabCopy("en").independentBoundary, /not official webENA|not an official webENA/iu);
