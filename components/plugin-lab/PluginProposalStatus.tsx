@@ -162,6 +162,6 @@ export default function PluginProposalStatus({ locale }: { locale: Locale }) {
         <section className="plugin-status-timeline" aria-labelledby="plugin-timeline-title"><h3 id="plugin-timeline-title">{copy.timeline}</h3><ol>{detail.events.map((event, index) => <li key={`${event.recordedAt}-${index}`}><strong>{pluginProposalMessageLabel(event.messageCode, locale)}</strong><span>{pluginProposalStateLabel(event.state, locale)}</span><time dateTime={event.recordedAt}>{pluginWorkflowDate(event.recordedAt, locale)}</time></li>)}</ol></section>
       </article> : null}
     </>}
-    <p className="plugin-back-link"><a href={`/${locale}/plugins`}>{copy.backCatalog}</a></p>
+    <p className="plugin-back-link"><a href={`/${locale}/plugins/catalog`}>{copy.backCatalog}</a></p>
   </div>;
 }

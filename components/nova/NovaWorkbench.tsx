@@ -1,0 +1,113 @@
+"use client";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { localeMeta, locales, type Locale } from "@/lib/i18n";
+import PluginEmailVerification from "@/components/plugin-lab/PluginEmailVerification";
+import { NOVA_EFFORTS, novaRunBusy, appendNovaContext, novaDraftSelection } from "./client";
+import { getNovaCopy } from "./copy";
+import { Dialog, DonationDialog } from "./Dialog";
+import { Icon, NovaStar } from "./Icon";
+import Artifacts from "./Artifacts";
+import { useNova } from "./useNova";
+import "./nova.css";
+
+export default function NovaWorkbench({ locale, useWebFonts = false }: { locale: Locale; useWebFonts?: boolean }) {
+  const nova = useNova(locale); const copy = getNovaCopy(locale);
+  const [donate, setDonate] = useState(false);
+  const [account, setAccount] = useState(false);
+  const [expert, setExpert] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [expertSnapshot, setExpertSnapshot] = useState<{ sessionId: string; runId: string; artifactId: string | null; version: number | null } | null>(null);
+  const [expertError, setExpertError] = useState("");
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextText, setContextText] = useState("");
+  const [contextError, setContextError] = useState("");
+  const [sidebar, setSidebar] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [mobile, setMobile] = useState(false);
+  const [library, setLibrary] = useState(false);
+  const [artifactId, setArtifactId] = useState<string | null>(null);
+  const modelMenu = useRef<HTMLDetailsElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const conversation = useRef<HTMLDivElement>(null);
+  const previousResult = useRef<{ sessionId?: string; runId?: string; artifactId?: string | null }>({});
+  const run = nova.session?.runs[nova.session.runs.length - 1];
+  const working = novaRunBusy(run?.status);
+  const active = !!nova.selectedId && !library;
+  const { artifact, isWorking: viewingWorkingDraft } = novaDraftSelection(nova.session, artifactId);
+  const selectedModel = nova.models.find((item) => item.key === nova.modelKey);
+  const locked = nova.busy || !!nova.pending?.ambiguous;
+  useEffect(() => {
+    const prior = previousResult.current;
+    const current = { sessionId: nova.session?.id, runId: run?.id, artifactId: nova.session?.activeArtifactId };
+    previousResult.current = current;
+    if (current.sessionId !== prior.sessionId || current.runId !== prior.runId) setArtifactId(null);
+    else if (current.artifactId && current.artifactId !== prior.artifactId) setArtifactId(current.artifactId);
+  }, [nova.session?.id, run?.id, nova.session?.activeArtifactId]);
+  useEffect(() => { setArtifactId(null); setPreviewOpen(false); setExpert(false); setExpertSnapshot(null); setExpertError(""); setQuestion(""); }, [nova.selectedId]);
+  useEffect(() => { setAccount(false); setExpert(false); setExpertSnapshot(null); setExpertError(""); setQuestion(""); setContextOpen(false); setContextText(""); setContextError(""); }, [nova.identity?.email]);
+  useEffect(() => { conversation.current?.scrollTo({ top: conversation.current.scrollHeight, behavior: "instant" }); }, [nova.session?.messages.length, run?.status]);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 700px)"); const resize = () => { setMobile(media.matches); if (!media.matches) setSidebar(false); }; resize();
+    media.addEventListener("change", resize); return () => media.removeEventListener("change", resize);
+  }, []);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 980px)"); const resize = () => { if (!media.matches) setPreviewOpen(false); };
+    media.addEventListener("change", resize); return () => media.removeEventListener("change", resize);
+  }, []);
+  useEffect(() => {
+    if (!sidebar && !previewOpen) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const drawer = document.querySelector<HTMLElement>(sidebar ? ".nova-sidebar" : ".nova-preview-column");
+    const focusable = () => Array.from(drawer?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],select,input,textarea,[tabindex="0"]') ?? []).filter((item) => item.getClientRects().length && getComputedStyle(item).display !== "none");
+    focusable()[0]?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector(".nova-dialog[open]")) return;
+      if (event.key === "Escape") { setSidebar(false); setPreviewOpen(false); }
+      if (event.key === "Tab") {
+        const items = focusable(); const first = items[0]; const last = items.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    window.addEventListener("keydown", onKey); return () => { window.removeEventListener("keydown", onKey); if (previous?.isConnected && !document.querySelector(".nova-dialog[open]")) previous.focus(); };
+  }, [sidebar, previewOpen]);
+  function select(id: string | null) { nova.select(id); setLibrary(false); setSidebar(false); }
+  function openExpert(review = false) {
+    const current = nova.session?.artifacts.find((item) => item.id === nova.session?.activeArtifactId);
+    setExpertSnapshot(nova.session && run ? { sessionId: nova.session.id, runId: run.id, artifactId: nova.session.activeArtifactId, version: current?.version ?? null } : null);
+    if (review && !question.trim()) setQuestion(copy.reviewPrompt);
+    setExpertError(""); setExpert(true); setSidebar(false);
+  }
+  function suggestion(text: string) { nova.setDraft(text); composer.current?.focus(); }
+  const nav = <>
+    <div className="nova-brand"><NovaStar size={31}/><strong>Nova Code</strong><button className="nova-icon-button nova-sidebar-close" aria-label={copy.close} onClick={() => setSidebar(false)}><Icon name="close"/></button></div>
+    <nav aria-label="Nova Code"><button className="nova-nav-item nova-new-session" disabled={locked} onClick={() => select(null)}><Icon name="plus"/>{copy.newSession}</button><button className={`nova-nav-item ${library ? "is-active" : ""}`} disabled={locked} onClick={() => { setLibrary(true); setSidebar(false); }}><Icon name="box"/>{copy.myPlugins}</button><Link className="nova-nav-item" href={`/${locale}/plugins/catalog`}><Icon name="book"/>{copy.catalog}</Link></nav>
+    <div className="nova-recent"><p>{copy.recent}</p>{nova.sessions.length ? <ul>{nova.sessions.slice(0, 12).map((session) => <li key={session.id}><button disabled={locked} className={`nova-nav-item ${nova.selectedId === session.id && !library ? "is-active" : ""}`} onClick={() => select(session.id)} title={session.title}><Icon name="file" size={18}/><span>{session.title}</span></button></li>)}</ul> : <p className="nova-empty-recent">{copy.emptyRecent}</p>}</div>
+    <div className="nova-sidebar-bottom"><p className="nova-support-label">{copy.expertSupport}</p><button className="nova-nav-item nova-expert-person" onClick={() => openExpert()}><span className="nova-avatar nova-avatar-expert">PH</span>Dr. Hu</button><button className="nova-nav-item nova-donate-button" onClick={() => { setDonate(true); setSidebar(false); }}><Icon name="heart"/>{copy.donate}</button><button className="nova-account-button" onClick={() => { nova.identity ? setAccount(true) : nova.setAuthOpen(true); setSidebar(false); }}><span className="nova-avatar">{nova.identity?.email.charAt(0).toUpperCase() || "R"}</span><span>{nova.identity ? copy.researcher : copy.signIn}</span><Icon name="settings"/></button></div>
+  </>;
+  const composerView = <form className={`nova-composer ${active ? "nova-composer-compact" : ""}`} onSubmit={(event) => { event.preventDefault(); void nova.send(); }}>
+    <label className="nova-sr-only" htmlFor="nova-prompt">{active ? copy.followup : copy.placeholder}</label><textarea ref={composer} id="nova-prompt" value={nova.draft} onChange={(event) => nova.setDraft(event.target.value)} placeholder={active ? copy.followup : copy.placeholder} maxLength={12000} rows={active ? 2 : 3} readOnly={!!nova.pending?.ambiguous} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!locked && !working && nova.draft.trim() && selectedModel?.available && nova.enabled) void nova.send(); } }}/>
+    <div className="nova-composer-tools"><div className="nova-context-tools"><button type="button" className="nova-add-context" aria-label={copy.contextTitle} disabled={locked} onClick={() => { setContextError(""); setContextOpen(true); }}><Icon name="plus" size={21}/></button><span className="nova-auto-draft">{copy.autoDraft}</span></div><div className="nova-model-tools"><details ref={modelMenu} className="nova-model-picker" onKeyDown={(event) => { if (event.key === "Escape" && modelMenu.current) { modelMenu.current.open = false; modelMenu.current.querySelector("summary")?.focus(); } }}><summary aria-label={copy.chooseModel} title={copy.selectionHint}>{selectedModel?.label ?? nova.modelKey}<Icon name="chevron" size={16}/></summary><div className="nova-model-popover"><strong>{copy.chooseModel}</strong>{(["qwen", "deepseek"] as const).map((provider) => <fieldset key={provider}><legend>{provider === "qwen" ? "Qwen" : "DeepSeek"}</legend>{nova.models.filter((model) => model.provider === provider).map((model) => <label key={model.key} className={nova.modelKey === model.key ? "is-selected" : ""}><input type="radio" name="nova-model" value={model.key} checked={nova.modelKey === model.key} onChange={() => { nova.preference(model.key, nova.effort); if (modelMenu.current) { modelMenu.current.open = false; modelMenu.current.querySelector("summary")?.focus(); } }}/><span>{model.label}{!model.available ? <small>{copy.unavailableModel}</small> : null}</span>{nova.modelKey === model.key ? <Icon name="check" size={17}/> : null}</label>)}</fieldset>)}</div></details><label className="nova-effort"><span className="nova-sr-only">{copy.effort}</span><select title={`${copy.hint} ${copy.selectionHint}`} value={nova.effort} onChange={(event) => nova.preference(nova.modelKey, event.target.value as typeof nova.effort)} aria-label={copy.effort}>{NOVA_EFFORTS.map((effort) => <option key={effort} value={effort}>{effort}</option>)}</select></label><button type="submit" className="nova-send" aria-label={copy.send} disabled={locked || working || !nova.draft.trim() || !selectedModel?.available || !nova.enabled}><Icon name="arrow" size={23}/></button></div></div>
+  </form>;
+  return <div className={`nova-workbench ${useWebFonts ? "nova-web-fonts" : ""} ${active ? "nova-workbench-active" : ""}`} lang={copy.contentFallback ? "en" : undefined} dir="ltr">
+    <header className="nova-header"><div className="nova-header-brand"><button className="nova-icon-button nova-menu-toggle" aria-label={copy.menu} aria-expanded={sidebar} onClick={() => setSidebar(!sidebar)}><Icon name="menu"/></button><Link href={`/${locale}`} aria-label="Open ENA"><img src="/unified-home/logo-open-ena.svg" alt="Open ENA" width="220" height="55"/></Link></div><div className="nova-mode" aria-current="page"><Icon name="code"/>Code</div><div className="nova-header-links"><Link href={`/${locale}/plugins/catalog`}>Plugin Lab</Link><details className="nova-language"><summary aria-label={copy.language}><Icon name="globe" size={20}/><span>{localeMeta[locale].shortLabel}</span><Icon name="chevron" size={13}/></summary><div>{locales.map((item) => <Link key={item} href={`/${item}/plugins`} hrefLang={localeMeta[item].htmlLang} aria-current={item === locale ? "page" : undefined}>{localeMeta[item].label}</Link>)}</div></details></div></header>
+    <div className="nova-body"><aside className={`nova-sidebar ${sidebar ? "nova-sidebar-open" : ""}`} aria-label="Nova Code" inert={mobile && !sidebar} role={sidebar && mobile ? "dialog" : undefined} aria-modal={sidebar && mobile ? true : undefined}>{nav}</aside>{sidebar ? <button className="nova-drawer-backdrop" aria-label={copy.close} onClick={() => setSidebar(false)}/> : null}
+    <main id="main-content" className="nova-main"><header className="nova-workspace-heading"><div>{active ? <><button className="nova-text-button nova-breadcrumb" onClick={() => setLibrary(true)} disabled={locked}>{copy.myPlugins}</button><span className="nova-breadcrumb-slash">/</span><h1>{nova.session?.title || copy.loading}</h1>{viewingWorkingDraft ? <span className="nova-version-badge nova-working-badge">{copy.workingDraft}</span> : artifact ? <span className="nova-version-badge">{copy.draft} v{artifact.version}</span> : null}</> : <h1>{library ? copy.myPlugins : copy.newPlugin}</h1>}</div>{active ? <div className="nova-heading-actions"><button className="nova-button nova-mobile-preview" onClick={() => setPreviewOpen(true)}>{copy.showPreview}</button><button className="nova-button nova-export-draft" disabled={!artifact} onClick={() => artifact && void nova.download(artifact.id)}><Icon name="download" size={16}/>{copy.exportDraft}</button></div> : null}</header>
+    {copy.contentFallback ? <p className="nova-language-note">{copy.fallbackNotice}</p> : null}
+    {nova.error ? <div className="nova-notice" role="alert"><span>{nova.error}</span>{nova.pending ? <button className="nova-text-button" disabled={nova.busy} onClick={() => void nova.retryPending()}>{copy.retryRequest}</button> : null}</div> : null}
+    {library ? <section className="nova-library">{nova.sessions.length ? <div className="nova-session-grid">{nova.sessions.map((session) => <button className="nova-session-card" key={session.id} disabled={locked} onClick={() => select(session.id)}><Icon name="box" size={25}/><strong>{session.title}</strong><span>{session.status ? copy.statuses[session.status] : copy.draft}</span><time dateTime={session.updatedAt}>{new Date(session.updatedAt).toLocaleDateString(locale)}</time></button>)}</div> : <div className="nova-library-empty"><NovaStar size={46}/><h2>{copy.noSessions}</h2><p>{copy.noSessionsHint}</p><button className="nova-button nova-primary" onClick={() => { setLibrary(false); if (!nova.identity) nova.setAuthOpen(true); }}>{nova.identity ? copy.newSession : copy.signIn}</button></div>}</section> : !active ? <section className="nova-start"><div className="nova-welcome"><NovaStar size={46}/><h2>{copy.greeting}</h2><p>{copy.intro}</p></div><div className="nova-suggestions"><button disabled={locked} onClick={() => suggestion(copy.promptChart)}><Icon name="chart"/>{copy.suggestionChart}</button><button disabled={locked} onClick={() => suggestion(copy.promptExport)}><Icon name="file"/>{copy.suggestionExport}</button><button disabled={locked} onClick={() => suggestion(copy.promptSummary)}><Icon name="box"/>{copy.suggestionSummary}</button></div>{composerView}<p className="nova-composer-hint">{copy.hint}<br/>{copy.privacy}</p>{nova.enabled === false ? <p className="nova-availability" role="status">{copy.unavailable}</p> : nova.enabled && !selectedModel?.available ? <p className="nova-availability" role="status">{copy.noModels}</p> : null}</section> : <div className="nova-active-columns"><section className="nova-conversation" aria-label="Nova"><div className="nova-messages" ref={conversation} aria-busy={nova.loading}>
+      {nova.loading && !nova.session ? <p className="nova-muted" role="status">{copy.loading}</p> : null}
+      {nova.session?.messages.map((message) => <article className={`nova-message nova-message-${message.role}`} key={message.id}>{message.role === "assistant" ? <NovaStar size={34}/> : message.role === "expert" ? <span className="nova-avatar nova-avatar-expert">PH</span> : null}<div>{message.role !== "user" ? <strong>{message.role === "assistant" ? "Nova" : message.role === "expert" ? "Dr. Hu" : "Open ENA"}</strong> : null}<p>{message.content}</p></div></article>)}
+      {run ? <div className={`nova-run-status nova-run-${run.status}`} role="status"><span className={working ? "nova-spinner" : "nova-status-dot"}/><span>{copy.statuses[run.status]}</span><div>{working ? <button className="nova-text-button" disabled={locked} onClick={() => void nova.mutate(`runs/${run.id}`, { action: "cancel" })}>{copy.cancel}</button> : run.status === "failed" || run.status === "cancelled" ? <button className="nova-text-button" disabled={locked} onClick={() => void nova.mutate(`runs/${run.id}`, { action: "retry" })}>{copy.retry}</button> : run.status === "waiting-user" ? <button className="nova-text-button" disabled={locked} onClick={() => void nova.mutate(`runs/${run.id}`, { action: "resume" })}>{copy.resume}</button> : null}</div></div> : null}
+      {nova.events.length ? <details className="nova-activity"><summary>{copy.activity}</summary><ol>{nova.events.map((event) => <li key={event.cursor}><time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</time><span>{event.detail}</span></li>)}</ol></details> : null}
+      {nova.session?.expertRequests.map((request) => <article className={`nova-expert-card nova-expert-${request.notificationStatus}`} key={request.id}><span className="nova-avatar nova-avatar-expert">PH</span><div><h3>{request.status === "answered" ? copy.expertAnswered : copy.expertPending}</h3><p>{request.status === "superseded" ? copy.expertSuperseded : request.status === "answered" ? request.response : request.notificationStatus === "sent" ? copy.expertSent : request.notificationStatus === "failed" ? copy.expertFailed : copy.expertPendingBody}</p><p className="nova-expert-question">{request.question}</p><footer>{copy.reviewBoundary}</footer></div></article>)}
+    </div><div className="nova-conversation-bottom">{composerView}<p className="nova-small-boundary">{copy.publishedBoundary}</p></div></section><div className={`nova-preview-column ${previewOpen ? "nova-preview-open" : ""}`} role={previewOpen ? "dialog" : undefined} aria-modal={previewOpen ? true : undefined} aria-label={previewOpen ? copy.previewTitle : undefined}><Artifacts session={nova.session} copy={copy} selectedArtifactId={artifactId} onSelect={setArtifactId} onRestore={(id) => void nova.mutate(`artifacts/${id}/restore`, {}).then((ok) => { if (ok) setArtifactId(null); })} onDownload={(id) => void nova.download(id)} disabled={locked || working} canRequestReview={run?.status === "ready" && !locked && !nova.loading && artifact?.id === nova.session?.activeArtifactId} onRequestReview={() => openExpert(true)} onClose={() => setPreviewOpen(false)}/></div></div>}
+    </main></div>
+    {contextOpen ? <Dialog title={copy.contextTitle} onClose={() => setContextOpen(false)} closeLabel={copy.close}><h2>{copy.contextTitle}</h2><p>{copy.contextHint}</p><form onSubmit={(event) => { event.preventDefault(); const combined = appendNovaContext(nova.draft, contextText, copy.contextLabel); if (combined === null) { setContextError(copy.contextTooLong); return; } nova.setDraft(combined); setContextText(""); setContextOpen(false); }}><label className="nova-sr-only" htmlFor="nova-context">{copy.contextLabel}</label><textarea id="nova-context" placeholder={copy.contextPlaceholder} value={contextText} onChange={(event) => { setContextText(event.target.value); setContextError(""); }} maxLength={12000} rows={6} required aria-describedby="nova-context-boundary" aria-invalid={!!contextError}/><p className="nova-context-boundary" id="nova-context-boundary">{copy.contextBoundary}</p>{contextError ? <p className="nova-context-error" role="alert">{contextError}</p> : null}<div className="nova-dialog-actions"><button className="nova-button" type="button" onClick={() => setContextOpen(false)}>{copy.close}</button><button className="nova-button nova-primary" disabled={locked || !contextText.trim()}>{copy.contextAdd}</button></div></form></Dialog> : null}
+    {donate ? <DonationDialog onClose={() => setDonate(false)}/> : null}
+    {nova.authOpen ? <Dialog title={copy.verification} onClose={() => nova.setAuthOpen(false)} closeLabel={copy.close} className="nova-auth-dialog"><NovaStar size={34}/><h2>{copy.verification}</h2><p>{copy.verificationHint}</p><PluginEmailVerification locale={locale} email={nova.email} onEmailChange={nova.setEmail} session={nova.identity} onSessionChange={nova.changeIdentity} checkSession={false}/></Dialog> : null}
+    {account ? <Dialog title={copy.account} onClose={() => setAccount(false)} closeLabel={copy.close}><h2>{copy.account}</h2><p className="nova-account-email">{nova.identity?.email}</p><p>{copy.preferences}</p><div className="nova-dialog-actions"><button className="nova-button" onClick={() => setAccount(false)}>{copy.close}</button><button className="nova-button" disabled={nova.busy} onClick={() => void nova.signOut().then(() => setAccount(false))}><Icon name="logout"/>{copy.changeAccount}</button></div></Dialog> : null}
+    {expert ? <Dialog title={copy.expertTitle} onClose={() => setExpert(false)} closeLabel={copy.close}><span className="nova-avatar nova-avatar-expert">PH</span><h2>{copy.expertTitle}</h2><p>{copy.expertIntro}</p>{expertSnapshot?.version ? <p className="nova-review-version">{copy.reviewVersion}: <strong>v{expertSnapshot.version}</strong></p> : null}<form onSubmit={(event) => { event.preventDefault(); if (!nova.identity) { setExpert(false); nova.setAuthOpen(true); return; } if (!expertSnapshot || expertSnapshot.sessionId !== nova.session?.id) { setExpertError(copy.reviewChanged); return; } void nova.mutate("expert", { question: question.trim(), runId: expertSnapshot.runId, artifactId: expertSnapshot.artifactId }).then((ok) => { if (ok) { setExpert(false); setQuestion(""); setExpertSnapshot(null); } else setExpertError(nova.lastWriteError() === "stale-expert-request" ? copy.reviewChanged : copy.reviewUnconfirmed); }); }}><label className="nova-sr-only" htmlFor="nova-expert-question">{copy.expertPlaceholder}</label><textarea id="nova-expert-question" placeholder={copy.expertPlaceholder} value={question} onChange={(event) => setQuestion(event.target.value)} rows={5} maxLength={4000} required/>{expertError ? <p className="nova-context-error" role="alert">{expertError}</p> : null}{!nova.session ? <p className="nova-muted">{copy.noSessionsHint}</p> : null}<div className="nova-dialog-actions"><button type="button" className="nova-button" onClick={() => setExpert(false)}>{copy.close}</button><button className="nova-button nova-primary" disabled={locked || working || !question.trim() || !expertSnapshot || !!expertError}>{copy.requestExpert}</button></div></form></Dialog> : null}
+  </div>;
+}

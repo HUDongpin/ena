@@ -49,6 +49,8 @@ jobs:
         run: npm run verify
       - name: Verify Plugin Lab transactions with an isolated PostgreSQL cluster
         run: node --import tsx --test tests/ena-plugin-workflow-store.integration.ts
+      - name: Verify Nova ownership and synthetic generation flow with isolated PostgreSQL clusters
+        run: node --import tsx --test tests/nova-store.integration.ts tests/nova-flow.integration.ts
       - name: Verify registered accounts and private projects through the built application
         run: |
           set -euo pipefail
@@ -335,6 +337,37 @@ jobs:
 
       - name: Build Plugin Lab browser acceptance target
         run: npm run build:app
+      - name: Verify Nova workbench with synthetic browser fixtures
+        timeout-minutes: 10
+        env:
+          NOVA_UI_BASE_URL: http://127.0.0.1:3120
+          NOVA_UI_OUTPUT: output/nova-code/ci-browser
+        run: |
+          set -euo pipefail
+          mkdir -p "$NOVA_UI_OUTPUT"
+          env -i PATH="$PATH" HOME="$HOME" NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 ENA_NOVA_ENABLED=false ENA_NOVA_FONT_DIRECTORY= \
+            node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3120 > "$NOVA_UI_OUTPUT/server.log" 2>&1 &
+          nova_server_pid=$!
+          trap 'kill -TERM "$nova_server_pid" 2>/dev/null || true; wait "$nova_server_pid" || true' EXIT
+          nova_ready=false
+          for attempt in $(seq 1 60); do
+            kill -0 "$nova_server_pid"
+            if curl --fail --silent --max-time 2 "$NOVA_UI_BASE_URL/en/plugins" > /dev/null; then
+              nova_ready=true
+              break
+            fi
+            sleep 1
+          done
+          test "$nova_ready" = true
+          npm run test:browser:nova | tee "$NOVA_UI_OUTPUT/browser-report.log"
+      - name: Upload Nova synthetic browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nova-synthetic-browser-${{ github.sha }}
+          path: output/nova-code/ci-browser
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify proposal submission, private review and localized Plugin Lab screens
         run: npm run test:browser:plugin-workflow
       - name: Verify proposal language retention and Data View image exports
