@@ -28,3 +28,43 @@ test('provider rejects truncated and oversized responses',async()=>{
   await assert.rejects(callNovaProvider({model,effort:'low',messages:[],signal:new AbortController().signal,env,fetch:async()=>sse([{choices:[{delta:{content:'partial'},finish_reason:'length'}]}])}), /truncated/);
   await assert.rejects(callNovaProvider({model,effort:'low',messages:[],signal:new AbortController().signal,env,fetch:async()=>new Response('x'.repeat(2_100_000))}), /limit/);
 });
+
+const qwenModel: NovaModel={key:'qwen-flash',provider:'qwen',apiModel:'qwen3.8-flash',version:'synthetic-test',label:'Qwen',available:true};
+const qwenEnv={ENA_NOVA_ENABLED:'true',ENA_NOVA_QWEN_API_KEY:'synthetic-qwen-test-key',ENA_NOVA_QWEN_BASE_URL:'https://dashscope.aliyuncs.com/compatible-mode/v1'};
+
+// Synthetic values reproduce the observed Qwen SSE shapes, never upstream content.
+for(const placeholder of [undefined,null,'']) {
+  test(`Qwen tool call keeps its first ID through ${JSON.stringify(placeholder) ?? 'omitted'} continuation IDs`,async()=>{
+    const result=await callNovaProvider({model:qwenModel,effort:'low',messages:[],signal:new AbortController().signal,env:qwenEnv,fetch:async()=>sse([
+      {choices:[{delta:{content:'',reasoning_content:'',tool_calls:[{index:0,id:'synthetic-tool-id',type:'function',function:{name:'ask_user',arguments:''}}]},finish_reason:null}]},
+      {choices:[{delta:{content:'',tool_calls:[{index:0,id:placeholder,type:'function',function:{arguments:'{"question":"Synthetic'}}]},finish_reason:null}]},
+      {choices:[{delta:{tool_calls:[{index:0,id:placeholder,type:'function',function:{arguments:' fixture?"}'}}]},finish_reason:'tool_calls'}]},
+    ])});
+    assert.deepEqual(result.tool_calls,[{id:'synthetic-tool-id',type:'function',function:{name:'ask_user',arguments:'{"question":"Synthetic fixture?"}'}}]);
+  });
+}
+
+for(const repeatedId of ['synthetic-tool-id','different-synthetic-id']) {
+  test(`provider rejects a second nonempty tool ID even when ${repeatedId==='synthetic-tool-id'?'unchanged':'different'}`,async()=>{
+    await assert.rejects(callNovaProvider({model:qwenModel,effort:'low',messages:[],signal:new AbortController().signal,env:qwenEnv,fetch:async()=>sse([
+      {choices:[{delta:{tool_calls:[{index:0,id:'synthetic-tool-id',type:'function',function:{name:'ask_user',arguments:'{"question":"'}}]}}]},
+      {choices:[{delta:{tool_calls:[{index:0,id:repeatedId,function:{arguments:'Synthetic?"}'}}]},finish_reason:'tool_calls'}]},
+    ])}),error=>error instanceof NovaProviderError && error.code==='provider-protocol');
+  });
+}
+
+test('provider rejects non-string tool IDs, including false and zero',async()=>{
+  for(const id of [false,0,{},[]]) {
+    await assert.rejects(callNovaProvider({model:qwenModel,effort:'low',messages:[],signal:new AbortController().signal,env:qwenEnv,fetch:async()=>sse([
+      {choices:[{delta:{tool_calls:[{index:0,id,type:'function',function:{name:'ask_user',arguments:'{"question":"Synthetic?"}'}}]},finish_reason:'tool_calls'}]},
+    ])}),error=>error instanceof NovaProviderError && error.code==='provider-protocol');
+  }
+});
+
+for(const missingId of [undefined,null,'']) {
+  test(`provider rejects a completed tool call with only ${JSON.stringify(missingId) ?? 'omitted'} IDs`,async()=>{
+    await assert.rejects(callNovaProvider({model:qwenModel,effort:'low',messages:[],signal:new AbortController().signal,env:qwenEnv,fetch:async()=>sse([
+      {choices:[{delta:{tool_calls:[{index:0,id:missingId,type:'function',function:{name:'ask_user',arguments:'{"question":"Synthetic?"}'}}]},finish_reason:'tool_calls'}]},
+    ])}),error=>error instanceof NovaProviderError && error.code==='provider-protocol');
+  });
+}

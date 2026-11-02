@@ -21,7 +21,7 @@ export const novaFixtureHash=()=>createHash('sha256').update(JSON.stringify(NOVA
 export function buildNovaSandboxCommand(directory:string,name:string,env:Environment=process.env):string[] {
   if(!novaSandboxConfigured(env))throw new NovaSandboxError('sandbox-unconfigured','Nova requires an immutable sandbox image and a secure runtime');
   if(!/^nova-[a-z0-9-]+$/.test(name)||!directory.startsWith('/')||directory.includes(','))throw new NovaSandboxError('sandbox-config','Invalid sandbox workspace');
-  return ['run','--rm',`--name=${name}`,'--pull=never',`--runtime=${env.ENA_NOVA_SANDBOX_RUNTIME??'runsc'}`,'--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--user=65532:65532','--pids-limit=32','--cpus=1','--memory=256m','--memory-swap=256m','--ulimit=nofile=64:64','--ipc=none','--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777','--mount',`type=bind,source=${directory},target=/job,readonly`,env.ENA_NOVA_SANDBOX_IMAGE!,'/usr/bin/timeout','--signal=KILL','25','node','/opt/nova/harness.mjs'];
+  return ['run','--rm',`--name=${name}`,'--pull=never',`--runtime=${env.ENA_NOVA_SANDBOX_RUNTIME??'runsc'}`,'--network=none','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges','--user=65532:65532','--pids-limit=64','--cpus=1','--memory=256m','--memory-swap=256m','--ulimit=nofile=64:64','--ipc=none','--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777','--mount',`type=bind,source=${directory},target=/job,readonly`,env.ENA_NOVA_SANDBOX_IMAGE!,'/usr/bin/timeout','--signal=KILL','25','node','/opt/nova/harness.mjs'];
 }
 function executeDocker(args:string[],signal:AbortSignal):Promise<{code:number|null;stdout:string;stderr:string}> {
   return new Promise((resolve,reject)=>{
@@ -64,10 +64,16 @@ export async function runNovaSandbox(files:NovaFile[],options:{signal:AbortSigna
   const name=`nova-${randomUUID()}`;
   try {
     await chmod(directory,0o755);
-    for(const file of checkedFiles.filter(file=>file.path!=='fixtures/synthetic.json')){const target=join(directory,file.path);await mkdir(dirname(target),{recursive:true,mode:0o755});await writeFile(target,file.content,{mode:0o444});}
+    for(const file of checkedFiles.filter(file=>file.path!=='fixtures/synthetic.json')){
+      const target=join(directory,file.path),parent=dirname(target);
+      await mkdir(parent,{recursive:true,mode:0o755});await chmod(parent,0o755);
+      await writeFile(target,file.content,{mode:0o444});await chmod(target,0o444);
+    }
     // Always replace any supplied fixture with the trusted synthetic context.
     await mkdir(join(directory,'fixtures'),{recursive:true,mode:0o755});
+    await chmod(join(directory,'fixtures'),0o755);
     await writeFile(join(directory,'fixtures/synthetic.json'),JSON.stringify(NOVA_SYNTHETIC_CONTEXT,null,2),{mode:0o444});
+    await chmod(join(directory,'fixtures/synthetic.json'),0o444);
     if(options.signal.aborted)throw new NovaSandboxError('cancelled','Sandbox cancelled');
     const execution=await (options.execute??executeDocker)(buildNovaSandboxCommand(directory,name,env),options.signal);
     if(options.signal.aborted)throw new NovaSandboxError('cancelled','Sandbox cancelled');
