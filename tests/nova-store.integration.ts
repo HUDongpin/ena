@@ -174,5 +174,49 @@ test("Nova PostgreSQL ownership, replay, leases and expert workflow", async t =>
         assert.equal((await store.createSession(inputs[winningIndex])).id,(results[winningIndex] as PromiseFulfilledResult<{id:string}>).value.id,"replay still succeeds at quota");
       } finally {await db.query("DROP TRIGGER nova_test_quota_latency ON ena_nova_sessions; DROP FUNCTION nova_test_slow_quota_insert()");}
     });
+    await t.test("provider diagnosis and retry state survive reclaim; explicit attempts reset the allowance and deadline", async () => {
+      const s=await store.createSession({...mutation(),locale:"en",now:later(2000)});
+      await store.appendMessage({...mutation(),sessionId:s.id,content:"Reliable presenter",model,effort:"low",now:later(2000)});
+      const first=(await store.claimNextRun(later(2001)))!;
+      const checkpoint={messages:[{role:"user" as const,content:"Private checkpoint message"}],files:[{path:"README.md",content:"Keep this draft"}],stepCount:1,repairCount:0,providerRetryCount:1 as const,providerRetryState:"scheduled" as const,attemptDeadlineAt:+later(2600)};
+      const diagnostic={reason:"invalid-json" as const,stage:"stream" as const,responseBytes:44,eventCount:1,stepCount:1,retryScheduled:true};
+      await store.applyRunUpdate(first.run.id,first.claimToken,{status:"building",checkpoint,files:checkpoint.files,providerFailure:{...diagnostic,payload:"must-never-persist"} as never},later(2002));
+      const read=(await store.readSession(s.id,owner))!;
+      assert.deepEqual(read.runs[0].providerFailure,diagnostic);
+      assert.doesNotMatch(JSON.stringify(read),/must-never-persist|Private checkpoint message/);
+      const events=await store.readEvents(s.id,owner,0);
+      assert.ok(events?.events.some(e=>e.detail==="provider-invalid-json"));
+      assert.ok(events?.events.some(e=>e.detail==="provider-retry-scheduled"));
+      for(const invalid of [{...diagnostic,reason:"private-upstream-payload"},{...diagnostic,retryScheduled:"yes"},{...diagnostic,stepCount:9},{...diagnostic,responseBytes:-1}]) {
+        await assert.rejects(store.applyRunUpdate(first.run.id,first.claimToken,{providerFailure:invalid as never},later(2003)),{code:"invalid-provider-failure"});
+      }
+      const recovered=(await store.claimNextRun(later(2062)))!;
+      assert.deepEqual(recovered.checkpoint,checkpoint);
+      await store.applyRunUpdate(recovered.run.id,recovered.claimToken,{status:"failed"},later(2063));
+      for(const [index,action] of (["resume","retry"] as const).entries()) {
+        const at=2070+index*10;
+        const reset=await store.controlRun({...mutation(),sessionId:s.id,runId:first.run.id,action,now:later(at)});
+        assert.equal(reset.runs[0].providerFailure,undefined);
+        const next=(await store.claimNextRun(later(at+1)))!;
+        assert.equal(next.checkpoint?.providerRetryCount,undefined);assert.equal(next.checkpoint?.providerRetryState,undefined);assert.equal(next.checkpoint?.attemptDeadlineAt,undefined);
+        assert.deepEqual(next.checkpoint?.files,checkpoint.files);
+        await store.applyRunUpdate(next.run.id,next.claimToken,{status:"failed",checkpoint,providerFailure:diagnostic},later(at+2));
+      }
+      await store.controlRun({...mutation(),sessionId:s.id,runId:first.run.id,action:"resume",now:later(2100)});
+      const expertClaim=(await store.claimNextRun(later(2101)))!;
+      await store.applyRunUpdate(expertClaim.run.id,expertClaim.claimToken,{status:"waiting-expert",checkpoint,providerFailure:diagnostic,expert:{runId:first.run.id,artifactId:null,question:"Synthetic scope review",context:"Synthetic"}},later(2102));
+      const request=(await store.readSession(s.id,owner))!.expertRequests[0];
+      const answered=await store.respondExpert({...mutation(),sessionId:s.id,requestId:request.id,runId:first.run.id,artifactId:null,response:"Continue presentation only",actorRef:"C".repeat(43),now:later(2103)});
+      assert.equal(answered.runs[0].providerFailure,undefined);
+      const continuation=(await store.claimNextRun(later(2104)))!;
+      assert.equal(continuation.checkpoint?.providerRetryCount,undefined);assert.equal(continuation.checkpoint?.attemptDeadlineAt,undefined);
+      await store.applyRunUpdate(continuation.run.id,continuation.claimToken,{status:"waiting-user",checkpoint,providerFailure:diagnostic},later(2105));
+      const userAnswer=await store.appendMessage({...mutation(),sessionId:s.id,content:"Use blue",model,effort:"low",now:later(2106)});
+      assert.equal(userAnswer.run.providerFailure,undefined);
+      const userClaim=(await store.claimNextRun(later(2107)))!;
+      assert.equal(userClaim.checkpoint?.providerRetryCount,undefined);assert.equal(userClaim.checkpoint?.providerRetryState,undefined);assert.equal(userClaim.checkpoint?.attemptDeadlineAt,undefined);
+      assert.deepEqual(userClaim.checkpoint?.files,checkpoint.files);
+      await store.applyRunUpdate(userClaim.run.id,userClaim.claimToken,{status:"failed"},later(2108));
+    });
   } finally { await pool?.end(); await cleanupOwnedEphemeralPostgres({rootDirectory, dataDirectory, rootPrefix: prefix, startAttempted}); }
 });

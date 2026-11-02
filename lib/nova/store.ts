@@ -3,6 +3,8 @@ import { Pool, type PoolClient } from "pg";
 import { readPluginLabConfiguration, type PluginLabConfiguration, type PluginLabEnvironment } from "@/lib/plugin-lab/config";
 import { encryptPluginLabText, decryptPluginLabText, type PluginLabCiphertextV1 } from "@/lib/plugin-lab/crypto";
 import { validateNovaFiles } from "./sdk";
+import { novaEffortPolicy } from "./models";
+import { sanitizeNovaProviderDiagnostic } from "./provider-diagnostics";
 import type { NovaSession, NovaSessionSummary, NovaRun, NovaModel, NovaEffort, NovaEvent, NovaClaim, NovaCheckpoint, NovaRunUpdate, NovaExpertRequest, NovaArtifactVersion, NovaFile, NovaCheck } from "./types";
 
 export class NovaStoreError extends Error { constructor(public readonly code: string) { super(code); this.name = "NovaStoreError"; } }
@@ -36,6 +38,10 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{1
 function fail(code: string): never { throw new NovaStoreError(code); }
 function instant(now = new Date()) { if (!Number.isFinite(+now)) fail("invalid-time"); return now; }
 function findRun(session: NovaSession, id: string) { return session.runs.find(run => run.id === id) ?? fail("not-found"); }
+/** An explicit continuation gets a fresh budget; worker reclaim never calls this. */
+function resetCheckpoint(checkpoint: NovaCheckpoint, messages = checkpoint.messages): NovaCheckpoint {
+  return {messages,files:checkpoint.files,stepCount:0,repairCount:0};
+}
 function draftFiles(value: NovaFile[]): NovaFile[] {
   try { return validateNovaFiles(value); } catch { return fail("invalid-draft-files"); }
 }
@@ -143,7 +149,7 @@ export function createNovaStore(pool: Pool, configuration: PluginLabConfiguratio
       let carriedCheckpoint: NovaCheckpoint | null = null;
       if (waitingRun?.status.startsWith("waiting-")) {
         const row = (await client.query("SELECT checkpoint_cipher FROM ena_nova_runs WHERE run_id=$1", [waitingRun.id])).rows[0];
-        if (row?.checkpoint_cipher) carriedCheckpoint = {...open<NovaCheckpoint>(row.checkpoint_cipher, `nova-checkpoint:${waitingRun.id}`), messages: [], stepCount: 0, repairCount: 0};
+        if (row?.checkpoint_cipher) carriedCheckpoint = resetCheckpoint(open<NovaCheckpoint>(row.checkpoint_cipher, `nova-checkpoint:${waitingRun.id}`), []);
       }
       for (const run of session.runs.filter(run => !finished.has(run.status))) { run.status = "cancelled"; run.updatedAt = now.toISOString(); await queueState(client, run, "finished"); }
       for (const request of session.expertRequests) if (request.status === "requested") request.status = "superseded";
@@ -165,11 +171,11 @@ export function createNovaStore(pool: Pool, configuration: PluginLabConfiguratio
       const run = findRun(session, input.runId), now = instant(input.now);
       if (input.action === "cancel") { if (finished.has(run.status)) fail("run-conflict"); run.status = "cancelled"; await queueState(client, run, "finished"); }
       else { if (session.runs.at(-1)?.id !== run.id || !["cancelled", "failed", "waiting-user"].includes(run.status)) fail("run-conflict");
-        run.status = "queued"; delete run.errorCode; await queueState(client, run, "queued", true);
+        run.status = "queued"; delete run.errorCode; delete run.providerFailure; await queueState(client, run, "queued", true);
         run.stepCount=0; run.repairCount=0;
         const row=(await client.query("SELECT checkpoint_cipher FROM ena_nova_runs WHERE run_id=$1",[run.id])).rows[0];
         if(row?.checkpoint_cipher){
-          const checkpoint={...open<NovaCheckpoint>(row.checkpoint_cipher,`nova-checkpoint:${run.id}`),stepCount:0,repairCount:0};
+          const checkpoint=resetCheckpoint(open<NovaCheckpoint>(row.checkpoint_cipher,`nova-checkpoint:${run.id}`));
           if(input.action==="retry") checkpoint.messages=[];
           await client.query("UPDATE ena_nova_runs SET checkpoint_cipher=$2::jsonb WHERE run_id=$1",[run.id,JSON.stringify(seal(checkpoint,`nova-checkpoint:${run.id}`))]);
         }
@@ -245,6 +251,14 @@ export function createNovaStore(pool: Pool, configuration: PluginLabConfiguratio
       if (update.stepCount !== undefined) run.stepCount = update.stepCount;
       if (update.repairCount !== undefined) run.repairCount = update.repairCount;
       if (update.errorCode) run.errorCode = update.errorCode;
+      if (update.providerFailure !== undefined) {
+        const diagnostic=sanitizeNovaProviderDiagnostic(update.providerFailure);
+        if(!diagnostic || typeof update.providerFailure.retryScheduled!=="boolean" || !Number.isSafeInteger(update.providerFailure.stepCount)
+          || update.providerFailure.stepCount<1 || update.providerFailure.stepCount>novaEffortPolicy(run.effort).maxSteps) fail("invalid-provider-failure");
+        run.providerFailure={...diagnostic,stepCount:update.providerFailure.stepCount,retryScheduled:update.providerFailure.retryScheduled};
+        await event(client,session,"run",`provider-${diagnostic.reason}`,now,runId);
+        if(update.providerFailure.retryScheduled)await event(client,session,"run","provider-retry-scheduled",now,runId);
+      }
       run.updatedAt = now.toISOString();
       if (update.checkpoint) await client.query("UPDATE ena_nova_runs SET checkpoint_cipher=$2::jsonb WHERE run_id=$1", [runId, JSON.stringify(seal(update.checkpoint, `nova-checkpoint:${runId}`))]);
       if (update.message) { session.messages.push({id: randomUUID(), role: "assistant", content: update.message, createdAt: now.toISOString(), runId}); await event(client, session, "message", "message-created", now, runId); }
@@ -285,11 +299,11 @@ export function createNovaStore(pool: Pool, configuration: PluginLabConfiguratio
       if (request.status !== "requested" || request.runId !== input.runId || request.artifactId !== input.artifactId || session.activeArtifactId !== input.artifactId || session.runs.at(-1)?.id !== run.id || run.status !== "waiting-expert") fail("stale-expert-request");
       const now = instant(input.now); request.status = "answered"; request.response = input.response; request.respondedAt = now.toISOString();
       session.messages.push({id: randomUUID(), role: "expert", content: input.response, createdAt: now.toISOString(), runId: run.id});
-      run.status = "queued"; run.stepCount=0; run.repairCount=0; run.updatedAt = now.toISOString(); await queueState(client, run, "queued", true);
+      run.status = "queued"; run.stepCount=0; run.repairCount=0; delete run.providerFailure; run.updatedAt = now.toISOString(); await queueState(client, run, "queued", true);
       // Rebuild provider context with the expert reply while retaining unfinished files and bounded work counts.
       const checkpointRow = (await client.query("SELECT checkpoint_cipher FROM ena_nova_runs WHERE run_id=$1", [run.id])).rows[0];
       if (checkpointRow?.checkpoint_cipher) {
-        const checkpoint = {...open<NovaCheckpoint>(checkpointRow.checkpoint_cipher, `nova-checkpoint:${run.id}`), messages: [], stepCount: 0, repairCount: 0};
+        const checkpoint = resetCheckpoint(open<NovaCheckpoint>(checkpointRow.checkpoint_cipher, `nova-checkpoint:${run.id}`), []);
         await client.query("UPDATE ena_nova_runs SET checkpoint_cipher=$2::jsonb WHERE run_id=$1", [run.id, JSON.stringify(seal(checkpoint, `nova-checkpoint:${run.id}`))]);
       }
       await save(client, session, now); await event(client, session, "expert", "expert-answered", now, run.id); await receipt(client, scoped, "expert-response", subject, session.id, run.id); return session;
