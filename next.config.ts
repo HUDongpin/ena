@@ -50,6 +50,17 @@ const nextConfig: NextConfig = {
         },
       ],
     }, {
+      // Nova previews contain only our trusted renderer and validated synthetic data.
+      // srcdoc runs with an opaque origin (allow-scripts, never allow-same-origin).
+      // Keep every other route's frame-src 'none' policy intact.
+      source: "/:locale/plugins",
+      headers: [
+        { key: "Content-Security-Policy", value: contentSecurityPolicy.replace("frame-src 'none'", "frame-src 'self' blob:") },
+        { key: "Cache-Control", value: "private, no-store, max-age=0" },
+        { key: "Referrer-Policy", value: "no-referrer" },
+        { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+      ],
+    }, {
       source: "/open-ena-2d-lapack/worker.js",
       headers: [
         // Scope WebAssembly permission to the isolated 2D display worker.

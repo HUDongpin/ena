@@ -57,7 +57,12 @@
     "test:browser:account-language": "node --import tsx tests/open-ena-account-language-browser.mjs",
     "test:browser:discovery-data-view": "node --import tsx tests/open-ena-discovery-data-view-browser.mjs",
     "plugin-lab:deliver": "node scripts/plugin-lab-notifications.mjs",
-    "plugin-lab:backfill": "node --import tsx scripts/plugin-lab-backfill-owners.ts"
+    "plugin-lab:backfill": "node --import tsx scripts/plugin-lab-backfill-owners.ts",
+    "test:nova": "node --import tsx --test tests/nova-*.test.ts tests/nova-store.integration.ts tests/nova-flow.integration.ts",
+    "test:browser:nova": "node --import tsx tests/nova-ui-browser.mjs",
+    "nova:worker": "node --import tsx scripts/nova-worker.ts",
+    "nova:sandbox:build": "node scripts/nova-sandbox/build.mjs",
+    "nova:check-providers": "node --import tsx scripts/nova-provider-check.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",

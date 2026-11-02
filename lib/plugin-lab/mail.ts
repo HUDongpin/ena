@@ -117,3 +117,22 @@ export async function sendPluginLabNotificationEmail(
     ...(configuration.host === "smtp.resend.com" ? { headers: { "Resend-Idempotency-Key": `plugin-lab-${input.id}` } } : {}),
   }, configuration, sender);
 }
+
+/** Nova messages remain in the authenticated inbox; email contains references only. */
+export async function sendNovaExpertNotificationEmail(
+  input: { id: string; requestId: string; sessionId: string; locale: string },
+  environment: PluginLabEnvironment = process.env,
+  sender?: PluginLabMailSender,
+) {
+  const configuration = readPluginLabMailConfiguration(environment);
+  const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+  if (!configuration || ![input.id, input.requestId, input.sessionId].every(id => idPattern.test(id))) throw new Error("Nova email is unavailable.");
+  const lang = language(input.locale);
+  const intro = {en: "A Nova expert review is awaiting your response.", "zh-hans": "Nova 专家审核正在等待您的回复。", "zh-hant": "Nova 專家審核正在等待您的回覆。"}[lang];
+  const link = new URL(`/${lang}/plugins/operator#nova-expert-inbox`, configuration.origin).toString();
+  await deliver({from: configuration.from, to: configuration.operatorEmail, subject: "Open ENA — Nova expert review",
+    text: `${intro}\n\nNova: ${input.sessionId}\nReview: ${input.requestId}\n${link}`,
+    messageId: `<nova-${input.id}@${configuration.from.split("@")[1]}>`,
+    ...(configuration.host === "smtp.resend.com" ? {headers: {"Resend-Idempotency-Key": `nova-${input.id}`}} : {}),
+  }, configuration, sender);
+}

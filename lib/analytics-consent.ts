@@ -28,5 +28,6 @@ export function sanitizeOpenEnaAnalyticsUrl(eventUrl: string, expectedOrigin: st
 export function isOpenEnaAnalyticsDisabledPath(pathname: string | null) {
   return pathname === null
     || /\/open-ena(?:\/|$)/u.test(pathname)
+    || /\/plugins\/?$/u.test(pathname)
     || /\/plugins\/(?:propose|status|operator)(?:\/|$)/u.test(pathname);
 }
