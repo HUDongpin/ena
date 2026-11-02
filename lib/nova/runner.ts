@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { novaEffortPolicy } from './models';
 import { callNovaProvider, NovaProviderError, type NovaProviderOptions } from './provider';
+import { NOVA_PROVIDER_FAILURE_MESSAGES } from './provider-diagnostics';
 import { hashNovaFiles, runNovaSandbox, NovaSandboxError, type NovaSandboxResult } from './sandbox';
 import { NOVA_SYNTHETIC_CONTEXT, validateNovaFile, validateNovaFiles, validateNovaManifest, validateNovaOutput } from './sdk';
 import type { NovaStore } from './store';
@@ -13,6 +14,11 @@ export interface NovaRunnerOptions {
   signal?:AbortSignal;pollIntervalMs?:number;maxWallMs?:number;
 }
 class LeaseEnded extends Error {}
+function providerFailureMessage(error:NovaProviderError):string {
+  const reason=error.code==='provider-retry-interrupted'?'The automatic model retry was interrupted before its result was saved'
+    :error.diagnostic?NOVA_PROVIDER_FAILURE_MESSAGES[error.diagnostic.reason]:'The model request could not be completed';
+  return `${reason}. Your draft is saved.${error.retryable||error.code==='provider-retry-interrupted'?' Use Retry to try again.':''}`;
+}
 /** Conservative routing aid, not a proof that every methodological intent is recognized.
  * The fixed output schema and invariant checks remain the enforceable analysis boundary. */
 function needsExpertReview(text:string):boolean {
@@ -72,11 +78,17 @@ export async function runNovaClaim(claim:NovaClaim,store:WorkerStore,options:Nov
   const checkpoint:NovaCheckpoint=claim.checkpoint?structuredClone(claim.checkpoint):{messages:[],files:base?.files??[fixture],stepCount:claim.run.stepCount,repairCount:claim.run.repairCount};
   let checked:{hash:string;result:NovaSandboxResult}|undefined;
   let draftFiles:NovaFile[]=[],draftChecks:NovaCheck[]=[];
+  const wallLimit=Math.min(options.maxWallMs??1_800_000,1_800_000);
+  checkpoint.attemptDeadlineAt=Math.min(checkpoint.attemptDeadlineAt??Date.now()+wallLimit,Date.now()+wallLimit);
   let finished=false,polling=false,deadlineExpired=false,lastHeartbeat=Date.now();
-  const deadline=setTimeout(()=>{deadlineExpired=true;controller.abort();},Math.min(options.maxWallMs??1_800_000,1_800_000));
+  const deadline=setTimeout(()=>{deadlineExpired=true;controller.abort();},Math.max(0,checkpoint.attemptDeadlineAt-Date.now()));
   const ensure=async()=>{
+    if(Date.now()>=checkpoint.attemptDeadlineAt!){deadlineExpired=true;controller.abort();}
     if(controller.signal.aborted)throw new LeaseEnded();
     if(!await store.readClaim(claim.run.id,claim.claimToken)){controller.abort();throw new LeaseEnded();}
+    // The lease read is asynchronous: cancellation/deadline may change while it is pending.
+    if(Date.now()>=checkpoint.attemptDeadlineAt!){deadlineExpired=true;controller.abort();}
+    if(controller.signal.aborted)throw new LeaseEnded();
   };
   const update=async(value:NovaRunUpdate)=>{
     if(controller.signal.aborted)throw new LeaseEnded();
@@ -104,8 +116,11 @@ export async function runNovaClaim(claim:NovaClaim,store:WorkerStore,options:Nov
     return result;
   };
   try {
-    await ensure();draftFiles=checkpoint.files=validateNovaFiles(checkpoint.files);
+    // Restore evidence before any early recovery/timeout exit can persist a terminal update.
+    draftFiles=checkpoint.files=validateNovaFiles(checkpoint.files);
     if(claim.run.draftFiles&&hashNovaFiles(validateNovaFiles(claim.run.draftFiles))===hashNovaFiles(draftFiles))draftChecks=displayDraftChecks(claim.run.draftChecks??[]);
+    await ensure();
+    if(checkpoint.providerRetryState==='in-flight')throw new NovaProviderError('provider-retry-interrupted','The automatic model retry was interrupted before its result was saved.');
     if(!checkpoint.messages.length)checkpoint.messages=initialMessages(claim,checkpoint.files);
     const user=claim.session.messages.find(m=>m.id===claim.run.messageId);
     if(user&&needsExpertReview(user.content)&&!claim.session.messages.some(m=>m.role==='expert'&&m.runId===claim.run.id)){
@@ -117,9 +132,34 @@ export async function runNovaClaim(claim:NovaClaim,store:WorkerStore,options:Nov
       const pending=pendingTools(checkpoint.messages);
       if(!pending.length){
         if(checkpoint.stepCount>=policy.maxSteps){await update({status:'waiting-user',message:'The selected effort step limit was reached. The draft checkpoint is saved; refine the request or resume to continue.'});finished=true;break;}
+        const retryDispatch=checkpoint.providerRetryState==='scheduled';
+        if(retryDispatch)checkpoint.providerRetryState='in-flight';
         checkpoint.stepCount+=1;await update({status:'building'});
-        const response=await (options.provider??callNovaProvider)({model:claim.run.model,effort:claim.run.effort,messages:checkpoint.messages,signal:controller.signal});
+        await ensure();
+        let response:NovaProviderMessage;
+        try {
+          response=await (options.provider??callNovaProvider)({model:claim.run.model,effort:claim.run.effort,messages:checkpoint.messages,signal:controller.signal});
+        } catch(error) {
+          if(!(error instanceof NovaProviderError))throw error;
+          await ensure();
+          if(retryDispatch)checkpoint.providerRetryState='spent';
+          const retryScheduled=error.retryable&&(checkpoint.providerRetryCount??0)===0&&checkpoint.stepCount<policy.maxSteps;
+          if(retryScheduled){checkpoint.providerRetryCount=1;checkpoint.providerRetryState='scheduled';}
+          if(error.diagnostic){
+            await update({
+              providerFailure:{...error.diagnostic,stepCount:checkpoint.stepCount,retryScheduled},
+              ...(retryScheduled
+                ?{message:`${NOVA_PROVIDER_FAILURE_MESSAGES[error.diagnostic.reason]}. Nova is retrying this model request once. Your draft is saved.`}
+                :{status:'failed',errorCode:error.code,message:providerFailureMessage(error)}),
+            });
+            // The terminal diagnosis and failed state share one commit: reclaim cannot re-dispatch it.
+            if(!retryScheduled){finished=true;return;}
+          }
+          if(retryScheduled)continue;
+          throw error;
+        }
         await ensure();checkpoint.messages.push(response);
+        if(retryDispatch)checkpoint.providerRetryState='spent';
         await update({...(response.content?{message:response.content.slice(0,4000)}:{})});
         if(!response.tool_calls?.length)checkpoint.messages.push({role:'user',content:'Continue using the coding tools. To finish, generate the required files, pass check_plugin, and call complete_draft; otherwise ask_user or request_expert for a concrete blocker.'});
         continue;
@@ -158,7 +198,9 @@ export async function runNovaClaim(claim:NovaClaim,store:WorkerStore,options:Nov
     if(deadlineExpired){await store.applyRunUpdate(claim.run.id,claim.claimToken,{status:'failed',errorCode:'run-timeout',message:'Nova reached the worker time limit. The checkpoint is saved.',files:draftFiles,checks:draftChecks,checkpoint,stepCount:checkpoint.stepCount,repairCount:checkpoint.repairCount}).catch(()=>false);return;}
     if(error instanceof LeaseEnded||controller.signal.aborted)return;
     const code=error instanceof NovaProviderError||error instanceof NovaSandboxError?error.code:'runner-failed';
-    const message=error instanceof NovaProviderError||error instanceof NovaSandboxError?error.message:'Nova could not complete this run. The checkpoint is saved.';
+    const message=error instanceof NovaProviderError
+      ? providerFailureMessage(error)
+      : error instanceof NovaSandboxError?error.message:'Nova could not complete this run. The checkpoint is saved.';
     await store.applyRunUpdate(claim.run.id,claim.claimToken,{status:'failed',errorCode:code,message,files:draftFiles,checks:draftChecks,checkpoint,stepCount:checkpoint.stepCount,repairCount:checkpoint.repairCount}).catch(()=>false);
   } finally {finished=true;clearInterval(poll);clearTimeout(deadline);options.signal?.removeEventListener('abort',externalAbort);}
 }
