@@ -62,7 +62,8 @@ export async function callNovaProvider(options:NovaProviderOptions):Promise<Nova
         for(const call of delta.tool_calls){
           if(!object(call)||!Number.isInteger(call.index)||Number(call.index)<0||Number(call.index)>7)fail();
           const index=Number(call.index), prior=calls.get(index)??{id:'',type:'function' as const,function:{name:'',arguments:''}};
-          if(call.id!==undefined){if(typeof call.id!=='string'||prior.id)fail();prior.id=call.id;}
+          // Qwen continuation fragments may omit the ID or send a null/empty placeholder.
+          if(call.id!==undefined&&call.id!==null&&call.id!==''){if(typeof call.id!=='string'||prior.id)fail();prior.id=call.id;}
           if(call.type!==undefined&&call.type!=='function')fail();
           if(call.function!==undefined){if(!object(call.function))fail();for(const key of ['name','arguments'] as const){const value=call.function[key];if(value!==undefined){if(typeof value!=='string')fail();prior.function[key]+=value;}}}
           if(prior.function.arguments.length>120_000)fail('provider-limit','Provider response limit exceeded');
