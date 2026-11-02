@@ -17,7 +17,8 @@ concurrency:
 jobs:
   verify:
     name: Verify (Node 22)
-    runs-on: ubuntu-latest
+    # Keep the PostgreSQL 16 test environment on the verified Ubuntu release.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,7 +114,7 @@ jobs:
 
   browser:
     name: Browser (Chromium)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     services:
       postgres:
@@ -404,7 +405,7 @@ jobs:
 
   regressions:
     name: Reviewed regressions (Chromium and PostgreSQL 16)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
