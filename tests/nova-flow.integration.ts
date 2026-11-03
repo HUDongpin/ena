@@ -17,6 +17,7 @@ import { strFromU8, unzipSync } from 'fflate';
 import { createNovaApiHandler, readNovaOperatorInbox, type NovaDependencies } from '../lib/nova/server';
 import { createNovaStore } from '../lib/nova/store';
 import { runNovaClaim } from '../lib/nova/runner';
+import { callNovaProvider } from '../lib/nova/provider';
 import { hashNovaFiles, novaFixtureHash, runNovaSandbox } from '../lib/nova/sandbox';
 import { NOVA_SYNTHETIC_CONTEXT, validateNovaOutput } from '../lib/nova/sdk';
 import { novaIdentityTag } from '../lib/nova/identity';
@@ -261,6 +262,43 @@ test('Nova flow persists real API/queue/version/expert/ZIP state with synthetic 
       const revised=await session(id),latest=revised.runs.at(-1)!;
       assert.equal(latest.status,'waiting-user');assert.equal(latest.draftFiles?.find(file=>file.path==='src/plugin.ts')?.content,changed);assert.deepEqual(latest.draftChecks,[]);assert.equal(revised.artifacts.length,3);
       assert.equal(revised.runs.find(item=>item.id===run.id)?.draftChecks?.find(check=>check.name==='compile')?.passed,false,'Historical failed run evidence remains tied to its old source');
+    });
+    await t.test('real provider parser retries a synthetic bad SSE once and persists a checked draft without duplicate tools',async()=>{
+      const created=await api('sessions','/api/nova/sessions',{locale:'en',title:'Parser recovery integration'});
+      const recoveryId=(await created.json() as {session:NovaSession}).session.id;
+      const run=await send(recoveryId,'Build a presentation of the synthetic network.');
+      const claim=await store.claimNextRun();assert.ok(claim);assert.equal(claim.run.id,run.id);
+      const responses=[
+        tool('retry-source','write_file',{path:'src/plugin.ts',content:SOURCE_V1}),
+        tool('retry-manifest','write_file',{path:'manifest.json',content:JSON.stringify(MANIFEST)}),
+        tool('retry-tests','write_file',{path:'tests/plugin.test.ts',content:GENERATED_TESTS}),
+        tool('retry-readme','write_file',{path:'README.md',content:'Synthetic reliability test, not live acceptance.'}),
+        tool('retry-check','check_plugin',{}),
+        tool('retry-complete','complete_draft',{summary:'Synthetic parser recovery complete.'}),
+      ];
+      let dispatches=0,index=0,sandboxCalls=0,failedBody='';
+      await runNovaClaim(claim,store,{
+        provider:options=>callNovaProvider({...options,env:environment,fetch:async(_url,init)=>{
+          dispatches++;
+          if(dispatches===6){failedBody=String(init?.body);return new Response('data: invalid-SYNTHETIC_PRIVATE_RESPONSE\n\n');}
+          if(dispatches===7)assert.equal(String(init?.body),failedBody,'retry must retain model, effort and complete provider context');
+          const message=responses[index++];assert.ok(message,'must not add extra provider turns');
+          return new Response(`data: ${JSON.stringify({choices:[{delta:{content:message.content,tool_calls:message.tool_calls!.map((call,index)=>({...call,index}))},finish_reason:'tool_calls'}]})}\n\ndata: [DONE]\n\n`);
+        }}),
+        sandbox:async(files,options)=>{sandboxCalls++;return syntheticSandbox(SOURCE_V1,output(1))(files,options);},
+      });
+      assert.equal(dispatches,7);assert.equal(index,responses.length);assert.equal(sandboxCalls,1);
+      const saved=await session(recoveryId),done=saved.runs[0];
+      assert.equal(done.status,'ready');assert.equal(done.stepCount,7);assert.equal(saved.artifacts.length,1);
+      assert.equal(done.providerFailure?.reason,'invalid-json');assert.equal(done.providerFailure?.retryScheduled,true);
+      assert.equal(saved.messages.filter(message=>message.content==='Completed write_file.').length,4);
+      assert.equal(saved.messages.filter(message=>message.content==='Completed check_plugin.').length,1);
+      assert.doesNotMatch(JSON.stringify(saved),/SYNTHETIC_PRIVATE_RESPONSE|reasoning_content|synthetic-key-never-sent/);
+      const events=await store.readEvents(recoveryId,researcher.ownerRef,0);
+      assert.equal(events?.events.filter(event=>event.detail==='provider-retry-scheduled').length,1);
+      assert.equal(events?.events.filter(event=>event.detail==='artifact-created').length,1);
+      const bytes=await (await api('artifact',`/api/nova/sessions/${recoveryId}/artifacts/${saved.activeArtifactId}?download=1`,undefined,{id:recoveryId,artifactId:saved.activeArtifactId!})).arrayBuffer();
+      const zip=unzipSync(new Uint8Array(bytes));assert.equal(strFromU8(zip['src/plugin.ts']),SOURCE_V1);
     });
   } finally {
     invalidateProductionOpenEnaAuthSecurityStore();

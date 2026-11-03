@@ -31,6 +31,18 @@ Follow `scripts/nova-sandbox/README.md` for the Linux x64 worker, immutable imag
 
 `npm run nova:worker` always runs separately from Next.js. Generated code executes only inside the approved secure container, never in the web process or through a host fallback when the secure runtime is missing. The web user must not gain Docker access. Working queues/checkpoints survive page closure; lease expiry permits bounded recovery. Every new continuation has bounded effort, while crash recovery retains its counters. Existing mail configuration and the operator mailbox are reused; the worker drains notifications, or an authenticated scheduler may call `/api/nova/notifications/deliver`.
 
+## Provider failure diagnosis and bounded recovery
+
+The worker records the latest provider failure on the encrypted run as `providerFailure`: a fixed reason and stage, bounded response-byte/event counts, optional numeric HTTP status/tool index, the charged step, and whether automatic retry was scheduled. Model and effort remain the run's captured values. Append-only events identify the fixed failure reason and retry scheduling; chat messages explain the reason and saved-draft recovery. Raw provider bodies, reasoning, tool arguments/IDs, URLs and credentials are not added to diagnostics. Historical runs without these fields remain readable.
+
+Only classified response-protocol errors and incomplete streams can use the single automatic retry allowance per explicit attempt. Authentication/configuration, HTTP failures, transport/timeouts, cancellation, refusals and size/token limits stop without automatic retry. The retry uses the same model, effort and provider context, consumes a normal provider step, and runs only while the claim and persisted attempt deadline remain valid. It does not repeat completed tools or publish an artifact without current passing checks.
+
+The checkpoint persists retry count, `scheduled`/`in-flight`/`spent` state and the attempt deadline. A recovered `scheduled` retry may dispatch once. Recovery of an `in-flight` retry stops with `provider-retry-interrupted` and keeps the draft, because its result was not durably saved. A successful response and the spent marker commit before tools execute; terminal failure and its diagnosis commit together. Manual Retry/Resume, user/expert continuation and artifact restore reset the attempt fields alongside the existing step/repair budgets. Worker reclaim does not reset them.
+
+The 2026-11-02 reliability change is a local implementation until separately deployed. Its deterministic parser/runner tests and real local PostgreSQL API/queue/export tests use synthetic provider and container results; they do not establish live-provider or deployed-container acceptance.
+
+Release the updated web continuation handlers/store before activating the updated worker, so manual Retry/Resume and expert/user continuation clear the new attempt fields. Both processes must use this store version for the new recovery behavior; a provider-file-only worker patch is insufficient.
+
 ## Checks and evidence
 
 ```sh

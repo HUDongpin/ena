@@ -1,3 +1,5 @@
+import type { NovaProviderDiagnostic } from './provider-diagnostics';
+
 export type NovaEffort = "low" | "medium" | "high" | "xhigh";
 export type NovaModelKey = "qwen-flash" | "qwen-max" | "deepseek-flash" | "deepseek-pro";
 export type NovaProvider = "qwen" | "deepseek";
@@ -34,6 +36,7 @@ export interface NovaRun {
   id: string; sessionId: string; status: NovaRunStatus; model: NovaModel; effort: NovaEffort;
   createdAt: string; updatedAt: string; messageId: string; baseArtifactId: string | null;
   stepCount: number; repairCount: number; errorCode?: string;
+  providerFailure?: NovaProviderFailure;
   /** User-owned source/check results only. Provider messages/reasoning stay in the private checkpoint. */
   draftFiles?: NovaFile[]; draftChecks?: NovaCheck[];
 }
@@ -52,11 +55,19 @@ export interface NovaSessionSummary { id: string; title: string; createdAt: stri
 export interface NovaEvent { cursor: number; sessionId: string; runId?: string; type: "message" | "run" | "artifact" | "expert"; createdAt: string; detail: string }
 export interface NovaToolCall { id: string; name: string; arguments: string }
 export interface NovaProviderMessage { role: "system" | "user" | "assistant" | "tool"; content: string | null; tool_calls?: { id: string; type: "function"; function: { name: string; arguments: string } }[]; tool_call_id?: string; reasoning_content?: string }
-export interface NovaCheckpoint { messages: NovaProviderMessage[]; files: NovaFile[]; stepCount: number; repairCount: number }
+export interface NovaProviderFailure extends NovaProviderDiagnostic { stepCount: number; retryScheduled: boolean }
+export interface NovaCheckpoint {
+  messages: NovaProviderMessage[]; files: NovaFile[]; stepCount: number; repairCount: number;
+  /** Optional for pre-reliability checkpoints; durable across worker reclaim. */
+  providerRetryCount?: 0 | 1;
+  providerRetryState?: 'scheduled' | 'in-flight' | 'spent';
+  attemptDeadlineAt?: number;
+}
 export interface NovaClaim { run: NovaRun; session: NovaSession; ownerRef: string; claimToken: string; checkpoint: NovaCheckpoint | null }
 export interface NovaRunUpdate {
   status?: NovaRunStatus; message?: string; files?: NovaFile[]; checkpoint?: NovaCheckpoint;
   checks?: NovaCheck[];
   artifact?: NovaArtifactVersion; expert?: Omit<NovaExpertRequest, "id" | "createdAt" | "notificationStatus" | "status">;
   stepCount?: number; repairCount?: number; errorCode?: string;
+  providerFailure?: NovaProviderFailure;
 }
