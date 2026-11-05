@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { localeMeta, locales, type Locale } from "@/lib/i18n";
 import PluginEmailVerification from "@/components/plugin-lab/PluginEmailVerification";
 import { NOVA_EFFORTS, novaRunBusy, appendNovaContext, novaDraftSelection } from "./client";
@@ -30,17 +30,9 @@ export default function NovaWorkbench({ locale, copy, useWebFonts = false }: { l
   const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
   useEffect(() => { setRenameTarget(null); }, [nova.identity?.email]);
   const [artifactId, setArtifactId] = useState<string | null>(null);
-  const modelMenu = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    function dismissModelPicker(event: PointerEvent) {
-      const picker = modelMenu.current;
-      if (picker?.open && event.target instanceof Node && !picker.contains(event.target)) {
-        picker.open = false;
-      }
-    }
-    document.addEventListener("pointerdown", dismissModelPicker, true);
-    return () => document.removeEventListener("pointerdown", dismissModelPicker, true);
-  }, []);
+  const modelMenuId = useId();
+  const modelTrigger = useRef<HTMLButtonElement>(null);
+  const modelMenu = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
   const conversation = useRef<HTMLDivElement>(null);
   const previousResult = useRef<{ sessionId?: string; runId?: string; artifactId?: string | null }>({});
@@ -115,7 +107,30 @@ export default function NovaWorkbench({ locale, copy, useWebFonts = false }: { l
   </>;
   const composerView = <form className={`nova-composer ${active ? "nova-composer-compact" : ""}`} onSubmit={(event) => { event.preventDefault(); void nova.send(); }}>
     <label className="nova-sr-only" htmlFor="nova-prompt">{active ? copy.followup : copy.placeholder}</label><textarea ref={composer} id="nova-prompt" value={nova.draft} onChange={(event) => nova.setDraft(event.target.value)} placeholder={active ? copy.followup : copy.placeholder} maxLength={12000} rows={active ? 2 : 3} readOnly={!!nova.pending?.ambiguous} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!locked && !working && nova.draft.trim() && selectedModel?.available && nova.enabled) void nova.send(); } }}/>
-    <div className="nova-composer-tools"><div className="nova-context-tools"><button type="button" className="nova-add-context" aria-label={copy.contextTitle} disabled={locked} onClick={() => { setContextError(""); setContextOpen(true); }}><Icon name="plus" size={21}/></button><span className="nova-auto-draft">{copy.autoDraft}</span></div><div className="nova-model-tools"><details ref={modelMenu} className="nova-model-picker" onKeyDown={(event) => { if (event.key === "Escape" && modelMenu.current) { modelMenu.current.open = false; modelMenu.current.querySelector("summary")?.focus(); } }}><summary aria-label={copy.chooseModel} title={copy.selectionHint}>{selectedModel?.label ?? nova.modelKey}<Icon name="chevron" size={16}/></summary><div className="nova-model-popover"><strong>{copy.chooseModel}</strong>{(["qwen", "deepseek"] as const).map((provider) => <fieldset key={provider}><legend>{provider === "qwen" ? "Qwen" : "DeepSeek"}</legend>{nova.models.filter((model) => model.provider === provider).map((model) => <label key={model.key} className={nova.modelKey === model.key ? "is-selected" : ""}><input type="radio" name="nova-model" value={model.key} checked={nova.modelKey === model.key} onChange={() => { nova.preference(model.key, nova.effort); if (modelMenu.current) { modelMenu.current.open = false; modelMenu.current.querySelector("summary")?.focus(); } }}/><span>{model.label}{!model.available ? <small>{copy.unavailableModel}</small> : null}</span>{nova.modelKey === model.key ? <Icon name="check" size={17}/> : null}</label>)}</fieldset>)}</div></details><label className="nova-effort"><span className="nova-sr-only">{copy.effort}</span><select title={`${copy.hint} ${copy.selectionHint}`} value={nova.effort} onChange={(event) => nova.preference(nova.modelKey, event.target.value as typeof nova.effort)} aria-label={copy.effort}>{NOVA_EFFORTS.map((effort) => <option key={effort} value={effort}>{copy.efforts[effort]}</option>)}</select></label><button type="submit" className="nova-send" aria-label={copy.send} disabled={locked || working || !nova.draft.trim() || !selectedModel?.available || !nova.enabled}><Icon name="arrow" size={23}/></button></div></div>
+    <div className="nova-composer-tools"><div className="nova-context-tools"><button type="button" className="nova-add-context" aria-label={copy.contextTitle} disabled={locked} onClick={() => { setContextError(""); setContextOpen(true); }}><Icon name="plus" size={21}/></button><span className="nova-auto-draft">{copy.autoDraft}</span></div><div className="nova-model-tools"><div className="nova-model-picker">
+      <button type="button" className="nova-model-trigger" ref={modelTrigger} popoverTarget={modelMenuId} aria-controls={modelMenuId} aria-label={copy.chooseModel} title={copy.selectionHint}>
+        {selectedModel?.label ?? nova.modelKey}<Icon name="chevron" size={16}/>
+      </button>
+      <div id={modelMenuId} ref={modelMenu} popover="auto" className="nova-model-popover">
+        <strong>{copy.chooseModel}</strong>
+        {(["qwen", "deepseek"] as const).map((provider) => (
+          <fieldset key={provider}>
+            <legend>{provider === "qwen" ? "Qwen" : "DeepSeek"}</legend>
+            {nova.models.filter((model) => model.provider === provider).map((model) => (
+              <label key={model.key} className={nova.modelKey === model.key ? "is-selected" : ""}>
+                <input type="radio" name="nova-model" value={model.key} checked={nova.modelKey === model.key} onChange={() => {
+                  nova.preference(model.key, nova.effort);
+                  modelMenu.current?.hidePopover();
+                  modelTrigger.current?.focus();
+                }}/>
+                <span>{model.label}{!model.available ? <small>{copy.unavailableModel}</small> : null}</span>
+                {nova.modelKey === model.key ? <Icon name="check" size={17}/> : null}
+              </label>
+            ))}
+          </fieldset>
+        ))}
+      </div>
+    </div><label className="nova-effort"><span className="nova-sr-only">{copy.effort}</span><select title={`${copy.hint} ${copy.selectionHint}`} value={nova.effort} onChange={(event) => nova.preference(nova.modelKey, event.target.value as typeof nova.effort)} aria-label={copy.effort}>{NOVA_EFFORTS.map((effort) => <option key={effort} value={effort}>{copy.efforts[effort]}</option>)}</select></label><button type="submit" className="nova-send" aria-label={copy.send} disabled={locked || working || !nova.draft.trim() || !selectedModel?.available || !nova.enabled}><Icon name="arrow" size={23}/></button></div></div>
   </form>;
   return <div className={`nova-workbench ${useWebFonts ? "nova-web-fonts" : ""} ${active ? "nova-workbench-active" : ""}`} lang={localeMeta[locale].htmlLang} dir={localeMeta[locale].dir}>
     <header className="nova-header"><div className="nova-header-brand"><button className="nova-icon-button nova-menu-toggle" aria-label={copy.menu} aria-expanded={sidebar} onClick={() => setSidebar(!sidebar)}><Icon name="menu"/></button><Link href={`/${locale}`} aria-label="Open ENA"><img src="/unified-home/logo-open-ena.svg" alt="Open ENA" width="220" height="55"/></Link></div><div className="nova-header-links"><Link href={`/${locale}/plugins/catalog`}>Plugin Lab</Link><details className="nova-language"><summary aria-label={copy.language}><Icon name="globe" size={20}/><span>{localeMeta[locale].shortLabel}</span><Icon name="chevron" size={13}/></summary><div>{locales.map((item) => <Link key={item} href={{ pathname: `/${item}/plugins`, query: nova.selectedId ? { session: nova.selectedId } : undefined }} lang={localeMeta[item].htmlLang} dir={localeMeta[item].dir} hrefLang={localeMeta[item].htmlLang} aria-current={item === locale ? "page" : undefined}>{localeMeta[item].label}</Link>)}</div></details></div></header>

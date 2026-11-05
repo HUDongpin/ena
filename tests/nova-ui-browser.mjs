@@ -79,7 +79,47 @@ async function installFixtures(page) {
   return state;
 }
 const browser = await chromium.launch({ headless: true });
+async function verifyColdPicker(locale, viewport) {
+  const page = await browser.newPage({ viewport });
+  const blockedScripts = [];
+  let resume;
+  const gate = new Promise((resolve) => { resume = resolve; });
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (request.resourceType() === "script" && new URL(request.url()).pathname.startsWith("/_next/")) {
+      blockedScripts.push(request.url());
+      await gate;
+    }
+    await route.continue().catch(() => {}); // The test page can close with a request in flight.
+  });
+  try {
+    await page.goto(`${base.origin}/${locale}/plugins`, { waitUntil: "commit" });
+    const trigger = page.getByRole("button", { name: getNovaCopy(locale).chooseModel, exact: true });
+    const menu = page.locator(".nova-model-popover");
+    await trigger.click();
+    await menu.waitFor({ state: "visible" });
+    assert.ok(blockedScripts.length > 0, "the menu must open with hydration scripts still blocked");
+    const box = await menu.boundingBox(), button = await trigger.boundingBox();
+    assert.ok(box && button && box.x >= 0 && box.x + box.width <= viewport.width + 1);
+    assert.ok(box.y >= 0 && Math.abs(button.y - box.y - box.height - 14) < 2, "menu anchored above the button");
+    await menu.locator("strong").click();
+    assert.equal(await menu.isVisible(), true, "a click inside the menu keeps it open");
+    await page.locator(".nova-header").click({ position: { x: Math.floor(viewport.width / 2), y: 30 } });
+    await menu.waitFor({ state: "hidden" });
+    await trigger.press("Space");
+    await menu.waitFor({ state: "visible" });
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    assert.ok(await trigger.evaluate((element) => element === document.activeElement));
+  } finally {
+    resume();
+    await page.close();
+  }
+}
+
 try {
+  await verifyColdPicker("en", { width: 1440, height: 1000 });
+  await verifyColdPicker("ar", { width: 390, height: 844 });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = []; page.on("pageerror", (error) => errors.push(error.message));
   const state = await installFixtures(page);
@@ -117,12 +157,12 @@ try {
   await page.screenshot({ path: `${output}/model-menu-desktop.png`, fullPage: true, animations: "disabled" });
   assert.equal(await page.locator('.nova-model-popover input[type="radio"]').count(), 4);
   await page.locator(".nova-model-popover strong").click();
-  assert.equal(await page.locator(".nova-model-picker").getAttribute("open"), "");
+  assert.equal(await page.locator(".nova-model-popover").isVisible(), true);
   await page.locator(".nova-header").click({ position: { x: 450, y: 20 } });
-  assert.equal(await page.locator(".nova-model-picker").getAttribute("open"), null);
+  assert.equal(await page.locator(".nova-model-popover").isVisible(), false);
   await page.getByLabel("Choose model").click();
   await page.getByLabel("Choose model").press("Escape");
-  assert.equal(await page.locator(".nova-model-picker").getAttribute("open"), null);
+  assert.equal(await page.locator(".nova-model-popover").isVisible(), false);
   assert.equal(await page.locator(".nova-header").getByText("Code", { exact: true }).count(), 0);
   await page.getByLabel("Choose model").click();
   await page.getByLabel("DeepSeek V4.1 Flash 1017", { exact: true }).check();
