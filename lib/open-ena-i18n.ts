@@ -1,4 +1,6 @@
-import type { Locale } from "./i18n";
+import { locales, type Locale } from "./i18n";
+import { localizeWorkspaceCopy, workspaceMessage } from "./open-ena/workspace-messages";
+import { formatWorkspaceCopy } from "./open-ena/workspace-formatters";
 import type {
   OpenEnaInferenceIntegrityCodeV2,
   OpenEnaInferenceReasonCodeV2,
@@ -2314,19 +2316,29 @@ const DIAGNOSTIC_GUIDANCE_V3: Readonly<Record<OpenEnaModelDiagnosticIdV3, readon
   ONA_RESOURCE_BUDGET_EXCEEDED: ["A hard cap blocks execution and never authorizes truncating the ordered source or directed matrix.", "硬性上限會阻止執行，且絕不授權截斷有序來源或有向矩陣。", "硬性上限会阻止运行，且绝不授权截断有序来源或有向矩阵。"],
 };
 
-function diagnosticMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3Copy["diagnosticMessages"] {
-  return Object.fromEntries(MODEL_DIAGNOSTIC_IDS_ALL_V3.map((id) => [id, {
-    summary: () => DIAGNOSTIC_SUMMARIES_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2],
-    detail: (input: OpenEnaModelDiagnosticLocalizationInputV3) => {
-      const field = input.fieldPath ?? input.scope;
-      const count = input.evidence?.totalCount;
-      const summary = DIAGNOSTIC_SUMMARIES_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2];
-      const guidance = DIAGNOSTIC_GUIDANCE_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2];
-      if (locale === "en") return `${summary}. Inspect ${field}${count === undefined ? "" : `; ${count} affected items are reported`}. ${guidance}`;
-      return locale === "zh-hant" ? `${summary}。請檢視 ${field}${count === undefined ? "" : `；目前報告 ${count} 個受影響項目`}。${guidance}`
-        : `${summary}。请查看 ${field}${count === undefined ? "" : `；当前报告 ${count} 个受影响项目`}。${guidance}`;
-    },
-  }])) as unknown as OpenEnaModelV3Copy["diagnosticMessages"];
+function diagnosticMessagesV3(locale: Locale, scopeLabels?: OpenEnaModelV3Copy["tabs"]["diagnostics"]["scopeLabels"]): OpenEnaModelV3Copy["diagnosticMessages"] {
+  const text = (phrases: readonly [string, string, string]) => {
+    if (locale === "zh-hant") return phrases[1];
+    if (locale === "zh-hans") return phrases[2];
+    return locale === "en" ? phrases[0] : workspaceMessage(locale, phrases[0]);
+  };
+  return Object.fromEntries(MODEL_DIAGNOSTIC_IDS_ALL_V3.map((id) => {
+    const summary = text(DIAGNOSTIC_SUMMARIES_V3[id]);
+    const guidance = text(DIAGNOSTIC_GUIDANCE_V3[id]);
+    return [id, {
+      summary: () => summary,
+      detail: (input: OpenEnaModelDiagnosticLocalizationInputV3) => {
+        const field = input.fieldPath ?? scopeLabels?.[input.scope] ?? input.scope;
+        const count = input.evidence?.totalCount;
+        if (locale === "en") return `${summary}. Inspect ${field}${count === undefined ? "" : `; ${count} affected items are reported`}. ${guidance}`;
+        if (locale === "zh-hant") return `${summary}。請檢視 ${field}${count === undefined ? "" : `；目前報告 ${count} 個受影響項目`}。${guidance}`;
+        if (locale === "zh-hans") return `${summary}。请查看 ${field}${count === undefined ? "" : `；当前报告 ${count} 个受影响项目`}。${guidance}`;
+        return count === undefined
+          ? workspaceMessage(locale, "{summary}. Inspect {field}. {guidance}", { summary, field, guidance })
+          : workspaceMessage(locale, "{summary}. Inspect {field}; {count} affected items are reported. {guidance}", { summary, field, count, guidance });
+      },
+    }];
+  })) as unknown as OpenEnaModelV3Copy["diagnosticMessages"];
 }
 
 function actionIdentityV3(input: ModelSuggestedActionLocalizationInputV3): string {
@@ -2340,12 +2352,12 @@ function actionIdentityV3(input: ModelSuggestedActionLocalizationInputV3): strin
   }
 }
 
-function suggestedActionMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3Copy["suggestedActions"] {
+function suggestedActionMessagesV3(locale: Locale): OpenEnaModelV3Copy["suggestedActions"] {
   return Object.fromEntries(MODEL_SUGGESTED_ACTION_IDS_V3.map((id) => [id, {
     label: (input: ModelSuggestedActionLocalizationInputV3) => {
       const identity = actionIdentityV3(input);
       const enLabels: Record<ModelSuggestedActionIdV3, string> = {
-        "exclude-code": `Exclude ${identity} Code`, "replace-row-order": "Use suggested row order",
+        "exclude-code": "Exclude {identity} Code", "replace-row-order": "Use suggested row order",
         "replace-horizon-order": "Use suggested Horizon order", "select-endpoint": "Select End Point",
         "select-svd": "Select SVD", "select-reference": "Select Reference", "clear-group": "Clear Group selection",
       };
@@ -2359,9 +2371,16 @@ function suggestedActionMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3C
         "replace-horizon-order": "使用建议的视域顺序", "select-endpoint": "选择端点模型",
         "select-svd": "选择 SVD", "select-reference": "选择参考", "clear-group": "清除组选择",
       };
-      return locale === "en" ? enLabels[id] : locale === "zh-hant" ? zhHantLabels[id] : zhHansLabels[id];
+      if (locale === "zh-hant") return zhHantLabels[id];
+      if (locale === "zh-hans") return zhHansLabels[id];
+      return workspaceMessage(locale, enLabels[id], { identity });
     },
-    confirmation: (input: ModelSuggestedActionLocalizationInputV3) => locale === "en" ? `Confirm this scientific configuration change: ${actionIdentityV3(input)}.` : locale === "zh-hant" ? `確認套用此科學設定變更：${actionIdentityV3(input)}。` : `确认应用此科学设置更改：${actionIdentityV3(input)}。`,
+    confirmation: (input: ModelSuggestedActionLocalizationInputV3) => {
+      const identity = actionIdentityV3(input);
+      if (locale === "zh-hant") return `確認套用此科學設定變更：${identity}。`;
+      if (locale === "zh-hans") return `确认应用此科学设置更改：${identity}。`;
+      return workspaceMessage(locale, "Confirm this scientific configuration change: {identity}.", { identity });
+    },
   }])) as OpenEnaModelV3Copy["suggestedActions"];
 }
 
@@ -2756,6 +2775,15 @@ export function localizeModelSuggestedActionV3(copy: OpenEnaModelV3Copy, input: 
   const message = copy.suggestedActions[input.id];
   if (message === undefined) throw new Error(`Unknown Models v3 suggested action ID: ${input.id}`);
   return { label: message.label(input), confirmation: message.confirmation(input) };
+}
+
+function withWorkspaceFormatters(locale: Locale, copy: OpenEnaCopy): OpenEnaCopy {
+  const messages = { diagnosticMessages: diagnosticMessagesV3(locale, copy.modelV3.tabs.diagnostics.scopeLabels), suggestedActions: suggestedActionMessagesV3(locale) };
+  const model = { ...copy.modelV3, ...messages };
+  return formatWorkspaceCopy(locale, copy, messages, {
+    localize: input => localizeModelDiagnosticV3(model, input),
+    suggestedAction: input => localizeModelSuggestedActionV3(model, input),
+  });
 }
 
 const modelV3En = createModelV3Copy("en");
@@ -4360,44 +4388,20 @@ const navLabels: Record<Locale, string> = {
   bn: "Open ENA",
 };
 
-export const openEnaLocalizedLocales = ["en", "zh-hant", "zh-hans"] as const;
-
-export function isOpenEnaLocalizedLocale(
-  locale: Locale,
-): locale is (typeof openEnaLocalizedLocales)[number] {
-  return (openEnaLocalizedLocales as readonly Locale[]).includes(locale);
-}
-
-const openEnaFallbackNotices = {
-  en: null,
-  "zh-hant": null,
-  "zh-hans": null,
-  es: "Open ENA aún no está traducido para la ruta es. El espacio de trabajo permanece en inglés mientras se conservan esta ruta y este idioma.",
-  fr: "Open ENA n'est pas encore traduit pour la route fr. L'espace de travail reste en anglais, tandis que cette route et cette langue sont conservées.",
-  pt: "O Open ENA ainda não está traduzido para a rota pt. A área de trabalho permanece em inglês enquanto esta rota e este idioma são mantidos.",
-  de: "Open ENA ist für die Route de noch nicht übersetzt. Die Arbeitsfläche bleibt auf Englisch, während diese Route und diese Sprache beibehalten werden.",
-  ar: "Open ENA غير مترجم بعد لمسار ar. تبقى مساحة العمل بالإنجليزية ومن اليسار إلى اليمين، مع الإبقاء على هذا المسار وهذه اللغة.",
-  ko: "Open ENA는 ko 경로에 아직 번역되어 있지 않습니다. 이 경로와 로케일은 유지되며 작업 공간은 영어로 표시됩니다.",
-  ja: "Open ENA は ja ルート向けにまだ翻訳されていません。このルートとロケールは保持されたまま、ワークベンチは英語で表示されます。",
-  hi: "Open ENA अभी hi रूट के लिए अनुवादित नहीं है। यह रूट और लोकेल बनाए रखते हुए कार्यक्षेत्र अंग्रेज़ी में दिखाया जाता है।",
-  ru: "Open ENA пока не переведён для маршрута ru. Рабочая область остаётся на английском, при этом этот маршрут и язык сохраняются.",
-  id: "Open ENA belum diterjemahkan untuk rute id. Area kerja tetap berbahasa Inggris sementara rute dan locale ini tetap dipertahankan.",
-  bn: "Open ENA এখনও bn রুটের জন্য অনুবাদ করা হয়নি। এই রুট ও লোকেল বজায় রেখে ওয়ার্কবেঞ্চ ইংরেজিতে দেখানো হয়।",
-} as const satisfies Record<Locale, string | null>;
-
-export function getOpenEnaFallbackNotice(locale: Locale) {
-  return openEnaFallbackNotices[locale];
-}
+export const openEnaLocalizedLocales = locales;
+const localizedCopies = new Map<Locale, OpenEnaCopy>();
 
 export function getOpenEnaCopy(locale: Locale): OpenEnaCopy {
   if (locale === "zh-hant") return zhHant;
   if (locale === "zh-hans") return zhHans;
   if (locale === "en") return en;
-  return {
-    ...en,
-    eyebrow: `${navLabels[locale]} · English workspace interface`,
-    navLabel: navLabels[locale],
-  };
+  let copy = localizedCopies.get(locale);
+  if (!copy) {
+    copy = withWorkspaceFormatters(locale, localizeWorkspaceCopy(locale, en));
+    copy.navLabel = navLabels[locale];
+    localizedCopies.set(locale, copy);
+  }
+  return copy;
 }
 
 export function getOpenEnaNavLabel(locale: Locale) {
@@ -4407,7 +4411,7 @@ export function getOpenEnaNavLabel(locale: Locale) {
 /** Current-provider consent copy is separate from the provider stored on earlier records. */
 export function getOpenEnaAiProviderCopy(locale: Locale, descriptor: { provider: string; model: string }, base: OpenEnaAiInterpretationCopy = getOpenEnaCopy(locale).aiInterpretation): OpenEnaAiInterpretationCopy {
   if (descriptor.provider !== "qwen") return base;
-  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : en;
+  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : workspaceMessage(locale, en);
   return {
     ...base,
     consentLabel: t(

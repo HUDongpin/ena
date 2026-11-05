@@ -216,7 +216,7 @@ const ENDPOINT_BOUNDARIES = [
   "Any interpretation must be checked against the coded evidence, codebook, sampling design, and research context.",
 ] as const;
 
-function aiLocale(locale: Locale): OpenEnaAiLocale {
+export function aiLocale(locale: Locale): OpenEnaAiLocale {
   return locale === "zh-hant" || locale === "zh-hans" ? locale : "en";
 }
 

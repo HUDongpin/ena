@@ -1,3 +1,4 @@
+import { workspaceMessage } from "@/lib/open-ena/workspace-messages";
 import { useState } from "react";
 import { nativePlotGroupSettingsV3, nativePlotSummaryGroupsV3 } from "@/lib/open-ena/bound-presentation-v3";
 import type { OpenEnaPlotResult } from "@/lib/open-ena/bound-presentation-v3";
@@ -89,9 +90,9 @@ export function getGroupVisualEncoding(groupIndex: number) {
   return GROUP_VISUAL_ENCODINGS[safeIndex % GROUP_VISUAL_ENCODINGS.length];
 }
 
-function groupEncodingDescription(groupName: string, groupIndex: number) {
+function groupEncodingDescription(groupName: string, groupIndex: number, copy: OpenEnaCopy, locale: Locale) {
   const encoding = getGroupVisualEncoding(groupIndex);
-  return `${groupName}: ${encoding.markerLabel} marker`;
+  return workspaceMessage(locale, "{group}: {shape} marker", { group: groupName, shape: copy.longitudinal[encoding.markerShape] });
 }
 
 function GroupMarkerGlyph({
@@ -447,14 +448,14 @@ export default function OpenEnaPlot({
   const safeReferenceId = result.projectionReference?.referenceId
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/gu, " ");
   const referenceToken = result.projectionReference
-    ? `ID ${safeReferenceId?.slice(-28)}${referenceSourceHash ? ` · declared analyzed-table SHA-256 ${referenceSourceHash.slice(0, 12)}…` : ""}`
+    ? `ID ${safeReferenceId?.slice(-28)}${referenceSourceHash ? " · " + workspaceMessage(locale, "declared analyzed-table SHA-256 {hash}…", { hash: referenceSourceHash.slice(0, 12) }) : ""}`
     : null;
-  const referenceFigureName = result.projectionReference ? `Reference: ${referenceName}` : null;
+  const referenceFigureName = result.projectionReference ? workspaceMessage(locale, "Reference: {name}", { name: referenceName ?? "" }) : null;
   const referenceFigureCaveat = result.projectionReference
-    ? "Variance shares describe current data in this fixed basis, not reference-fit explained variance."
+    ? workspaceMessage(locale, "Variance shares describe current data in this fixed basis, not reference-fit explained variance.")
     : null;
   const referenceFigureNote = referenceToken && referenceFigureName && referenceFigureCaveat
-    ? `Projected into fixed reference: ${referenceToken}. ${referenceFigureName}. ${referenceFigureCaveat}`
+    ? workspaceMessage(locale, "Projected into fixed reference: {id}. {name}. {caveat}", { id: referenceToken, name: referenceFigureName, caveat: referenceFigureCaveat })
     : null;
 
   const labelScale = Number.isFinite(textScale) ? Math.max(8 / 12, Math.min(20 / 12, textScale)) : 1;
@@ -487,7 +488,7 @@ export default function OpenEnaPlot({
       if (!showLabels) continue;
       const labelPoint = positions.get(`label-${node.label}`)!;
       const text = openEnaRenderedCodeLabel(codePresentation, node.label);
-      trajectoryLabels.push({ id: `code:${node.label}`, kind: "code", code: node.label, text, detail: `${text} code node`, anchor: point,
+      trajectoryLabels.push({ id: `code:${node.label}`, kind: "code", code: node.label, text, detail: copy.modelV3.workspace.plot.codeNodeLabel(text), anchor: point,
         fontSize: 10 * labelScale, priority: nodeLayout?.has(node.label) ? 100 : 80,
         ...(!nodeLayout?.has(node.label) ? { placement: "adjacent" as const } : {}),
         preferredOffset: { x: labelPoint.x - point.x, y: labelPoint.y - point.y - 18 } });
@@ -516,7 +517,7 @@ export default function OpenEnaPlot({
   const trajectoryTextStyle = (label: SvgTrajectoryLabel) => ({ fontFamily: "Arial, Helvetica, sans-serif", fontSize: `${label.fontSize}px`, fontWeight: label.kind === "code" ? 700 : label.kind === "centroid" ? 500 : 600, fill: "#263740", stroke: "none" } as const);
 
   return (
-    <figure className="open-ena-plot-figure" tabIndex={0} aria-label={`${copy.workspace.comparison}. Scroll horizontally on small screens.`}>
+    <figure className="open-ena-plot-figure" tabIndex={0} aria-label={workspaceMessage(locale, "{name}. Scroll horizontally on small screens.", { name: copy.workspace.comparison })}>
       <div className={trajectory ? "ena-trajectory-figure-layout" : undefined}>
       <div className={trajectory ? "ena-trajectory-canvas" : undefined}>
       <svg
@@ -528,8 +529,8 @@ export default function OpenEnaPlot({
       >
         <title id="open-ena-plot-title">{`${copy.workspace.comparison}, ${view === "2d" ? copy.views.twoD : copy.views.threeD}${referenceFigureNote ? ` — ${referenceFigureNote}` : ""}`}</title>
         <desc id="open-ena-plot-description">
-          {new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size} {copy.workspace.units.toLowerCase()}, {result.set.points.length} projected points, {result.groups.length} {copy.workspace.groups.toLowerCase()}, {result.set.codes.length} {copy.workspace.codes.toLowerCase()}.
-          {trajectory ? ` Group colors identify filled square centroids and confidence intervals. Small hollow circles show Code nodes. Main centroid paths and direction arrows are black. ${showPoints ? "Larger group-colored squares show observed individual points." : "Individual points are hidden."} TP labels identify periods.` : ` Group encodings: ${result.groups.map((group, index) => groupEncodingDescription(group.name, index)).join("; ")}.`}
+          {new Set(result.set.points.map((row) => String(row.ENA_UNIT ?? ""))).size} {copy.workspace.units.toLowerCase()}, {workspaceMessage(locale, "{count} projected points", { count: result.set.points.length })}, {result.groups.length} {copy.workspace.groups.toLowerCase()}, {result.set.codes.length} {copy.workspace.codes.toLowerCase()}.
+          {trajectory ? ["", workspaceMessage(locale, "Group colors identify filled square centroids and confidence intervals. Small hollow circles show Code nodes. Main centroid paths and direction arrows are black."), showPoints ? workspaceMessage(locale, "Larger group-colored squares show observed individual points.") : workspaceMessage(locale, "Individual points are hidden."), workspaceMessage(locale, "TP labels identify periods.")].join(" ") : " " + workspaceMessage(locale, "Group encodings: {encodings}.", { encodings: result.groups.map((group, index) => groupEncodingDescription(group.name, index, copy, locale)).join("; ") })}
           {referenceFigureNote ? ` ${referenceFigureNote}` : ""}
         </desc>
         <defs>
@@ -593,9 +594,10 @@ export default function OpenEnaPlot({
           const weighted = edgeWeight(summaryGroups, edge.name);
           if (!source || !target || !weighted.group || !passesEdgeThreshold(weighted.value, maxEdge, edgeThreshold)) return null;
           const relative = weighted.value / maxEdge;
+          const edgeValues = { source: openEnaRenderedCodeLabel(codePresentation, edge.source), target: openEnaRenderedCodeLabel(codePresentation, edge.target), group: weighted.group.name, weight: weighted.value.toFixed(3) };
           const edgeLabel = isComparison
-            ? `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: ${weighted.group.name} stronger by ${weighted.value.toFixed(3)}`
-            : `${openEnaRenderedCodeLabel(codePresentation, edge.source)} ↔ ${openEnaRenderedCodeLabel(codePresentation, edge.target)}: ${weighted.group.name} mean weight ${weighted.value.toFixed(3)}`;
+            ? workspaceMessage(locale, "{source} ↔ {target}: {group} stronger by {weight}", edgeValues)
+            : workspaceMessage(locale, "{source} ↔ {target}: {group} mean weight {weight}", edgeValues);
           return (
             <line
               key={edge.name}
@@ -608,9 +610,9 @@ export default function OpenEnaPlot({
               strokeOpacity={0.86 + relative * 0.14}
             strokeLinecap="round"
             data-ena-edge={edge.name}
-            aria-label={`${edgeLabel}. Solid network edge.`}
+            aria-label={workspaceMessage(locale, "{edge}. Solid network edge.", { edge: edgeLabel })}
             >
-              <title>{`${edgeLabel}. Solid network edge.`}</title>
+              <title>{workspaceMessage(locale, "{edge}. Solid network edge.", { edge: edgeLabel })}</title>
             </line>
           );
         })}
@@ -631,7 +633,7 @@ export default function OpenEnaPlot({
           return from && to ? <line key={index} className="ena-individual-trajectory-path" data-ena-trajectory-path="true" data-from-ordinal={path.fromOrdinal} data-to-ordinal={path.toOrdinal} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={color} opacity={0.25} strokeWidth={1.2} style={{ stroke: color, opacity: 0.25, strokeWidth: 1.2, strokeLinecap: "round" }} /> : null;
         })}
         {trajectoryPathMarks.map(({ path, index, from, to, arrow }) => {
-          return <g key={index}><line className="ena-group-centroid-path" data-ena-centroid-path="true" x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="black" strokeWidth={3} style={{ stroke: "black", strokeWidth: 3, opacity: 1, strokeLinecap: "round" }}><title>{`${path.from.horizon} → ${path.to.horizon}; ${path.sharedContributorCount} observed shared contributors. Available-population centroids; not a matched change estimate.`}</title></line>
+          return <g key={index}><line className="ena-group-centroid-path" data-ena-centroid-path="true" x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="black" strokeWidth={3} style={{ stroke: "black", strokeWidth: 3, opacity: 1, strokeLinecap: "round" }}><title>{workspaceMessage(locale, "{from} → {to}; {count} observed shared contributors. Available-population centroids; not a matched change estimate.", { from: path.from.horizon, to: path.to.horizon, count: path.sharedContributorCount })}</title></line>
             {arrow.length > 0 && <polygon data-ena-trajectory-direction="true" points={arrow.map(point => `${point.x},${point.y}`).join(" ")} fill="black" style={{ fill: "black", stroke: "none" }} />}</g>;
         })}
         {showPoints && unitPoints.map((unit) => {
@@ -695,11 +697,11 @@ export default function OpenEnaPlot({
               key={mean.label}
               transform={`translate(${point.x} ${point.y})`}
               role="img"
-              aria-label={`${group.name} mean: square centroid marker`}
+              aria-label={workspaceMessage(locale, "{group} mean: square centroid marker", { group: group.name })}
               data-ena-group-shape="square"
               data-ena-centroid-shape="square"
             >
-              <title>{`${group.name} mean: square centroid marker.`}</title>
+              <title>{`${workspaceMessage(locale, "{group} mean: square centroid marker", { group: group.name })}.`}</title>
               <GroupMarkerGlyph
                 shape="square"
                 x={0}
@@ -823,7 +825,7 @@ export default function OpenEnaPlot({
           return (
             <span
               key={group.name}
-              aria-label={`${groupEncodingDescription(group.name, index)}. ${group.count} analytic units.`}
+              aria-label={`${groupEncodingDescription(group.name, index, copy, locale)}. ${copy.modelV3.workspace.plot.analyticUnits(group.count)}.`}
             >
               <svg
                 width="39"

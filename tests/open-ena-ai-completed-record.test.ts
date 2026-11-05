@@ -1,3 +1,5 @@
+import { locales } from "../lib/i18n";
+import { aiLocale } from "../lib/open-ena/ai-interpretation";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
@@ -35,9 +37,11 @@ test("science and statistical evidence changes label the completed record stale"
   assert.equal(record.response.interpretation.observedPatterns[0].statement, "Synthetic retained record");
 });
 test("language changes are distinct from scientific changes in every supported locale", () => {
-  for (const locale of ["en", "zh-hans", "zh-hant"] as const) {
-    assert.deepEqual(status({ locale, request: { ...request, locale } }), {
-      state: "current", scienceChanged: false, languageMismatch: locale !== "en",
+  for (const locale of locales) {
+    const expected = locale === "zh-hans" || locale === "zh-hant" ? locale : "en";
+    assert.equal(aiLocale(locale), expected);
+    assert.deepEqual(status({ locale, request: { ...request, locale: expected } }), {
+      state: "current", scienceChanged: false, languageMismatch: expected !== "en",
     });
   }
 });

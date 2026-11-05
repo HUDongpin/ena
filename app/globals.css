@@ -1851,25 +1851,6 @@ button:focus-visible {
     var(--page);
 }
 
-.open-ena-login-page:has(> .open-ena-fallback-notice) {
-  grid-template-rows: auto auto;
-  align-content: center;
-  gap: 12px;
-}
-
-.open-ena-fallback-notice {
-  width: min(100%, 1040px);
-  max-width: 1040px;
-  margin: 0 auto;
-  border: 1px solid #c8a95e;
-  border-radius: 4px;
-  padding: 9px 12px;
-  color: #644b13;
-  background: #fff8df;
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-
 body:has(.open-ena-login-page) .back-to-top {
   display: none;
 }
@@ -2252,7 +2233,6 @@ body:has(.open-ena-login-page) .back-to-top {
 .open-ena-account-links button { padding: 0; border: 0; background: transparent; cursor: pointer; font: inherit; }
 .open-ena-account-success { padding: 18px; border: 1px solid #abd8bb; border-radius: 10px; background: #f0faf4; color: #175e35; line-height: 1.6; }
 .open-ena-page:has(> .open-ena-cloud-controls) { display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.open-ena-page:has(> .open-ena-cloud-controls):has(> .open-ena-fallback-notice) { grid-template-rows: auto auto minmax(0, 1fr); }
 .open-ena-page:has(> .open-ena-cloud-controls) > .open-ena-workbench { height: 100%; min-height: 0; }
 .open-ena-cloud-controls { min-width: 0; background: #f8fcfd; border-bottom: 1px solid #bfd4dc; color: #153c50; }
 .open-ena-cloud-bar { display: flex; align-items: center; gap: 14px; padding: 8px 16px; min-height: 56px; }
@@ -2294,7 +2274,7 @@ body:has(.open-ena-login-page) .back-to-top {
   }
 }
 @media (max-width: 900px) {
-  .open-ena-page:has(> .open-ena-cloud-controls), .open-ena-page:has(> .open-ena-cloud-controls):has(> .open-ena-fallback-notice) { height: auto; grid-template-rows: auto; }
+  .open-ena-page:has(> .open-ena-cloud-controls) { height: auto; grid-template-rows: auto; }
   .open-ena-page:has(> .open-ena-cloud-controls) > .open-ena-workbench { height: auto; }
 }
 @media (max-width: 520px) {
@@ -2305,16 +2285,6 @@ body:has(.open-ena-login-page) .back-to-top {
   .open-ena-project-list { padding: 0 18px; }
   .open-ena-project-list > li { flex-direction: column; gap: 12px; }
   .open-ena-project-list-heading { padding-inline: 18px; flex-wrap: wrap; }
-}
-
-.open-ena-page:has(> .open-ena-fallback-notice) {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.open-ena-page:has(> .open-ena-fallback-notice) > .open-ena-workbench {
-  height: 100%;
-  min-height: 0;
 }
 
 .open-ena-intro {
@@ -11553,15 +11523,6 @@ body:has(.open-ena-page) #main-content {
     overflow: auto;
   }
 
-  .open-ena-page:has(> .open-ena-fallback-notice) {
-    grid-template-rows: auto auto;
-  }
-
-  .open-ena-page:has(> .open-ena-fallback-notice) > .open-ena-workbench {
-    height: auto;
-    min-height: 100dvh;
-  }
-
   body:has(.open-ena-page) #main-content,
   .open-ena-page,
   .open-ena-workbench {
@@ -13407,8 +13368,7 @@ html:has(.open-ena-page) {
 
     body:has(.open-ena-page) #main-content,
     .open-ena-page,
-    .open-ena-workbench,
-    .open-ena-page:has(> .open-ena-fallback-notice) > .open-ena-workbench {
+    .open-ena-workbench {
       height: auto;
       min-height: 0;
       overflow: visible;

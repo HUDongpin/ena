@@ -71,16 +71,7 @@ test("v2.0.7-inspired desktop shell gives the research workbench the full vertic
     /grid-template-rows:[^;]*(?:54px|31px)/,
     "legacy top-brand and status tracks must not reduce the research surface",
   );
-  assert.match(
-    styles,
-    /\.open-ena-page:has\(> \.open-ena-fallback-notice\) > \.open-ena-workbench\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/u,
-    "desktop fallback notice layout must leave the workbench in the remaining grid track",
-  );
-  assert.match(
-    styles,
-    /@media \(max-width:\s*900px\)\s*\{[\s\S]*?\.open-ena-page:has\(> \.open-ena-fallback-notice\) > \.open-ena-workbench\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*100dvh;/u,
-    "mobile fallback notice layout must retain the auto-height workbench contract",
-  );
+
 });
 
 test("the rail owns one Open ENA mark and visible runtime version", () => {

@@ -42,15 +42,28 @@ test("version comparison includes removed files and preserves literal source tex
   assert.equal(diff[2].after, undefined);
 });
 
-test("Chinese interfaces are localized and all other site languages declare English fallback", () => {
+test("every site language has complete Nova UI strings and preserves verification placeholders", () => {
+  const english = getNovaCopy("en");
+  function entries(value: Record<string, unknown>, prefix = ""): Record<string, string> {
+    return Object.assign({}, ...Object.entries(value).map(([key, text]) =>
+      typeof text === "string" ? { [prefix + key]: text } : entries(text as Record<string, unknown>, prefix + key + ".")));
+  }
+  const original = entries(english);
   for (const locale of locales) {
     const copy = getNovaCopy(locale);
-    assert.equal(copy.contentFallback, !["en", "zh-hans", "zh-hant"].includes(locale));
-    assert.ok(copy.newSession && copy.preview && copy.statuses["waiting-expert"]);
-    if (copy.contentFallback) assert.ok(copy.fallbackNotice);
+    const localized = entries(copy);
+    assert.deepEqual(Object.keys(localized).sort(), Object.keys(original).sort(), locale);
+    for (const [key, value] of Object.entries(localized)) {
+      assert.ok(value.trim(), `${locale} ${key}`);
+      const placeholders = (str: string) => (str.match(/\{\w+\}/gu) || []).sort();
+      assert.deepEqual(placeholders(value), placeholders(original[key]), `${locale} ${key}`);
+    }
+    if (locale !== "en") {
+      assert.notEqual(copy.greeting, english.greeting, locale);
+      assert.notEqual(copy.previewEmpty, english.previewEmpty, locale);
+      assert.notEqual(copy.verificationForm.sendCode, english.verificationForm.sendCode, locale);
+    }
   }
-  assert.notEqual(getNovaCopy("zh-hans").greeting, getNovaCopy("en").greeting);
-  assert.notEqual(getNovaCopy("zh-hant").greeting, getNovaCopy("en").greeting);
 });
 
 test("pasted context stays literal bounded draft text and never truncates an existing message", () => {

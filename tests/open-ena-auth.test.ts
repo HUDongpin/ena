@@ -5,11 +5,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { localeMeta, locales } from "../lib/i18n";
-import {
-  getOpenEnaCopy,
-  getOpenEnaFallbackNotice,
-  isOpenEnaLocalizedLocale,
-} from "../lib/open-ena-i18n";
+import { getOpenEnaAuthCopy } from "../lib/open-ena-auth-copy";
 import * as openEnaLoginModule from "../components/open-ena/OpenEnaLogin";
 import OpenEnaPasswordInput from "../components/open-ena/OpenEnaPasswordInput";
 
@@ -105,7 +101,7 @@ test("v2 sessions rotate their jti while preserving one account-derived principa
   }), null);
 });
 
-test("the login copy is English, Traditional Chinese, and Simplified Chinese", async () => {
+test("localized login copy preserves account and contact instructions", async () => {
   const copyModule = await loadModule("../lib/open-ena-auth-copy");
   assert.ok(copyModule, "lib/open-ena-auth-copy.ts must provide locale-specific login copy");
 
@@ -126,7 +122,7 @@ test("the login copy is English, Traditional Chinese, and Simplified Chinese", a
     zhHans.collaborationNotice,
     "此入口供现有账号登录。学术合作请联系Professor Sandy TU Yun-Fang(sandy0692@gmail.com)",
   );
-  assert.equal(copyModule.getOpenEnaAuthCopy("fr").title, en.title);
+  assert.notEqual(copyModule.getOpenEnaAuthCopy("fr").title, en.title);
 
   const visibleCopy = JSON.stringify({ en, zhHant, zhHans });
   assert.doesNotMatch(visibleCopy, /sandytu/);
@@ -149,107 +145,22 @@ test("the localized Open ENA page renders a server-side login gate before the wo
   assert.match(page, /export const dynamic = "force-dynamic"/);
 });
 
-const englishWorkbenchMarkerByLocale = {
-  es: /inglés/u,
-  fr: /anglais/u,
-  pt: /inglês/u,
-  de: /Englisch/u,
-  ar: /الإنجليز/u,
-  ko: /영어/u,
-  ja: /英語/u,
-  hi: /अंग्रेज़/u,
-  ru: /английск/u,
-  id: /Inggris/u,
-  bn: /ইংরেজি/u,
-} as const;
-
-test("one semantic fallback notice remains visible before and after sign-in", async () => {
-  const noticeModule = await loadModule("../components/open-ena/OpenEnaFallbackNotice");
-  assert.ok(noticeModule, "the shared fallback notice component must exist");
-  const FallbackNotice = noticeModule.default;
-  const englishWorkbenchTitle = getOpenEnaCopy("en").title;
-  const seenNotices = new Set<string>();
-
+test("sign-in uses the active language and submits the selected route locale", () => {
+  const source = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaLogin.tsx"), "utf8");
+  assert.match(source, /name="locale" value=\{locale\}/u);
   for (const locale of locales) {
-    const markup = renderToStaticMarkup(createElement(FallbackNotice, { locale }));
-    if (isOpenEnaLocalizedLocale(locale)) {
-      assert.equal(markup, "");
-      assert.equal(getOpenEnaFallbackNotice(locale), null);
-      continue;
-    }
+    const copy = getOpenEnaAuthCopy(locale);
+    const markup = renderToStaticMarkup(createElement(openEnaLoginModule.OpenEnaLoginFrame, {
+      locale, children: copy.signIn,
+    }));
+    const root = markup.match(/<div class="open-ena-login-page"[^>]*>/u)?.[0] ?? "";
+    assert.match(root, new RegExp(`lang="${locale}(?:-[a-z-]+)?"`, "iu"), locale);
+    assert.match(root, new RegExp(`dir="${localeMeta[locale].dir}"`), locale);
+    assert.ok(markup.includes(copy.signIn), locale);
 
-    const notice = getOpenEnaFallbackNotice(locale);
-    const meta = localeMeta[locale];
-    assert.ok(notice, `${locale} must disclose the English workbench fallback`);
-    assert.equal(seenNotices.has(notice), false, `${locale} must have a distinct localized disclosure`);
-    seenNotices.add(notice);
-    assert.match(notice, new RegExp(`\\b${locale}\\b`, "u"));
-    assert.match(notice, englishWorkbenchMarkerByLocale[locale]);
-    assert.doesNotMatch(
-      notice,
-      /English interface is shown while this route and locale are retained/u,
-      `${locale} must not reuse the English-only disclosure in the localized shell`,
-    );
-    assert.doesNotMatch(
-      notice,
-      /workbench is translated|espacio de trabajo está traducido|espace de travail est traduit/iu,
-      `${locale} must not claim the workbench is translated`,
-    );
-    assert.equal(getOpenEnaCopy(locale).title, englishWorkbenchTitle, `${locale} must keep the English workbench copy`);
-    assert.match(markup, /role="note"/);
-    assert.match(markup, /data-testid="open-ena-fallback-notice"/);
-    assert.match(markup, new RegExp(`lang="${meta.htmlLang}"`));
-    assert.match(markup, new RegExp(`dir="${meta.dir}"`));
-    assert.match(markup, englishWorkbenchMarkerByLocale[locale]);
+    assert.ok(!markup.includes("open-ena-fallback-notice"));
+    if (locale !== "en") assert.notEqual(copy.intro, getOpenEnaAuthCopy("en").intro, locale);
   }
-
-  assert.equal(seenNotices.size, 11);
-  const arabicMarkup = renderToStaticMarkup(createElement(FallbackNotice, { locale: "ar" }));
-  assert.match(arabicMarkup, /lang="ar"/);
-  assert.match(arabicMarkup, /dir="rtl"/);
-  assert.match(arabicMarkup, /اليسار إلى اليمين/);
-
-  const login = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaLogin.tsx"), "utf8");
-  const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
-  for (const surface of [login, workspace]) {
-    assert.match(surface, /import OpenEnaFallbackNotice from "\.\/OpenEnaFallbackNotice"/);
-    assert.match(surface, /<OpenEnaFallbackNotice locale=\{locale\} \/>/);
-  }
-  assert.match(login, /\{configurationReady \? \([\s\S]*?<form action="\/api\/open-ena\/login"/);
-  assert.match(login, /name="locale" value=\{locale\}/, "the original route locale must be retained");
-
-  const LoginFrame = Reflect.get(openEnaLoginModule, "OpenEnaLoginFrame");
-  assert.equal(typeof LoginFrame, "function", "a hook-free Login root seam must be exported");
-  const unsupportedLogin = renderToStaticMarkup(createElement(LoginFrame, {
-    locale: "ar",
-    children: "login",
-  }));
-  assert.match(
-    unsupportedLogin,
-    /<div class="open-ena-login-page"[^>]*lang="en"[^>]*dir="ltr"/,
-    "the full English login interface must override unsupported route language and direction semantics",
-  );
-
-  const framedSpanishNotice = renderToStaticMarkup(createElement(LoginFrame, {
-    locale: "es",
-    children: createElement(FallbackNotice, { locale: "es" }),
-  }));
-  assert.match(framedSpanishNotice, /open-ena-login-page[^>]*lang="en"[^>]*dir="ltr"/);
-  assert.match(framedSpanishNotice, /data-testid="open-ena-fallback-notice"[^>]*lang="es"/);
-  assert.match(framedSpanishNotice, /El espacio de trabajo permanece en inglés/);
-
-  const framedArabicNotice = renderToStaticMarkup(createElement(LoginFrame, {
-    locale: "ar",
-    children: createElement(FallbackNotice, { locale: "ar" }),
-  }));
-  assert.match(framedArabicNotice, /open-ena-login-page[^>]*lang="en"[^>]*dir="ltr"/);
-  assert.match(framedArabicNotice, /data-testid="open-ena-fallback-notice"[^>]*lang="ar"[^>]*dir="rtl"/);
-
-  const framedEnglish = renderToStaticMarkup(createElement(LoginFrame, {
-    locale: "en",
-    children: createElement(FallbackNotice, { locale: "en" }),
-  }));
-  assert.doesNotMatch(framedEnglish, /open-ena-fallback-notice/);
 });
 
 test("the login form is accessible and never exposes the default account or password", () => {

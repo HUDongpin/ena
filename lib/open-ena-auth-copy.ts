@@ -1,4 +1,5 @@
 import type { Locale } from "./i18n";
+import { localizeWorkspaceCopy } from "@/lib/open-ena/workspace-messages";
 
 export const OPEN_ENA_CONTACT_EMAIL = "sandy0692@gmail.com";
 
@@ -125,10 +126,18 @@ const zhHans: OpenEnaAuthCopy = {
   researchFlow: ["数据", "模型", "证据"],
 };
 
+const localizedCopy = new Map<Locale, OpenEnaAuthCopy>();
 export function getOpenEnaAuthCopy(locale: Locale): OpenEnaAuthCopy {
   if (locale === "zh-hant") return zhHant;
   if (locale === "zh-hans") return zhHans;
-  return en;
+  if (locale === "en") return en;
+  const cached = localizedCopy.get(locale);
+  if (cached) return cached;
+  const template = en.collaborationNotice.replace(OPEN_ENA_CONTACT_EMAIL, "{email}");
+  const copy = localizeWorkspaceCopy(locale, { ...en, collaborationNotice: template });
+  const localized = { ...copy, collaborationNotice: copy.collaborationNotice.replace("{email}", OPEN_ENA_CONTACT_EMAIL) };
+  localizedCopy.set(locale, localized);
+  return localized;
 }
 
 export type OpenEnaLoginNotice =

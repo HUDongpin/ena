@@ -18,6 +18,7 @@ export interface NovaStore {
   createSession(input: NovaMutation & { locale: string; title?: string }): Promise<NovaSession>;
   listSessions(ownerRef: string): Promise<NovaSessionSummary[]>;
   readSession(sessionId: string, ownerRef: string): Promise<NovaSession | null>;
+  renameSession(input: SessionMutation & { title: string }): Promise<NovaSession>;
   appendMessage(input: SessionMutation & { content: string; model: NovaModel; effort: NovaEffort }): Promise<{ session: NovaSession; run: NovaRun }>;
   controlRun(input: SessionMutation & { runId: string; action: "cancel" | "resume" | "retry" }): Promise<NovaSession>;
   restoreArtifact(input: SessionMutation & { artifactId: string }): Promise<NovaSession>;
@@ -139,6 +140,15 @@ export function createNovaStore(pool: Pool, configuration: PluginLabConfiguratio
       const s = open<NovaSession>(row.document_cipher, `nova-session:${row.session_id}`); return { id: s.id, title: s.title, createdAt: s.createdAt, updatedAt: s.updatedAt, status: s.runs.at(-1)?.status ?? null };
     })); },
     async readSession(id, ownerRef) { return tx(async client => (await read(client, id, ownerRef))?.session ?? null); },
+    async renameSession(input) { return tx(async client => {
+      const previous = await replay(client, input, "rename-session", input.sessionId);
+      const session = await owned(client, input);
+      if (previous) return session;
+      session.title = input.title;
+      await save(client, session, instant(input.now));
+      await receipt(client, input, "rename-session", input.sessionId, session.id);
+      return session;
+    }); },
     async appendMessage(input) { return tx(async client => {
       const previous = await replay(client, input, "message", input.sessionId); const session = await owned(client, input);
       if (previous) return { session, run: findRun(session, previous.run_id) };

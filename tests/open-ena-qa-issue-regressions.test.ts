@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { locales } from "../lib/i18n";
+import { locales, localeMeta } from "../lib/i18n";
 import {
   createOpenEnaWorkspaceAxes,
   resetOpenEnaWorkspaceAxisSurface,
@@ -24,7 +24,6 @@ import {
   type OpenEnaResultTableKey,
 } from "../lib/open-ena/export";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
-import * as openEnaI18nModule from "../lib/open-ena-i18n";
 import {
   OpenEnaResultTables,
   OpenEnaResultTablesView,
@@ -43,54 +42,18 @@ type WorkspaceAxes = {
   threeD: readonly [string, string, string] | null;
 };
 
-const englishWorkbenchMarkerByLocale = {
-  es: /inglés/u,
-  fr: /anglais/u,
-  pt: /inglês/u,
-  de: /Englisch/u,
-  ar: /الإنجليز/u,
-  ko: /영어/u,
-  ja: /英語/u,
-  hi: /अंग्रेज़/u,
-  ru: /английск/u,
-  id: /Inggris/u,
-  bn: /ইংরেজি/u,
-} as const;
-
-test("Open ENA fallback disclosure is absent for localized routes and explicit for every other locale", () => {
-  const getFallbackNotice = Reflect.get(openEnaI18nModule, "getOpenEnaFallbackNotice");
-  const isLocalized = Reflect.get(openEnaI18nModule, "isOpenEnaLocalizedLocale");
-  assert.equal(typeof getFallbackNotice, "function", "the shared pure fallback helper must be exported");
-  assert.equal(typeof isLocalized, "function", "localized Open ENA locales must be exported");
-  const seen = new Set<string>();
+test("the workspace shell renders in the selected language and text direction", () => {
   for (const locale of locales) {
-    const notice = getFallbackNotice(locale);
-    if (isLocalized(locale)) {
-      assert.equal(notice, null);
-      continue;
-    }
-    assert.ok(typeof notice === "string" && notice.length > 0, `${locale} must have a localized fallback notice`);
-    assert.equal(seen.has(notice), false, `${locale} must not reuse another locale's disclosure`);
-    seen.add(notice);
-    assert.match(notice, new RegExp(`\\b${locale}\\b`, "u"));
-    assert.match(notice, englishWorkbenchMarkerByLocale[locale as keyof typeof englishWorkbenchMarkerByLocale]);
-    assert.doesNotMatch(notice, /English interface is shown while this route and locale are retained/u);
-    assert.doesNotMatch(notice, /workbench is translated/iu);
+    const markup = shell(locale);
+    const root = markup.match(/<div[^>]*data-testid="open-ena-workspace-v3"[^>]*>/u)?.[0] ?? "";
+    assert.match(root, new RegExp(`lang="${locale}(?:-[a-z-]+)?"`, "iu"), locale);
+    assert.match(root, new RegExp(`dir="${localeMeta[locale].dir}"`), locale);
+    assert.ok(!markup.includes("open-ena-fallback-notice"));
+    if (locale !== "en") assert.notEqual(getOpenEnaCopy(locale).modes.plot, getOpenEnaCopy("en").modes.plot, locale);
   }
-  assert.equal(seen.size, 11);
-
-  const noticeComponent = readFileSync(
-    new URL("../components/open-ena/OpenEnaFallbackNotice.tsx", import.meta.url),
-    "utf8",
-  );
-  assert.match(noticeComponent, /getLocaleMeta\(locale\)/);
-  assert.match(noticeComponent, /lang=\{meta\.htmlLang\}/);
-  assert.match(noticeComponent, /dir=\{meta\.dir\}/);
-  assert.match(noticeComponent, /data-testid="open-ena-fallback-notice"/);
-  assert.doesNotMatch(noticeComponent, /lang="en"/);
 });
 
-test("workspace lifecycle, fallback, unavailable tabs, and mobile trajectory CSS remain bounded", () => {
+test("workspace lifecycle, unavailable tabs, and mobile trajectory CSS remain bounded", () => {
   const inlineProgressRule = styles.match(/\.ena-inline-progress\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*(\d+);[^}]*\}/u);
   assert.ok(inlineProgressRule, "inline progress must establish its own stacking context");
   assert.ok(Number(inlineProgressRule[1]) > 7, "inline progress must stay above group plot actions");
@@ -110,14 +73,6 @@ test("workspace lifecycle, fallback, unavailable tabs, and mobile trajectory CSS
   assert.match(styles, /\.ena-result-table-unavailable-notes\s*\{[^}]*border:/u);
   assert.match(styles, /\.ena-result-table-not-applicable\s*\{[^}]*border:/u);
 
-  assert.match(styles, /\.open-ena-fallback-notice\s*\{[^}]*max-width:/u);
-  assert.match(styles, /\.open-ena-page:has\(> \.open-ena-fallback-notice\)\s*\{[^}]*display:\s*grid;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/u);
-  assert.match(styles, /\.open-ena-page:has\(> \.open-ena-fallback-notice\) > \.open-ena-workbench\s*\{[^}]*height:\s*100%;[^}]*min-height:\s*0;/u);
-  assert.match(
-    styles,
-    /@media \(max-width:\s*900px\)\s*\{[\s\S]*?\.open-ena-page:has\(> \.open-ena-fallback-notice\)\s*\{[^}]*grid-template-rows:\s*auto auto;[^}]*\}[\s\S]*?\.open-ena-page:has\(> \.open-ena-fallback-notice\) > \.open-ena-workbench\s*\{[^}]*height:\s*auto;[^}]*min-height:\s*100dvh;/u,
-    "the higher-specificity fallback layout must preserve the existing mobile auto-height contract",
-  );
   assert.match(
     styles,
     /@media \(max-width:\s*640px\)\s*\{[\s\S]*?\.open-ena-longitudinal-trajectory\s*\{[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*overflow-x:\s*auto;/u,

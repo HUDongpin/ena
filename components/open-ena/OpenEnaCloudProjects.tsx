@@ -1,5 +1,7 @@
 "use client";
 
+import { getLocaleMeta } from "@/lib/i18n";
+
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import Link from "next/link";
 import OpenEnaWorkspace from "./OpenEnaWorkspace";
@@ -156,7 +158,7 @@ export default function OpenEnaCloudProjects({ accountId, accountEmail, ...works
     } catch (failure) { if (alive.current) fail(failure); }
     finally { if (alive.current) setBusy(false); }
   }
-  const time = (value: string) => new Date(value).toLocaleString(locale === "zh-hans" ? "zh-CN" : locale === "zh-hant" ? "zh-HK" : "en");
+  const time = (value: string) => new Date(value).toLocaleString(getLocaleMeta(locale).htmlLang);
   const savedLabel = current ? copy.saved.replace("{time}", time(current.updatedAt)).replace("{revision}", String(current.revision)) : copy.local;
   const used = listing ? copy.storage.replace("{count}", String(listing.projectCount)).replace("{limit}", String(listing.limits.projects))
     .replace("{used}", (listing.usedBytes / 1024 / 1024).toFixed(1)).replace("{total}", String(listing.limits.bytes / 1024 / 1024)) : "";
