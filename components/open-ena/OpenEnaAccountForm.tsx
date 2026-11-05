@@ -3,9 +3,8 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import type { Locale } from "@/lib/i18n";
+import { getLocaleMeta, type Locale } from "@/lib/i18n";
 import { getOpenEnaCloudCopy, openEnaCloudErrorCopy } from "@/lib/open-ena/cloud-copy";
-import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 
 type Mode = "register" | "forgot-password" | "verify" | "reset-password";
 export default function OpenEnaAccountForm({ locale, initialMode, enabled, registrationAvailable, recoveryAvailable }: {
@@ -59,8 +58,7 @@ export default function OpenEnaAccountForm({ locale, initialMode, enabled, regis
     window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
     setMode(next); setError(""); setSuccess(""); setToken(""); setPassword(""); setConfirmation("");
   }
-  return <div className="open-ena-account-page" lang={locale === "zh-hans" ? "zh-Hans" : locale === "zh-hant" ? "zh-Hant" : "en"}>
-    <OpenEnaFallbackNotice locale={locale} />
+  return <div className="open-ena-account-page" lang={getLocaleMeta(locale).htmlLang} dir={getLocaleMeta(locale).dir}>
     <section className="open-ena-account-card" aria-labelledby={`${id}-title`}>
       <Link href={`/${locale}`}><Image src="/logo-open-ena.svg" alt="Open ENA" width={210} height={68} priority /></Link>
       <h1 id={`${id}-title`}>{title}</h1><p>{intro}</p>

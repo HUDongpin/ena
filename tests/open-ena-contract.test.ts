@@ -5,6 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { analyzeDataset, buildManifest, dimensionEffect } from "../lib/open-ena/analyze";
 import { inferConfig, parseCsv, validateConfig } from "../lib/open-ena/csv";
+import { locales, localeMeta } from "../lib/i18n";
+import workspaceSitemap from "../app/sitemap";
 import { JENA_RUNTIME_VERSION, SAMPLE_CONFIG } from "../lib/open-ena/types";
 
 const projectRoot = process.cwd();
@@ -225,15 +227,18 @@ test("2D remains the default and supported 3D switches the same bound geometry i
 
 });
 
-test("Open ENA exposes honest locale, SEO, and accessible-result contracts", () => {
+test("Open ENA exposes all workspace locales, their canonical URLs and accessible results", async () => {
   const workspace = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaWorkspace.tsx"), "utf8");
   const plot = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaPlot.tsx"), "utf8");
-  const page = readFileSync(join(projectRoot, "app", "[locale]", "open-ena", "page.tsx"), "utf8");
-  const sitemap = readFileSync(join(projectRoot, "app", "sitemap.ts"), "utf8");
-  const copy = readFileSync(join(projectRoot, "lib", "open-ena-i18n.ts"), "utf8");
-
-  assert.match(copy, /openEnaLocalizedLocales = \["en", "zh-hant", "zh-hans"\]/);
-  assert.match(workspace, /className=\{`ena-control-content ena-workspace-controls-v3 ena-restored-workbench[\s\S]*?data-mode=\{mode\} lang=\{locale\} dir="ltr"/);
+  const { generateMetadata } = await import("../app/[locale]/open-ena/page");
+  const sitemap = workspaceSitemap();
+  for (const locale of locales) {
+    const route = `/${locale}/open-ena`;
+    const metadata = await generateMetadata({ params: Promise.resolve({ locale }), searchParams: Promise.resolve({}) });
+    assert.equal(metadata.alternates?.canonical, route, locale);
+    assert.ok(sitemap.some((item) => new URL(item.url).pathname === route), locale);
+    assert.equal(Reflect.get(metadata.alternates?.languages ?? {}, localeMeta[locale].htmlLang), route);
+  }
   assert.match(workspace, /role="status" aria-live="polite"/);
   assert.match(workspace, /aria-busy=\{sourceBusy \|\| modelState.runStatus === "running"\}/);
   assert.doesNotMatch(workspace, /complete locale catalog follows/);
@@ -241,8 +246,7 @@ test("Open ENA exposes honest locale, SEO, and accessible-result contracts", () 
   assert.match(plot, /Strongest edges:/);
   assert.match(plot, /GROUP_VISUAL_ENCODINGS/);
   assert.match(plot, /circle-solid[\s\S]*square-solid[\s\S]*triangle-solid[\s\S]*diamond-solid[\s\S]*cross-solid[\s\S]*hexagon-solid/);
-  assert.match(page, /robots: isOpenEnaLocalizedLocale\(typedLocale\)/);
-  assert.match(sitemap, /route === "\/open-ena" \? openEnaLocalizedLocales : locales/);
+
 });
 
 test("Open ENA publishes methodology, local-processing, and GPL boundaries", () => {

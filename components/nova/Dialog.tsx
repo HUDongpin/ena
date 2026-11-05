@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
+import type { NovaCopy } from "./copy";
 import { Icon } from "./Icon";
 export function Dialog({ title, children, onClose, closeLabel = "Close", className = "" }: { title: string; children: React.ReactNode; onClose: () => void; closeLabel?: string; className?: string }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -13,12 +14,13 @@ export function Dialog({ title, children, onClose, closeLabel = "Close", classNa
     <button type="button" className="nova-icon-button nova-dialog-close" aria-label={closeLabel} onClick={onClose}><Icon name="close" /></button>{children}
   </dialog>;
 }
-export function DonationDialog({ onClose }: { onClose: () => void }) {
-  return <Dialog title="Support Open ENA" onClose={onClose} className="nova-donation"><div lang="en" dir="ltr">
-    <Icon name="heart" size={56}/><h2>Support Open ENA</h2>
-    <p>Help keep Open ENA free for education and research.<br/>Your donation helps cover our servers and AI token costs.</p>
-    <p className="nova-donation-contact">To discuss a donation method, please contact:<br/><a href="mailto:hudongpin@126.com?subject=Open%20ENA%20Donation%20Inquiry">hudongpin@126.com</a></p>
-    <p className="nova-muted">Thank you for supporting open research tools.</p>
-    <div className="nova-dialog-actions"><button className="nova-button" onClick={onClose}>Maybe later</button><a className="nova-button nova-primary" href="mailto:hudongpin@126.com?subject=Open%20ENA%20Donation%20Inquiry"><Icon name="mail"/>Contact by email</a></div>
+export function DonationDialog({ copy, onClose }: { copy: NovaCopy; onClose: () => void }) {
+  const text = copy.donation;
+  return <Dialog title={text.title} closeLabel={copy.close} onClose={onClose} className="nova-donation"><div>
+    <Icon name="heart" size={56}/><h2>{text.title}</h2>
+    <p>{text.reason}</p>
+    <p className="nova-donation-contact">{text.contact}<br/><a href="mailto:hudongpin@126.com?subject=Open%20ENA%20Donation%20Inquiry">hudongpin@126.com</a></p>
+    <p className="nova-muted">{text.thanks}</p>
+    <div className="nova-dialog-actions"><button className="nova-button" onClick={onClose}>{text.later}</button><a className="nova-button nova-primary" href="mailto:hudongpin@126.com?subject=Open%20ENA%20Donation%20Inquiry"><Icon name="mail"/>{text.email}</a></div>
   </div></Dialog>;
 }

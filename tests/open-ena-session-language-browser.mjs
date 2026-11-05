@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
+import { tsImport } from "tsx/esm/api";
 import { chromium } from "playwright";
+
+const { locales, localeMeta } = await tsImport("../lib/i18n.ts", import.meta.url);
+const { getOpenEnaCopy } = await tsImport("../lib/open-ena-i18n.ts", import.meta.url);
+const { getOpenEnaCloudCopy } = await tsImport("../lib/open-ena/cloud-copy.ts", import.meta.url);
 
 assert.ok(existsSync("components/open-ena/OpenEnaWorkspaceSession.tsx"), "one stable session owner must pass language to both local and cloud workspaces");
 const retention = await readFile("tests/open-ena-ai-interpretation-retention-browser.mjs", "utf8");
@@ -52,9 +57,28 @@ try {
       assert.ok(JSON.parse(snapshot).analysis, "fixture must contain a completed model");
       assert.ok(JSON.parse(snapshot).statisticsReport, "fixture must contain confirmed statistics");
     }
-    for (const locale of ["zh-hans", "zh-hant", "en"]) {
+    const picker = page.getByTestId("open-ena-workspace-language");
+    assert.deepEqual(await picker.locator("option").evaluateAll((options) => options.map((option) => option.value)), locales);
+    for (const locale of locales) {
+      const copy = getOpenEnaCopy(locale);
       await page.getByTestId("open-ena-workspace-language").selectOption(locale);
       assert.equal(await page.getByTestId("open-ena-workspace-language").inputValue(), locale);
+      const root = page.getByTestId("open-ena-workspace-v3");
+      assert.equal(await root.getAttribute("lang"), localeMeta[locale].htmlLang);
+      assert.equal(await root.getAttribute("dir"), localeMeta[locale].dir);
+      await page.getByRole("button", { name: copy.modes.model, exact: true }).click();
+      const model = page.locator(".ena-control-content[data-mode=model]");
+      assert.equal(await model.getAttribute("dir"), localeMeta[locale].dir);
+      const windows = model.locator('[data-model-tab="windows"]');
+      assert.ok((await windows.textContent()).includes(copy.modelV3.tabs.tabs.windows), locale);
+      await windows.click();
+      assert.equal(await windows.getAttribute("aria-selected"), "true");
+      await page.getByRole("button", { name: copy.modes.stats, exact: true }).click();
+      const exports = page.getByTestId("open-ena-export-current-analysis");
+      assert.ok((await exports.textContent()).includes(copy.modelV3.workspace.artifacts.exportAnalysis), locale);
+      await page.getByRole("button", { name: copy.aiInterpretation.title, exact: true }).click();
+      assert.ok((await page.locator(".ena-ai-mode-panel").innerText()).includes(copy.aiInterpretation.consentLabel), locale);
+      await page.getByRole("button", { name: copy.modes.stats, exact: true }).click();
       assert.equal(page.url(), originalUrl, "language selection must not navigate");
       assert.equal(await page.evaluate(() => document.querySelector('[data-testid="open-ena-workspace-v3"]') === window.workspaceNode), true, "workspace DOM and state must remain mounted");
       assert.equal(await page.getByTestId("open-ena-workspace-v3").getAttribute("data-result-status"), "current");
@@ -63,7 +87,7 @@ try {
       const links = await page.locator(".ena-site-navigation a").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("href")));
       for (const href of links) if (href?.startsWith("/")) assert.ok(href.startsWith(`/${locale}/`) || href === `/${locale}`, href);
       if (registered) {
-        assert.equal(await page.locator(".open-ena-cloud-save").first().textContent(), locale === "en" ? "Save to cloud" : locale === "zh-hans" ? "保存到云端" : "儲存至雲端");
+        assert.equal(await page.locator(".open-ena-cloud-save").first().textContent(), getOpenEnaCloudCopy(locale).save);
       } else {
         const current = JSON.parse(await page.evaluate(async () => JSON.stringify(await window.cloudBridge.current.capture())));
         const before = JSON.parse(snapshot);

@@ -4,6 +4,7 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { OpenEnaTeachingSampleProgress } from "../components/open-ena/OpenEnaTeachingSampleProgress";
+import { locales } from "../lib/i18n";
 import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 import {
   OPEN_ENA_EXPORT_FAMILIES,
@@ -37,7 +38,7 @@ test("teaching samples reuse the export family names and state row shape plus ex
     ["endpoint", "ona", "separate"],
   );
 
-  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+  for (const locale of locales) {
     const copy = getOpenEnaCopy(locale).modelV3.workspace.data;
     for (const family of OPEN_ENA_EXPORT_FAMILIES) {
       assert.ok(copy.teachingSamples.families[family].trim().length > 0, `${locale} ${family}`);
@@ -58,9 +59,6 @@ test("teaching samples reuse the export family names and state row shape plus ex
     }
   }
 
-  const fallback = getOpenEnaCopy("es").modelV3.workspace.data.teachingSamples;
-  assert.deepEqual(fallback.families, OPEN_ENA_EXPORT_FAMILY_NAMES);
-  assert.equal(fallback.expectedOutputs.ona, "ONA-ready");
 });
 
 test("the Data rail discloses family, row shape, and expected output on each teaching sample", () => {
@@ -96,9 +94,12 @@ test("the Data rail discloses family, row shape, and expected output on each tea
   assert.match(hans, /预期产出: 可构建 ONA/);
   assert.doesNotMatch(hans, /Separate trajectory/);
 
-  const spanish = renderWorkspaceShellV3("es");
-  assert.match(spanish, /Family: Separate trajectory/);
-  assert.match(spanish, /Expected output: ONA-ready/);
+  for (const locale of locales) {
+    const markup = renderWorkspaceShellV3(locale);
+    const guide = getOpenEnaCopy(locale).modelV3.workspace.data.teachingSamples;
+    assert.ok(markup.includes(guide.families.separate), locale);
+    assert.ok(markup.includes(guide.expectedOutputs.ona), locale);
+  }
 });
 
 test("first-success progress stays on load, prefilled drafts, remaining gates, then Build", () => {

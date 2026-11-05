@@ -15,7 +15,7 @@ import {
 } from "@/lib/i18n";
 import { siteConfig } from "@/lib/site";
 import { SkipLink } from "@/components/SkipLink";
-import { getOpenEnaCopy, isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
+import { getOpenEnaCopy } from "@/lib/open-ena-i18n";
 
 interface LocaleLayoutProps {
   children: React.ReactNode;
@@ -66,7 +66,7 @@ export default async function LocaleLayout({ children, params }: LocaleLayoutPro
 
   const typedLocale = locale as Locale;
   const dictionary = getDictionary(typedLocale);
-  const workspaceCopy = getOpenEnaCopy(isOpenEnaLocalizedLocale(typedLocale) ? typedLocale : "en");
+  const workspaceCopy = getOpenEnaCopy(typedLocale);
   const meta = getLocaleMeta(typedLocale);
   const structuredData = {
     "@context": "https://schema.org",

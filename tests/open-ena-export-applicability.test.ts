@@ -159,10 +159,6 @@ test("applicability copy exists in every localized workbench locale and disabled
     getOpenEnaCopy("zh-hant").modelV3.workspace.stats.exportApplicability.reasons["would-be-empty"],
     getOpenEnaCopy("zh-hans").modelV3.workspace.stats.exportApplicability.reasons["would-be-empty"],
   );
-  assert.equal(
-    getOpenEnaCopy("es").modelV3.workspace.stats.exportApplicability.reasons["not-applicable-family"],
-    english.reasons["not-applicable-family"],
-  );
 
   for (const locale of openEnaLocalizedLocales) {
     const copy = getOpenEnaCopy(locale).modelV3.workspace.stats.exportApplicability;
@@ -179,7 +175,7 @@ test("applicability copy exists in every localized workbench locale and disabled
     assert.match(blockedHtml, /data-export-action="trajectory-steps-csv"/);
     assert.match(blockedHtml, /data-export-applicability-reason="would-be-empty"/);
     assert.match(blockedHtml, /data-export-family-applies="false"/);
-    assert.ok(blockedHtml.includes(reason));
+    assert.ok(blockedHtml.includes(renderToStaticMarkup(reason)), locale);
 
     const ready = openEnaExportDisclosure("trajectory-steps-csv", { family: "separate", current: true, rowCount: 2 });
     const hint = openEnaExportApplicabilityText(ready, copy);
@@ -192,7 +188,7 @@ test("applicability copy exists in every localized workbench locale and disabled
     }));
     assert.match(readyHtml, /data-export-applicability-reason="applicable"/);
     assert.match(readyHtml, /data-export-family-applies="true"/);
-    assert.ok(readyHtml.includes(hint));
+    assert.ok(readyHtml.includes(renderToStaticMarkup(hint)), locale);
   }
 });
 

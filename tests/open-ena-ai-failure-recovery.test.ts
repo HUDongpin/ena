@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { locales, type Locale } from "../lib/i18n";
 import { getOpenEnaCopy, openEnaLocalizedLocales } from "../lib/open-ena-i18n";
 import { createOpenEnaAiInterpretationPostHandler } from "../lib/server/open-ena-ai-interpretation-route";
 
@@ -53,7 +54,7 @@ const FAILURE_COPY = {
 type FailureLocale = keyof typeof FAILURE_COPY;
 type FailureCopyKey = keyof (typeof FAILURE_COPY)["en"];
 
-function copyText(locale: FailureLocale) {
+function copyText(locale: Locale) {
   return getOpenEnaCopy(locale).aiInterpretation as unknown as Record<FailureCopyKey, string>;
 }
 
@@ -74,23 +75,26 @@ function sourceBlock(source: string, marker: RegExp, label: string) {
 }
 
 test("failure-class copy explains what happened and what to do in every AI locale", () => {
-  assert.deepEqual([...openEnaLocalizedLocales], ["en", "zh-hant", "zh-hans"]);
+  assert.deepEqual(openEnaLocalizedLocales, locales);
   const seen = new Set<string>();
   for (const locale of openEnaLocalizedLocales) {
     const copy = copyText(locale);
-    const expected = FAILURE_COPY[locale];
-    for (const key of Object.keys(expected) as FailureCopyKey[]) {
-      assert.equal(copy[key], expected[key], `${locale} aiInterpretation.${key}`);
-      seen.add(copy[key]);
+    const expected = FAILURE_COPY[locale as FailureLocale];
+    for (const key of Object.keys(FAILURE_COPY.en) as FailureCopyKey[]) {
+      assert.ok(copy[key].trim(), `${locale} ${key}`);
+      if (expected) assert.equal(copy[key], expected[key], `${locale} aiInterpretation.${key}`);
+      if (expected) seen.add(copy[key]);
+      else assert.notEqual(copy[key], FAILURE_COPY.en[key], `${locale} ${key}`);
     }
-    assert.equal(copy.sessionRecovery.includes("Retry") || copy.sessionRecovery.includes("重試") || copy.sessionRecovery.includes("重试"), false);
     assert.notEqual(copy.signInAgain, getOpenEnaCopy(locale).aiInterpretation.retry);
+    if (!expected) continue;
+    assert.equal(copy.sessionRecovery.includes("Retry") || copy.sessionRecovery.includes("重試") || copy.sessionRecovery.includes("重试"), false);
     assert.doesNotMatch(copy.evidenceBoundary, /invalid|不再有效|已经失效|已經失效/u);
     assert.doesNotMatch(copy.evidenceBoundaryRetained, /invalid|missing|缺少|不再有效|已经失效|已經失效/u);
     assert.match(copy.evidenceBoundaryRetained, /remain valid|仍然有效/u);
     assert.doesNotMatch(copy.previousInterpretation, /missing|缺少/u);
   }
-  assert.equal(seen.size, openEnaLocalizedLocales.length * Object.keys(FAILURE_COPY.en).length);
+  assert.equal(seen.size, Object.keys(FAILURE_COPY).length * Object.keys(FAILURE_COPY.en).length);
 });
 
 test("panel failure classes choose retry or sign-in without collapsing 502 causes", async () => {
@@ -338,7 +342,7 @@ test("removing a focused result restores focus before the idle panel can drop it
 
 test("a retry started for older evidence is not applied after the current request changes", async () => {
   assert.match(workspace, /request=\{activeAiReview\?\.request \?\? null\}/);
-  assert.match(workspace, /disabled=\{!activeAiReview \|\| activeAiReview.request.locale !== locale \|\| !current\}/);
+  assert.match(workspace, /disabled=\{!activeAiReview \|\| activeAiReview.request.locale !== aiLocale\(locale\) \|\| !current\}/);
   assert.match(
     aiComponent,
     /currentRequestIdentityRef\.current\s*!==\s*requestedIdentity/,

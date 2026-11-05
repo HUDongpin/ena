@@ -1,9 +1,10 @@
 import type { Locale } from "@/lib/i18n";
+import { workspaceMessage } from "@/lib/open-ena/workspace-messages";
 
 /** Presentation copy only. Scientific terms and actions stay in the native v3 catalog. */
 export function restoredWorkbenchCopy(locale: Locale) {
   const text = (en: string, traditional: string, simplified: string) =>
-    locale === "zh-hant" ? traditional : locale === "zh-hans" ? simplified : en;
+    locale === "zh-hant" ? traditional : locale === "zh-hans" ? simplified : workspaceMessage(locale, en);
   return {
     dataKicker: text("01 · Dataset", "01 · 資料集", "01 · 数据集"),
     modelKicker: text("02 · Model", "02 · 模型", "02 · 模型"),

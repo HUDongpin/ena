@@ -43,6 +43,18 @@ test("Nova PostgreSQL ownership, replay, leases and expert workflow", async t =>
     const message = { ...mutation(), sessionId: session.id, content: "Build a presenter", model, effort: "medium" as const };
     await assert.rejects(store.appendMessage({...message,idempotencyKey:input.idempotencyKey}), {code:"idempotency-conflict"});
     const started = await store.appendMessage(message);
+    await t.test("only the owner can rename, and replay cannot undo a later name or lose the active run", async () => {
+      const rename = { ...mutation(), sessionId: session.id, title: "First name" };
+      await assert.rejects(store.renameSession({ ...rename, ownerRef: other }), { code: "not-found" });
+      assert.equal((await store.renameSession(rename)).title, "First name");
+      await store.renameSession({ ...rename, idempotencyKey: randomUUID(), title: "Latest private name" });
+      const replayed = await store.renameSession(rename);
+      assert.equal(replayed.title, "Latest private name");
+      assert.equal(replayed.runs[0].id, started.run.id);
+      assert.equal((await store.listSessions(owner))[0].title, replayed.title);
+      assert.equal((await store.readSession(session.id, owner))?.title, replayed.title);
+      assert.doesNotMatch(JSON.stringify((await db.query("SELECT * FROM ena_nova_sessions")).rows), /Latest private name/);
+    });
     await t.test("one active run and replay never duplicate a message", async () => {
       assert.equal((await store.appendMessage(message)).run.id, started.run.id);
       await assert.rejects(store.appendMessage({...message, idempotencyKey: randomUUID()}), { code: "run-active" });

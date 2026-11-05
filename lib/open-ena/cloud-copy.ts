@@ -1,4 +1,5 @@
 import type { Locale } from "../i18n";
+import { localizeWorkspaceCopy } from "@/lib/open-ena/workspace-messages";
 
 const en = {
   email: "Email", emailHint: "Use an email address you can open.", registerTitle: "Create your Open ENA account",
@@ -102,7 +103,17 @@ const zhHant: OpenEnaCloudCopy = {
   runtimePrivacy: "ENA 運算由 jENA v{version}（GPL-3.0-only）提供，ENA.HK 提供介面、繪圖和匯出。雲端儲存會保存工作區的個人副本，包括已完成的 AI 解讀、比較集和歷史匯入。新的 AI 分享仍需另行確認。",
 };
 
-export function getOpenEnaCloudCopy(locale: Locale): OpenEnaCloudCopy { return locale === "zh-hans" ? zhHans : locale === "zh-hant" ? zhHant : en; }
+const localizedCopy = new Map<Locale, OpenEnaCloudCopy>();
+export function getOpenEnaCloudCopy(locale: Locale): OpenEnaCloudCopy {
+  if (locale === "zh-hans") return zhHans;
+  if (locale === "zh-hant") return zhHant;
+  if (locale === "en") return en;
+  const cached = localizedCopy.get(locale);
+  if (cached) return cached;
+  const copy = localizeWorkspaceCopy(locale, en);
+  localizedCopy.set(locale, copy);
+  return copy;
+}
 export function openEnaCloudErrorCopy(code: unknown, copy: OpenEnaCloudCopy) {
   switch (code) {
     case "invalid-input": return copy.invalidInput;

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  aiLocale,
   OPEN_ENA_AI_CONSENT_HEADER,
   OPEN_ENA_AI_CONSENT_VALUE,
   OPEN_ENA_AI_OPERATION_ALREADY_PROCESSED_ERROR,
@@ -19,6 +20,7 @@ import { getOpenEnaAiProviderCopy, type OpenEnaAiInterpretationCopy } from "@/li
 import { getOpenEnaAiProviderDescriptor, OPEN_ENA_AI_PROVIDER_CONSENT_HEADER, openEnaAiProviderConsentKey } from "@/lib/open-ena/ai-provider";
 import type { SavedOpenEnaAiInterpretation } from "@/lib/open-ena/cloud-workspace-extras";
 import { getLocaleMeta, type Locale } from "@/lib/i18n";
+import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import { canonicalJsonV3 } from "@/lib/open-ena/model-v3/canonical-json";
 
 interface OpenEnaAiInterpretationProps {
@@ -229,7 +231,7 @@ export function openEnaAiCompletedRecordStatus({ record, historical, request, lo
   const scienceChanged = (historical && historicalEvidenceInvalidated)
     || (request === null ? !historical : originalIdentity !== currentIdentity);
   return { state: historical ? "historical" as const : scienceChanged ? "stale" as const : "current" as const,
-    scienceChanged, languageMismatch: record.request.locale !== locale };
+    scienceChanged, languageMismatch: record.request.locale !== aiLocale(locale) };
 }
 
 export function openEnaAiRetryAfter(value: string | null, now = Date.now()): number {
@@ -303,7 +305,8 @@ export default function OpenEnaAiInterpretation({
   const completedStatus = useMemo(() => completedRecord ? openEnaAiCompletedRecordStatus({ record: completedRecord.value,
     historical: completedRecord.historical, request, localScientificIdentity, locale, historicalEvidenceInvalidated }) : null,
   [completedRecord, request, localScientificIdentity, locale, historicalEvidenceInvalidated]);
-  const requestLanguageReady = Boolean(request && request.locale === locale);
+  const outputLocale = aiLocale(locale);
+  const requestLanguageReady = Boolean(request && request.locale === outputLocale);
   useLayoutEffect(() => { onLocalWorkChange?.(generationStatus === "loading"); }, [generationStatus, onLocalWorkChange]);
   const showsRetainedInterpretation = currentResponse !== null;
   // Sample panel focus before controls change so restoration stays local.
@@ -312,7 +315,7 @@ export default function OpenEnaAiInterpretation({
   }
 
   useEffect(() => {
-    const pathname = window.location.pathname.replace(/^\/(en|zh-hans|zh-hant)(?=\/open-ena(?:\/|$))/, `/${locale}`);
+    const pathname = window.location.pathname.replace(/^\/[^/]+(?=\/open-ena(?:\/|$))/, `/${locale}`);
     setSignInHref(`${pathname}${window.location.search}`);
   }, [locale]);
 
@@ -622,6 +625,7 @@ export default function OpenEnaAiInterpretation({
         <span>{copy.notStatisticalInference}</span>
       </aside>
 
+      <OpenEnaFallbackNotice locale={locale} outputLocale={outputLocale} />
       <p data-ena-ai-current-provider>{copy.provider}: {currentProvider.displayName || currentProvider.provider}; {copy.model}: {currentProvider.model}</p>
       <details className="ena-ai-payload-preview" data-ena-ai-provider-disclosure>
         <summary>{copy.disclosureSummary}</summary>

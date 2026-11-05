@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { locales } from "../lib/i18n";
 import {
   getOpenEnaCopy,
   formatOpenEnaWorkspaceFailureV3,
@@ -27,7 +28,7 @@ function shape(value: unknown): unknown {
 }
 
 test("every native Open ENA locale exposes the complete Models v3 copy contract", () => {
-  assert.deepEqual(openEnaLocalizedLocales, ["en", "zh-hant", "zh-hans"]);
+  assert.deepEqual(openEnaLocalizedLocales, locales);
   const baseline = shape(getOpenEnaCopy("en").modelV3);
   for (const locale of openEnaLocalizedLocales) {
     const modelV3 = getOpenEnaCopy(locale).modelV3;
@@ -187,6 +188,8 @@ test("diagnostic guidance preserves multi-case scientific meanings", () => {
   for (const locale of openEnaLocalizedLocales) {
     const copy = getOpenEnaCopy(locale).modelV3;
     const noConnection = localizeModelDiagnosticV3(copy, { id: "ONA_NO_ENABLED_CONNECTION", severity: "error", scope: "codes" });
+    if (locale !== "en") assert.notEqual(noConnection.detail, localizeModelDiagnosticV3(getOpenEnaCopy("en").modelV3, { id: "ONA_NO_ENABLED_CONNECTION", severity: "error", scope: "codes" }).detail);
+    if (locale !== "en" && locale !== "zh-hant" && locale !== "zh-hans") continue;
     for (const concept of locale === "en" ? [/Code values/u, /Horizon boundaries/u, /response order/u, /backward-window/u, /directional mask/u] : locale === "zh-hant" ? [/代碼/u, /視域/u, /回應順序/u, /向後窗口/u, /方向遮罩/u] : [/代码/u, /视域/u, /回应顺序/u, /向后窗口/u, /方向遮罩/u]) assert.match(noConnection.detail, concept);
     assert.doesNotMatch(noConnection.detail, /Enable a mask cell|啟用遮罩儲存格|启用遮罩单元格/u);
   }
@@ -214,4 +217,26 @@ test("native Data View return action uses existing localized visual and accessib
   const source = readFileSync("components/open-ena/OpenEnaWorkspace.tsx", "utf8");
   for (const field of ["workspaceCopy.dataView.returnLabel", "workspaceCopy.dataView.returnAriaLabel", "copy.ona.dataView.returnLabel", "copy.ona.dataView.returnAriaLabel"]) assert.ok(source.includes(field));
   assert.match(source, /aria-label=\{centerSurface === "data"/);
+});
+
+test("additional locale formatters preserve literal dataset names, even when they contain message placeholders", () => {
+  const literal = "Select {group} $& {index}";
+  for (const locale of ["ja", "ar", "fr"] as const) {
+    const copy = getOpenEnaCopy(locale);
+    const label = copy.modelV3.units.removeField(literal, literal);
+    assert.ok(label.includes(literal));
+    assert.notEqual(label, getOpenEnaCopy("en").modelV3.units.removeField(literal, literal));
+    const sample = copy.modelV3.tabs.diagnostics.evidenceSample({ identity: literal, rowIndex: 18 }, 3, { id: "STANDARD_CODE_VALUE_INVALID", severity: "error", scope: "codes" });
+    assert.ok(sample.includes(literal));
+    assert.doesNotMatch(sample, /Evidence sample|row 19/u);
+    for (const groupNames of [[], [literal], [literal, "Q"]] as const) {
+      const plot = copy.modelV3.workspace.plot.comparisonScaledDescription(groupNames, "1.25");
+      if (groupNames.length) assert.ok(plot.includes(literal));
+      assert.ok(plot.includes("1.25"));
+      assert.doesNotMatch(plot, /scaled|selected group network/u);
+    }
+    const detail = localizeModelDiagnosticV3(copy.modelV3, { id: "STANDARD_CODE_VALUE_INVALID", severity: "error", scope: "codes", fieldPath: literal }).detail;
+    assert.ok(detail.includes(literal));
+    assert.doesNotMatch(detail, /\bInspect\b|weighting domain/u);
+  }
 });

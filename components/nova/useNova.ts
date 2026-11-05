@@ -6,11 +6,10 @@ import { novaIdentityTag } from "@/lib/nova/identity";
 import { DEFAULT_NOVA_EFFORT, DEFAULT_NOVA_MODEL, NOVA_MODELS } from "@/lib/nova/models";
 import type { VerifiedEmailSession } from "@/components/plugin-lab/workflow-client";
 import { NOVA_PREFERENCES_KEY, novaSessionIdFromSearch, novaWrite, novaWriteAmbiguous, parseNovaPreferences, type NovaWrite } from "./client";
-import { getNovaCopy } from "./copy";
+import type { NovaCopy } from "./copy";
 
 async function json(response: Response) { try { return await response.json(); } catch { return {}; } }
-export function useNova(locale: Locale) {
-  const copy = getNovaCopy(locale);
+export function useNova(locale: Locale, copy: NovaCopy) {
   const [identity, setIdentity] = useState<VerifiedEmailSession | null>(null);
   const [email, setEmail] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
@@ -201,7 +200,17 @@ export function useNova(locale: Locale) {
         else setError(ambiguous ? copyRef.current.pending : copyRef.current.requestFailed);
         return null;
       }
-      setAttempt(null); setError(""); setSession(data.session);
+      setAttempt(null); setError("");
+      if (path === `/api/nova/sessions/${data.session.id}`) {
+        // A history-row write can target a different session. Invalidate pre-rename
+        // reads so they cannot put the old title back in the list or active heading.
+        generation.current += 1;
+        setSessions(previous => previous.map(row => row.id === data.session.id ? { ...row, title: data.session.title, updatedAt: data.session.updatedAt } : row));
+        if (selectedRef.current === data.session.id) setSession(data.session);
+        setRefreshTick(value => value + 1);
+        return data;
+      }
+      setSession(data.session);
       selectedRef.current = data.session.id; requestedSessionRef.current = null; setSelectedId(data.session.id); updateSessionUrl(data.session.id);
       void loadList(); return data;
     } catch {
@@ -223,7 +232,7 @@ export function useNova(locale: Locale) {
     await perform(async () => {
       if (serial !== generation.current || submittingOwner !== owner.current) return;
       let id = selectedRef.current;
-      if (!id) { const created = await write("/api/nova/sessions", { locale }); if (!created?.session) return; id = created.session.id; }
+      if (!id) { const created = await write("/api/nova/sessions", { locale, title: copy.newSession }); if (!created?.session) return; id = created.session.id; }
       if (serial !== generation.current || submittingOwner !== owner.current) return;
       const result = await write(`/api/nova/sessions/${id}/messages`, { content, modelKey, effort });
       if (result && serial === generation.current && submittingOwner === owner.current) setDraft((current) => current.trim() === content ? "" : current);
@@ -240,6 +249,11 @@ export function useNova(locale: Locale) {
     if (!selectedRef.current) return;
     let completed = false;
     await perform(async () => { completed = !!await write(`/api/nova/sessions/${selectedRef.current}/${suffix}`, body); });
+    return completed;
+  }
+  async function renameSession(id: string, title: string) {
+    let completed = false;
+    await perform(async () => { completed = !!await write(`/api/nova/sessions/${id}`, { title }); });
     return completed;
   }
   async function signOut() {
@@ -266,5 +280,5 @@ export function useNova(locale: Locale) {
       anchor.download = filename || "nova-plugin-draft.json"; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch { if (serial === generation.current) setError(copyRef.current.downloadFailed); }
   }
-  return { identity, email, setEmail, changeIdentity, authOpen, setAuthOpen, models, enabled, modelKey, effort, preference, draft, setDraft, sessions, selectedId, session, events, busy, loading, error, pending, select, send, mutate, retryPending, signOut, download, lastWriteError: () => writeErrorCode.current };
+  return { identity, email, setEmail, changeIdentity, authOpen, setAuthOpen, models, enabled, modelKey, effort, preference, draft, setDraft, sessions, selectedId, session, events, busy, loading, error, pending, select, send, mutate, renameSession, retryPending, signOut, download, lastWriteError: () => writeErrorCode.current };
 }

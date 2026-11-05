@@ -1,15 +1,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { Locale } from "@/lib/i18n";
+import { getLocaleMeta, type Locale } from "@/lib/i18n";
+import { workspaceMessage } from "@/lib/open-ena/workspace-messages";
 import {
   getOpenEnaAuthCopy,
   openEnaLoginNoticeText,
   OPEN_ENA_CONTACT_EMAIL,
   type OpenEnaLoginNotice,
 } from "@/lib/open-ena-auth-copy";
-import { isOpenEnaLocalizedLocale } from "@/lib/open-ena-i18n";
-import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaPasswordInput from "./OpenEnaPasswordInput";
 import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 import { getOpenEnaCloudCopy } from "@/lib/open-ena/cloud-copy";
@@ -23,12 +22,12 @@ interface OpenEnaLoginProps {
 }
 
 export function OpenEnaLoginFrame({ locale, children }: { locale: Locale; children: ReactNode }) {
-  const localized = isOpenEnaLocalizedLocale(locale);
+  const meta = getLocaleMeta(locale);
   return (
     <div
       className="open-ena-login-page"
-      lang={localized ? undefined : "en"}
-      dir={localized ? undefined : "ltr"}
+      lang={meta.htmlLang}
+      dir={meta.dir}
     >
       {children}
     </div>
@@ -63,7 +62,6 @@ export default function OpenEnaLogin({ locale, notice, configurationReady, cloud
 
   return (
     <OpenEnaLoginFrame locale={locale}>
-      <OpenEnaFallbackNotice locale={locale} />
       <section className="open-ena-login-shell" aria-labelledby="open-ena-login-title">
         <div className="open-ena-login-context">
           <div className="open-ena-login-brand" dir="ltr" lang="en">
@@ -169,9 +167,9 @@ export default function OpenEnaLogin({ locale, notice, configurationReady, cloud
               <a href="mailto:sandy0692@gmail.com">{OPEN_ENA_CONTACT_EMAIL}</a>
               {noticeAfterEmail}
             </p>}
-            <p className="open-ena-login-collaboration" lang={pluginCopy.contentFallback ? "en" : undefined}>
-              {pluginCopy.loginInvitation}{" "}
-              <Link href={`/${locale}/plugins/propose`} prefetch={false}>{pluginCopy.loginProposalLink}</Link>.
+            <p className="open-ena-login-collaboration">
+              {pluginCopy.contentFallback ? workspaceMessage(locale, pluginCopy.loginInvitation) : pluginCopy.loginInvitation}{" "}
+              <Link href={`/${locale}/plugins/propose`} prefetch={false}>{pluginCopy.contentFallback ? workspaceMessage(locale, pluginCopy.loginProposalLink) : pluginCopy.loginProposalLink}</Link>.
             </p>
             <p className="open-ena-login-privacy">
               <span aria-hidden="true">●</span>

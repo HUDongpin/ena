@@ -167,7 +167,7 @@ export function OpenEnaNativeStatsPanelV3({ result, current, axes, inference, co
           {renderTable(Object.entries(inference.inference.method).map(([parameter, value]) => ({ parameter, value })), nativeCopy.inferred)}<p>{inference.inference.status}</p>
           {tables.ledger && renderTable(Object.entries(tables.ledger).map(([field, value]) => ({ field, value })), nativeCopy.ledger)}
         </details>
-        <ul className="ena-native-inference-warnings">{inference.inference.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+        <ul className="ena-native-inference-warnings">{inference.inference.warnings.map((warning, index) => <li key={index}>{copy.inference.warningMessages[warning]}</li>)}</ul>
       </section>}</>}
       {tab === "goodness" && (endpoint2D ? <>
         <button type="button" disabled={!current || !goodnessKey} onClick={() => setRetry(value => value + 1)}>{comparisonCardCopy.calculate}</button>

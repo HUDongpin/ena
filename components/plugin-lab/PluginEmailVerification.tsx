@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { EmailVerificationCopy } from "@/lib/plugin-lab/workflow-i18n";
 import type { Locale } from "@/lib/i18n";
 import { getPluginWorkflowCopy, pluginWorkflowError, pluginWorkflowTemplate } from "@/lib/plugin-lab/workflow-i18n";
 import { sameWorkflowEmail, validWorkflowEmail, verifiedForEmail, workflowJson, type VerifiedEmailSession } from "./workflow-client";
 
-export default function PluginEmailVerification({ locale, email, onEmailChange, session, onSessionChange, fieldError, lockedEmail = false, disabled = false, checkSession = true }: {
-  locale: Locale; email: string; onEmailChange: (email: string) => void;
+export default function PluginEmailVerification({ locale, verificationCopy, email, onEmailChange, session, onSessionChange, fieldError, lockedEmail = false, disabled = false, checkSession = true }: {
+  locale: Locale; verificationCopy?: EmailVerificationCopy; email: string; onEmailChange: (email: string) => void;
   session: VerifiedEmailSession | null; onSessionChange: (session: VerifiedEmailSession | null) => void;
   fieldError?: string; lockedEmail?: boolean; disabled?: boolean; checkSession?: boolean;
 }) {
-  const copy = getPluginWorkflowCopy(locale);
+  const copy = verificationCopy ?? getPluginWorkflowCopy(locale);
   const [challenge, setChallenge] = useState<{ id: string; email: string; expiresAt: number } | null>(null);
   const [code, setCode] = useState("");
   const [retryAt, setRetryAt] = useState(0);
@@ -81,7 +82,7 @@ export default function PluginEmailVerification({ locale, email, onEmailChange, 
       const currentTime = Date.now(); setNow(currentTime);
       if (!response.ok || typeof result.challengeId !== "string") {
         if (response.status === 429) setRetryAt(currentTime + (Number(result.retryAfter) || 60) * 1000);
-        setError(pluginWorkflowError(result.code, locale)); setErrorField(result.code === "invalid-email" ? "email" : null); return;
+        setError(pluginWorkflowError(result.code, locale, verificationCopy)); setErrorField(result.code === "invalid-email" ? "email" : null); return;
       }
       setChallenge({ id: result.challengeId, email: requestedEmail, expiresAt: currentTime + (Number(result.expiresIn) || 600) * 1000 });
       setRetryAt(currentTime + (Number(result.retryAfter) || 60) * 1000); setCode("");
@@ -100,7 +101,7 @@ export default function PluginEmailVerification({ locale, email, onEmailChange, 
       const result = await workflowJson(response);
       if (serial !== operation.current) return;
       if (!response.ok || result.verified !== true || typeof result.email !== "string" || typeof result.expiresAt !== "string") {
-        setError(pluginWorkflowError(result.code, locale)); setErrorField(result.code === "invalid-code" ? "code" : null);
+        setError(pluginWorkflowError(result.code, locale, verificationCopy)); setErrorField(result.code === "invalid-code" ? "code" : null);
         if (response.status === 429) setRetryAt(Date.now() + (Number(result.retryAfter) || 60) * 1000);
         return;
       }

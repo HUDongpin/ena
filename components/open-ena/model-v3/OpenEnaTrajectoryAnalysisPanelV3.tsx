@@ -1,4 +1,5 @@
 "use client";
+import { workspaceMessage } from "@/lib/open-ena/workspace-messages";
 import { csvDownloadBlob, isCsvDownloadMediaType } from "../../../lib/open-ena/csv-download";
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../../../lib/i18n";
@@ -10,7 +11,7 @@ import { buildOpenEnaTrajectoryExportV3, assertOpenEnaTrajectoryExportConsumerV3
 import { wholePathAdmissionEligibilityV3, wholePathPredicateLabelV3, type WholePathAdmissionFactsV3 } from "../../../lib/open-ena/analysis-workflow-eligibility-v3";
 
 export function trajectoryAnalysisCopyV3(locale: Locale) {
-  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : en;
+  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : workspaceMessage(locale, en);
   return {
     title: t("Whole-path comparison and collected analyses", "完整路徑比較與已收集分析", "完整路径比较与已收集分析"),
     independent: t("I confirm that the entity histories in these two Groups are independent.", "我確認這兩個群組中的實體歷程彼此獨立。", "我确认这两个组中的实体历程彼此独立。"),
@@ -40,7 +41,7 @@ export function trajectoryAnalysisCopyV3(locale: Locale) {
     axes: t("Path axes", "路徑軸", "路径轴"),
     table: t("Whole-path statistics", "完整路徑統計", "完整路径统计"),
     headers: [t("Metric", "指標", "指标"), t("Period index", "時段索引", "时段索引"), t("Distance space", "距離空間", "距离空间"), t("Observed", "觀察值", "观测值"), t("Raw p", "原始 p", "原始 p"), t("Holm p", "Holm p", "Holm p"), t("Permutations", "置換次數", "置换次数")],
-    download: (name: string) => t(`Download ${name}`, `下載 ${name}`, `下载 ${name}`),
+    download: (name: string) => locale === "zh-hant" ? `下載 ${name}` : locale === "zh-hans" ? `下载 ${name}` : workspaceMessage(locale, "Download {name}", { name }),
   };
 }
 

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { NovaStar } from "@/components/nova/Icon";
 import PluginCatalogBrowser from "@/components/plugin-lab/PluginCatalogBrowser";
-import { isLocale, type Locale } from "@/lib/i18n";
+import { isLocale, localeMeta, type Locale } from "@/lib/i18n";
 import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
 import { OPEN_ENA_PLUGIN_CATALOG } from "@/lib/open-ena/plugins/catalog";
 import { pageMetadata } from "@/lib/metadata";
@@ -33,7 +34,10 @@ export default async function PluginLabPage({ params }: { params: Promise<{ loca
         </div>
         <div className="plugin-lab-entry">
           <div className="plugin-lab-entry-actions">
-            <Link className="button button-primary" href={`/${typed}/plugins/propose`}>{copy.propose}</Link>
+            <Link className="button button-primary plugin-lab-workbench-link" href={`/${typed}/plugins`} lang={localeMeta[typed].htmlLang} dir={localeMeta[typed].dir}>
+              <NovaStar size={25} /><span>Nova Code · {copy.navLabel}</span><span aria-hidden="true">{localeMeta[typed].dir === "rtl" ? "←" : "→"}</span>
+            </Link>
+            <Link className="button button-secondary" href={`/${typed}/plugins/propose`}>{copy.propose}</Link>
             <Link className="button button-secondary" href={`/${typed}/plugins/status`}>{workflowCopy.myProposals}</Link>
           </div>
           <p className="plugin-intake-helper">{intakeEnabled ? workflowCopy.intakeAvailable : workflowCopy.intakeUnavailable}</p>
