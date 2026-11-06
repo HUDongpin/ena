@@ -35,6 +35,8 @@ jobs:
           echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
       - name: Verify the ECS authentication runtime operator
         run: python3 -B -m unittest discover -s tests -p 'test_ecs_auth_operator.py' -v
+      - name: Verify self-hosted deploy and rollback cache guards (local fixtures only)
+        run: python3 -B -m unittest discover -s tests -p 'test_self_hosted_release.py' -v
       - name: Verify vendored j-3dENA custody before dependency installation
         run: node scripts/verify-j3dena-vendor.mjs
       - run: npm ci
