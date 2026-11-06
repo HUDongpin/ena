@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} piksel",
   "{value} rows": "{value} baris",
   "{value} times": "{value} kali",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "Periode yang dipilih terbalik atau tidak memiliki hubungan kronologis dalam model yang diestimasi. Hapus pilihan lalu pilih periode lebih awal dan berikutnya yang didukung urutan model.",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "Pilih periode berbeda yang teramati dalam model saat ini. Hapus pilihan dan pilih kembali periodenya.",
+  "Requested order (earlier → later)": "Urutan yang diminta (lebih awal → lebih akhir)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "Untuk uji Wilcoxon, z tambahan memakai koreksi kontinuitas 0.5. continuityCorrectionApplied menjelaskan perhitungan nilai p: nilai p eksak tidak memakai z atau koreksi ini.",
+  "Scroll horizontally to read all columns. Values retain full precision.": "Gulir secara horizontal untuk membaca semua kolom. Nilai mempertahankan presisi penuh.",
+  "How to read these statistics": "Cara membaca statistik ini",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "Efek bertanda adalah kelompok sekunder dikurangi kelompok utama. Indeks periode dimulai dari 0 di dalam periode yang dipilih. Panjang langkah dan lintasan kumulatif menggambarkan sentroid kelompok. Koreksi Holm mencakup semua baris tabel ini. Permutasi menukar seluruh riwayat entitas.",
+  "Permutation seed": "Seed permutasi"
 }

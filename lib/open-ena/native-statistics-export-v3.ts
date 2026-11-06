@@ -45,6 +45,6 @@ export async function exportNativeStatisticsV3(envelope: NativeInferenceV3, resu
       meaning: "Aggregate request and index labels only. The hash binds the full locally validated scientific context; per-Unit fitted sequences are omitted.",
     } : { axes: admitted.controls.axes, primaryGroup: admitted.controls.primaryGroup, secondaryGroup: admitted.controls.secondaryGroup },
     inference: admitted.inference, presentationTables: nativeStatisticsTablesV3(admitted),
-    meaning: "Researcher-requested post-model inference. Imported files are historical facts, not process-local inference authority. Model bundle statistics remain unavailable." });
+    meaning: "Researcher-requested post-model inference. Imported files are historical facts, not process-local inference authority. Model bundle statistics remain unavailable. For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction; continuityCorrectionApplied describes the p-value calculation. Exact p-values do not use z or this correction." });
   return { filename: "open-ena-native-statistics.json", mimeType: "application/json", contents: JSON.stringify(artifact, null, 2) };
 }

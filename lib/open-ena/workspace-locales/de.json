@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} Pixel",
   "{value} rows": "{value} Zeilen",
   "{value} times": "{value} Mal",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "Die gewählten Zeiträume sind umgekehrt oder haben keine zeitliche Beziehung im angepassten Modell. Löschen Sie die Auswahl und wählen Sie erst einen früheren, dann einen gemäß der Modellreihenfolge späteren Zeitraum.",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "Wählen Sie unterschiedliche, im aktuellen angepassten Modell beobachtete Zeiträume. Löschen Sie die Auswahl und wählen Sie erneut.",
+  "Requested order (earlier → later)": "Gewünschte Reihenfolge (früher → später)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "Bei Wilcoxon-Tests verwendet das zusätzliche z eine Stetigkeitskorrektur von 0.5. continuityCorrectionApplied beschreibt die p-Wert-Berechnung: Exakte p-Werte verwenden weder z noch diese Korrektur.",
+  "Scroll horizontally to read all columns. Values retain full precision.": "Scrollen Sie horizontal, um alle Spalten zu lesen. Die volle Genauigkeit der Werte bleibt erhalten.",
+  "How to read these statistics": "So lesen Sie diese Statistiken",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "Vorzeichenbehaftete Effekte sind sekundäre minus primäre Gruppe. Periodenindizes beginnen bei 0 innerhalb der gewählten Zeiträume. Schritt- und kumulierte Pfadlängen beschreiben Gruppenzentroide. Die Holm-Korrektur umfasst alle Tabellenzeilen. Permutationen tauschen vollständige Entitätsverläufe.",
+  "Permutation seed": "Zufallsstartwert der Permutation"
 }

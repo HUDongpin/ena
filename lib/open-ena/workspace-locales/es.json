@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} píxeles",
   "{value} rows": "{value} filas",
   "{value} times": "{value} veces",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "Los periodos seleccionados están invertidos o no tienen una relación cronológica ajustada. Borre la selección y elija primero un periodo anterior y luego uno posterior respaldado por el orden ajustado.",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "Elija periodos distintos observados en el modelo ajustado actual. Borre la selección y seleccione los periodos de nuevo.",
+  "Requested order (earlier → later)": "Orden solicitado (anterior → posterior)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "En las pruebas de Wilcoxon, z auxiliar usa una corrección de continuidad de 0.5. continuityCorrectionApplied describe el cálculo de p: los valores p exactos no usan z ni esta corrección.",
+  "Scroll horizontally to read all columns. Values retain full precision.": "Desplácese horizontalmente para leer todas las columnas. Los valores conservan toda su precisión.",
+  "How to read these statistics": "Cómo interpretar estas estadísticas",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "Los efectos con signo son el grupo secundario menos el primario. Los índices empiezan en 0 dentro de los periodos seleccionados. Las longitudes por paso y acumuladas describen centroides de grupo. Holm abarca todas las filas de esta tabla. Las permutaciones intercambian historias completas de entidades.",
+  "Permutation seed": "Semilla de permutación"
 }

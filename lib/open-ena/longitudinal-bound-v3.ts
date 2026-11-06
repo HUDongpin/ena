@@ -8,6 +8,15 @@ import type { OpenEnaInferenceRequestV2 } from "./inference-v2";
 
 /** All ordered source fields and scalar types participate in Horizon identity. */
 export type HorizonIdentityV3 = readonly IdentityFieldV3[];
+/** Safe UI classification; never expose arbitrary internal exception text. */
+export class OpenEnaTrajectoryPeriodErrorV3 extends TypeError {
+  constructor(public readonly reason: "unknown" | "duplicate" | "unordered") {
+    super(reason === "unknown" ? "Choose typed Horizons observed in the bound result"
+      : reason === "duplicate" ? "Choose distinct typed Horizons"
+        : "Selected chronology requires fitted precedence; reversed or incomparable Horizons cannot redefine fitted Horizon order");
+    this.name = "OpenEnaTrajectoryPeriodErrorV3";
+  }
+}
 export interface LongitudinalViewOptionsV3 {
   requestedOrder?: ResolvedExecutionHorizonOrderingV3["unitSequences"];
   displayHorizons?: readonly HorizonIdentityV3[];
@@ -160,10 +169,10 @@ function observedEntities(result: BoundStandardResultV3) {
 function resolveHorizons(identities: readonly HorizonIdentityV3[], horizons: ReturnType<typeof observedEntities>["horizons"]) {
   const entries = identities.map((identity) => {
     const entry = horizons.get(identityKey(identity));
-    if (!entry) throw new TypeError("Choose typed Horizons observed in the bound result");
+    if (!entry) throw new OpenEnaTrajectoryPeriodErrorV3("unknown");
     return entry;
   });
-  if (new Set(entries.map((e) => e.canonicalJson)).size !== entries.length) throw new TypeError("Choose distinct typed Horizons");
+  if (new Set(entries.map((e) => e.canonicalJson)).size !== entries.length) throw new OpenEnaTrajectoryPeriodErrorV3("duplicate");
   return entries;
 }
 function cohort(entities: ReturnType<typeof observedEntities>["entities"], keys: readonly string[], minimumCompleteUnits: number) {
@@ -240,7 +249,7 @@ export async function buildLongitudinalInferenceInputV3(input: unknown, independ
   const request = controls.request;
   const selected = resolveHorizons(request.kind === "trajectory-independent-period" ? [request.period] : request.kind === "trajectory-paired-periods" ? [request.earlierPeriod, request.laterPeriod] : request.periods, observed.horizons);
   const dag = fittedPrecedence(ordering);
-  if (request.kind !== "trajectory-independent-period" && selected.some((entry, i) => i > 0 && !dag.precedes(selected[i - 1].token, entry.token))) throw new TypeError("Selected chronology requires fitted precedence; reversed or incomparable Horizons cannot redefine fitted Horizon order");
+  if (request.kind !== "trajectory-independent-period" && selected.some((entry, i) => i > 0 && !dag.precedes(selected[i - 1].token, entry.token))) throw new OpenEnaTrajectoryPeriodErrorV3("unordered");
   const groups = new Map(dictionary.groups.map((e) => [canonicalJsonV3(e.fields[0].value), e]));
   const selectedGroup = (identity: ScalarIdentityV3) => {
     const group = groups.get(canonicalJsonV3(identity));

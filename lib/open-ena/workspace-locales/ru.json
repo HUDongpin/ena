@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} пикселей",
   "{value} rows": "{value} строк",
   "{value} times": "{value} раз",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "Выбранные периоды идут в обратном порядке или не имеют установленной моделью хронологической связи. Очистите выбор и укажите сначала более ранний, затем более поздний период согласно порядку модели.",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "Выберите различные периоды, наблюдаемые в текущей оценённой модели. Очистите выбор и выберите периоды заново.",
+  "Requested order (earlier → later)": "Запрошенный порядок (раньше → позже)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "В тестах Уилкоксона вспомогательный z использует поправку на непрерывность 0.5. continuityCorrectionApplied описывает расчёт p: точные p-значения не используют ни z, ни эту поправку.",
+  "Scroll horizontally to read all columns. Values retain full precision.": "Прокрутите по горизонтали, чтобы прочитать все столбцы. Значения сохраняют полную точность.",
+  "How to read these statistics": "Как читать эту статистику",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "Знаковые эффекты — вторичная группа минус основная. Индексы периодов начинаются с 0 внутри выбранных периодов. Длины шагов и накопленного пути описывают центроиды групп. Поправка Holm охватывает все строки таблицы. Перестановки перемещают полные истории объектов.",
+  "Permutation seed": "Начальное число перестановок"
 }

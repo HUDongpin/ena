@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value}픽셀",
   "{value} rows": "{value}행",
   "{value} times": "{value}배",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "선택한 시점이 역순이거나 적합된 시간적 선후 관계가 없습니다. 선택을 지운 뒤 적합된 순서에 따라 앞선 시점, 나중 시점 순으로 선택하세요.",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "현재 적합된 모델에서 관측된 서로 다른 시점을 선택하세요. 선택을 지우고 시점을 다시 선택하세요.",
+  "Requested order (earlier → later)": "요청 순서 (앞선 시점 → 나중 시점)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "Wilcoxon 검정의 보조 z는 0.5 연속성 보정을 사용합니다. continuityCorrectionApplied는 p값 계산을 설명합니다. 정확 p값에는 z나 이 보정을 사용하지 않습니다.",
+  "Scroll horizontally to read all columns. Values retain full precision.": "모든 열을 읽으려면 가로로 스크롤하세요. 값은 전체 정밀도를 유지합니다.",
+  "How to read these statistics": "통계 해석 방법",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "부호 있는 효과는 보조 그룹에서 주 그룹을 뺀 값입니다. 시점 인덱스는 선택한 시점 내에서 0부터 시작합니다. 단계 및 누적 경로 길이는 그룹 중심을 설명합니다. Holm 보정은 표의 모든 행에 적용됩니다. 순열은 개체의 전체 이력을 교환합니다.",
+  "Permutation seed": "순열 시드"
 }

@@ -377,6 +377,10 @@ jobs:
         run: npm run test:browser:account-language
       - name: Verify Chinese search, Data View precision and primary-domain metadata
         run: npm run test:browser:discovery-data-view
+      - name: Verify report regressions, period errors and full-precision exports
+        env:
+          OPEN_ENA_REPORT_DIST_DIR: .next
+        run: node --import tsx tests/open-ena-report-regressions-browser.mjs
       - name: Upload Plugin Lab browser evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -400,6 +404,10 @@ jobs:
             output/playwright/discovery-data-view/fixture.json
             output/playwright/discovery-data-view/cleanup.json
             output/playwright/discovery-data-view/*.png
+            output/playwright/report-verification-20261106/*.png
+            output/playwright/report-verification-20261106/*.json
+            output/playwright/report-verification-20261106/*.svg
+            output/playwright/report-verification-20261106/*.zip
           if-no-files-found: warn
           retention-days: 14
 

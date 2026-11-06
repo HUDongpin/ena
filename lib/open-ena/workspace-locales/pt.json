@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} pixels",
   "{value} rows": "{value} linhas",
   "{value} times": "{value} vezes",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "Os períodos selecionados estão invertidos ou não têm uma relação cronológica no modelo ajustado. Limpe a seleção e escolha um período anterior, seguido de um posterior compatível com a ordem ajustada.",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "Escolha períodos distintos observados no modelo ajustado atual. Limpe a seleção e volte a selecionar os períodos.",
+  "Requested order (earlier → later)": "Ordem solicitada (anterior → posterior)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "Nos testes de Wilcoxon, o z auxiliar usa uma correção de continuidade de 0.5. continuityCorrectionApplied descreve o cálculo de p: valores p exatos não usam z nem esta correção.",
+  "Scroll horizontally to read all columns. Values retain full precision.": "Desloque horizontalmente para ler todas as colunas. Os valores mantêm a precisão completa.",
+  "How to read these statistics": "Como ler estas estatísticas",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "Os efeitos com sinal são o grupo secundário menos o principal. Os índices começam em 0 nos períodos selecionados. Os comprimentos por passo e acumulados descrevem os centroides dos grupos. Holm abrange todas as linhas da tabela. As permutações trocam históricos completos das entidades.",
+  "Permutation seed": "Semente da permutação"
 }

@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} pixels",
   "{value} rows": "{value} lignes",
   "{value} times": "{value} fois",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "Les périodes sélectionnées sont inversées ou sans relation chronologique établie par le modèle ajusté. Effacez la sélection, puis choisissez une période antérieure et une période ultérieure compatibles avec cet ordre.",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "Choisissez des périodes distinctes observées dans le modèle ajusté actuel. Effacez la sélection et sélectionnez à nouveau les périodes.",
+  "Requested order (earlier → later)": "Ordre demandé (antérieur → ultérieur)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "Pour Wilcoxon, le z auxiliaire utilise une correction de continuité de 0.5. continuityCorrectionApplied décrit le calcul de p : les valeurs p exactes n’utilisent ni z ni cette correction.",
+  "Scroll horizontally to read all columns. Values retain full precision.": "Faites défiler horizontalement pour lire toutes les colonnes. Les valeurs conservent leur précision complète.",
+  "How to read these statistics": "Comment lire ces statistiques",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "Les effets signés correspondent au groupe secondaire moins le groupe principal. Les indices commencent à 0 dans les périodes sélectionnées. Les longueurs par étape et cumulées décrivent les centroïdes des groupes. Holm couvre toutes les lignes du tableau. Les permutations échangent des historiques d’entités complets.",
+  "Permutation seed": "Graine de permutation"
 }

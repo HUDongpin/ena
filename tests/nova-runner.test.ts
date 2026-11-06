@@ -12,6 +12,33 @@ function fakeStore(){
 }
 const call=(id:string,name:string,args:unknown):NovaProviderMessage=>({role:'assistant',content:null,tool_calls:[{id,type:'function',function:{name,arguments:JSON.stringify(args)}}]});
 const passed: NovaSandboxResult={manifest,output:{title:'Draft',network:{nodes:NOVA_SYNTHETIC_CONTEXT.network.nodes.map(n=>({...n})),edges:NOVA_SYNTHETIC_CONTEXT.network.edges.map(e=>({...e}))},exports:['svg']},checks:[{name:'synthetic-injected',passed:true,detail:'Synthetic test only'}],sourceHash:'a'.repeat(64),fixtureHash:'b'.repeat(64)};
+for (const content of [
+  'QA-PUBLIC-20261105-1716：创建一个最小 ENA 摘要面板，只使用内置合成数据，显示 3 个节点和 3 条边的只读统计。面板标题必须明显写 QA TEST。不要网络请求、上传、保存研究数据、发布或修改任何现有项目。直接构建一个可预览的私密草稿。',
+  'Show the existing statistics. Do not modify any existing project.',
+  'Show the fixture table; do not recompute statistics or change edge weights.',
+  '显示已有统计；不要重新计算统计或修改边权。',
+]) {
+  test(`presentation request reaches the provider without a false expert escalation: ${content}`, async () => {
+    const state = fakeStore(); state.claim.session.messages[0].content = content;
+    let called = false;
+    await runNovaClaim(state.claim, state.store, { provider: async () => {
+      called = true; return call('pause', 'ask_user', { question: 'Synthetic provider reached.' });
+    } });
+    assert.equal(called, true);
+    assert.equal(state.updates.some(update => update.expert), false);
+  });
+}
+for (const content of [
+  'Do not modify labels, but recompute statistics.',
+  '不要修改标签，但重新计算统计。',
+  'Do not forget to calculate a confidence interval.',
+]) {
+  test(`a separate affirmative method request still pauses: ${content}`, async () => {
+    const state = fakeStore(); state.claim.session.messages[0].content = content;
+    await runNovaClaim(state.claim, state.store, { provider: async () => { throw new Error('Must pause before provider'); } });
+    assert.equal(state.updates.at(-1)?.status, 'waiting-expert');
+  });
+}
 test('runner generates files through real tool protocol and produces a checked private artifact',async()=>{
   const state=fakeStore();let turn=0;const responses=[call('1','write_file',{path:'src/plugin.ts',content:'export function buildPlugin(c:any){return {title:"Draft",network:c.network,exports:["svg"]}}'}),call('2','write_file',{path:'manifest.json',content:JSON.stringify(manifest)}),call('3','write_file',{path:'tests/plugin.test.ts',content:'import assert from "node:assert/strict"; assert.ok(true)'}),call('4','check_plugin',{}),call('5','complete_draft',{summary:'Blue draft ready.'})];
   await runNovaClaim(state.claim,state.store,{provider:async()=>responses[turn++],sandbox:async files=>({...passed,sourceHash:hashNovaFiles(files)})});

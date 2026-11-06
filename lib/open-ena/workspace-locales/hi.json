@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} पिक्सेल",
   "{value} rows": "{value} पंक्तियाँ",
   "{value} times": "{value} गुना",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "चुनी गई अवधियाँ उलटे क्रम में हैं या उनके बीच फ़िट किए गए मॉडल में कालक्रम संबंध नहीं है। चयन साफ़ करें और फ़िट किए गए क्रम के अनुसार पहले की अवधि, फिर बाद की अवधि चुनें।",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "वर्तमान फ़िट किए गए मॉडल में देखी गई अलग-अलग अवधियाँ चुनें। चयन साफ़ करके अवधियाँ फिर चुनें।",
+  "Requested order (earlier → later)": "अनुरोधित क्रम (पहले → बाद में)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "Wilcoxon परीक्षण में सहायक z, 0.5 निरंतरता सुधार उपयोग करता है। continuityCorrectionApplied, p-मूल्य की गणना बताता है: सटीक p-मूल्य z या यह सुधार उपयोग नहीं करते।",
+  "Scroll horizontally to read all columns. Values retain full precision.": "सभी कॉलम पढ़ने के लिए क्षैतिज स्क्रॉल करें। मानों की पूरी परिशुद्धता बनी रहती है।",
+  "How to read these statistics": "इन आँकड़ों को कैसे पढ़ें",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "चिह्नयुक्त प्रभाव द्वितीयक समूह घटा प्राथमिक समूह हैं। अवधि सूचकांक चुनी गई अवधियों में 0 से शुरू होते हैं। चरण और संचयी पथ लंबाई समूह केंद्रकों का वर्णन करती हैं। Holm सुधार तालिका की सभी पंक्तियों पर लागू है। क्रमचय इकाइयों के पूरे इतिहास बदलते हैं।",
+  "Permutation seed": "क्रमचय बीज"
 }

@@ -130,7 +130,10 @@ export function createNovaApiHandler(operation: Operation, dependencies: NovaDep
       }
       if (operation === "expert-response") {
         if (!onlyKeys(body, ["runId", "artifactId", "response"]) || !isId(body.runId) || !(body.artifactId === null || isId(body.artifactId)) || !validText(body.response, 6_000)) return workflowError("invalid-request", 400);
-        return workflowJson({session: await store.respondExpert({...input, requestId: params.requestId!, runId: body.runId, artifactId: body.artifactId as string | null, response: body.response.trim(), actorRef: actorRef!})});
+        await store.respondExpert({...input, requestId: params.requestId!, runId: body.runId, artifactId: body.artifactId as string | null, response: body.response.trim(), actorRef: actorRef!});
+        // The operator refreshes its scoped inbox after success. Returning the
+        // owner's whole session would also disclose unrelated chat and drafts.
+        return workflowJson({accepted: true});
       }
       return workflowError("not-found", 404);
     } catch (error) { return failure(error); }
