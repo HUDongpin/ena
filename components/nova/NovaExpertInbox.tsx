@@ -33,15 +33,15 @@ export default function NovaExpertInbox({page,csrf,locale}: {page: NovaExpertPag
     {error?<p role="alert" className="plugin-form-error">{error}</p>:null}{notice?<p role="status">{notice}</p>:null}
     {requests.length===0?<p>No Nova expert requests.</p>:requests.map(item=><article key={item.request.id} className="plugin-proposal-card">
       <h3>{item.title}</h3><p>{item.request.status} · Notification: {item.request.notificationStatus}</p>
-      <dl><dt>Session</dt><dd>{item.sessionId}</dd><dt>Run</dt><dd>{item.request.runId}</dd><dt>Draft</dt><dd>{item.request.artifactId??"No draft yet"}</dd></dl>
+      <dl><dt>Session</dt><dd>{item.sessionId}</dd><dt>Run</dt><dd>{item.request.runId}</dd><dt>Request-bound draft</dt><dd>{item.request.artifactId??"No draft yet"}</dd><dt>Current run status</dt><dd>{item.runStatus??"Unavailable"}</dd><dt>Latest saved version for this run</dt><dd>{item.latestArtifact?<>v{item.latestArtifact.version} · {item.latestArtifact.id} · {item.latestArtifact.createdAt}</>:"None available"}</dd></dl>
       <p style={{whiteSpace:"pre-wrap"}}>{item.request.question}</p><details><summary>Request context</summary><p style={{whiteSpace:"pre-wrap"}}>{item.request.context}</p></details>
       {item.artifact?<details><summary>Draft v{item.artifact.version}: code and checks</summary>
         <p>Source SHA-256: <code>{item.artifact.sourceHash}</code></p><p>Fixture SHA-256: <code>{item.artifact.fixtureHash}</code></p>
         <ul>{item.artifact.checks.map((check,index)=><li key={`${check.name}-${index}`}>{check.passed?"Passed":"Failed"}: {check.name} — {check.detail}</li>)}</ul>
         {item.artifact.files.map(file=><details key={file.path}><summary>{file.path}</summary><pre style={{overflowX:"auto",maxHeight:360}}><code>{file.content}</code></pre></details>)}
       </details>:<p>No executable draft was attached to this request.</p>}
-      {(item.draftFiles.length||item.draftChecks.length) && (!item.artifact || JSON.stringify(item.draftFiles)!==JSON.stringify(item.artifact.files) || item.draftChecks.some(check=>!check.passed))?<details><summary>Unfinished run evidence: saved files and checks</summary>
-        <p>Latest saved working material for the referenced run{item.draftUpdatedAt?` (${item.draftUpdatedAt})`:""}. Check results can include failures; this material has not been attached as a new versioned artifact.</p>
+      {(item.draftFiles.length||item.draftChecks.length) && (!item.artifact || JSON.stringify(item.draftFiles)!==JSON.stringify(item.artifact.files) || item.draftChecks.some(check=>!check.passed))?<details><summary>Saved working files and checks</summary>
+        <p>Latest saved working material for the referenced run{item.draftUpdatedAt?` (${item.draftUpdatedAt})`:""}. These files may differ from the request-bound draft. The run status and latest saved version are shown above; check results describe these working files.</p>
         {item.draftChecks.length?<ul>{item.draftChecks.map((check,index)=><li key={`${check.name}-${index}`}>{check.passed?"Passed":"Failed"}: {check.name} — {check.detail}</li>)}</ul>:<p>No checks recorded for these working files.</p>}
         {item.draftFiles.map(file=><details key={file.path}><summary>{file.path}</summary><pre style={{overflowX:"auto",maxHeight:360}}><code>{file.content}</code></pre></details>)}
       </details>:null}
