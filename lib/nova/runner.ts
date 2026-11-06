@@ -23,7 +23,13 @@ function providerFailureMessage(error:NovaProviderError):string {
  * The fixed output schema and invariant checks remain the enforceable analysis boundary. */
 function needsExpertReview(text:string):boolean {
   const inferential=/\b(?:t[ -]?tests?|anova|ancova|manova|regression|p[ -]?values?|confidence intervals?|hypothesis test|statistical significance|inferential|permutation test|bootstrap|effect sizes?|causal effects?)\b|[tp]\s*值|[tＴｔ]\s*(?:检验|檢驗)|回归|迴歸|回歸|显著性|顯著性|方差分析|變異數分析|置信区间|信賴區間|假设检验|假設檢驗|置换检验|置換檢驗|效应量|效應量/iu;
-  return inferential.test(text) || /(?:change|replace|recalculate|recompute|modify|calculate|compute|estimate|修改|更改|重新计算|重新計算|计算|計算|估计|估計).{0,100}(?:edge weights?|normalization|svd|statistical|statistics|projection|边权|邊權|归一化|歸一化|统计|統計|投影)|(?:edge weights?|normalization|svd|边权|邊權|归一化|歸一化|统计|統計|投影).{0,60}(?:change|replace|recalculate|modify|修改|更改)/iu.test(text);
+  // Do not join "read-only statistics" to a later "do not modify projects".
+  // Keep affirmative clauses after "but/instead" eligible for review. This is
+  // only a routing hint; immutable fixtures and SDK checks enforce the boundary.
+  const clauses=text.split(/[。！？；，.!?;\n,]+|\b(?:but|instead|however|then)\b|(?:但是|而是|但|然后|然後)/iu);
+  const prohibitedAction=/^\s*(?:please\s+)?(?:do not|don't|never)\s+(?:change|replace|recalculate|recompute|modify|calculate|compute|estimate|add|run|perform|include|use)\b|^\s*(?:请|請)?(?:不要|不必|无需|無需|禁止|勿)(?:再|重新)?(?:修改|更改|替换|替換|计算|計算|估计|估計|添加|加入|运行|執行|执行|进行|進行|使用)/iu;
+  const methodChange=/(?:change|replace|recalculate|recompute|modify|calculate|compute|estimate|修改|更改|重新计算|重新計算|计算|計算|估计|估計).{0,100}(?:edge weights?|normalization|svd|statistical|statistics|projection|边权|邊權|归一化|歸一化|统计|統計|投影)|(?:edge weights?|normalization|svd|边权|邊權|归一化|歸一化|统计|統計|投影).{0,60}(?:change|replace|recalculate|modify|修改|更改)/iu;
+  return clauses.some(clause=>!prohibitedAction.test(clause)&&(inferential.test(clause)||methodChange.test(clause)));
 }
 function initialMessages(claim:NovaClaim,files:NovaFile[]):NovaProviderMessage[] {
   const system=`You are Nova, the private Open ENA plugin coding assistant. Write actual runnable TypeScript through tools. Return only a private DRAFT, never publish or change production. Scope: presentation and export on immutable SYNTHETIC fixture data only. Never ingest participant data, install dependencies, use network, change weights/topology, recompute statistics or alter scientific methods. For method/statistical changes request_expert and pause. Expert advice cannot override this SDK boundary. Ask_user only for a genuinely blocking requirement; choose sensible reversible presentation defaults otherwise.

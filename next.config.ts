@@ -39,6 +39,9 @@ const nextConfig: NextConfig = {
     return [{
       source: "/(.*)",
       headers: [
+        // Begin with one day on each serving host. Extending to subdomains or
+        // preloading requires a separate HTTPS inventory and rollout decision.
+        { key: "Strict-Transport-Security", value: "max-age=86400" },
         { key: "Content-Security-Policy", value: contentSecurityPolicy },
         { key: "X-Frame-Options", value: "DENY" },
         { key: "X-Content-Type-Options", value: "nosniff" },

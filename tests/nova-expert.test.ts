@@ -33,6 +33,15 @@ test("Nova expert mail reuses the bounded sender and contains only an authentica
   assert.equal(content?.to, environment.ENA_PLUGIN_LAB_OPERATOR_EMAIL); assert.match(content!.subject,/Nova/); assert.match(content!.text,/https:\/\/www\.ena\.hk\/en\/plugins\/operator/);
   assert.doesNotMatch(content!.text,/token=|Use a presenter|Build a presenter/);
 });
+test("Nova expert reply acknowledges success without returning unrelated researcher history", async () => {
+  const store = { respondExpert: async () => ({ id, messages: [{ content: "unrelated-private-history" }], artifacts: [{ files: [{ content: "unrelated-old-draft" }] }] }) } as unknown as NovaStore;
+  const deps = { environment, verifyOperator: async () => principal,
+    storeFactory: async () => ({ consumeRateLimit: async () => true }) as unknown as WorkflowStore,
+    novaStoreFactory: async () => store };
+  const result = await createNovaApiHandler("expert-response", deps)(request({ runId, artifactId: null, response: "Keep the supplied synthetic values." }), { id, requestId });
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), { accepted: true });
+});
 test("Nova notification drain authenticates worker and settles accepted or failed sends", async () => {
   assert.equal(existsSync(new URL("../lib/nova/notifications.ts",import.meta.url)),true,"Nova delivery handler exists");
   const {createNovaDeliveryHandler} = await import("../lib/nova/notifications");

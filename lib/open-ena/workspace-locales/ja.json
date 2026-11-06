@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} ピクセル",
   "{value} rows": "{value} 行",
   "{value} times": "{value} 倍",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "選択した時点が逆順か、適合済みの時間的前後関係がありません。選択を解除し、適合済みの順序に従って先の時点、後の時点を選択してください。",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "現在の適合済みモデルで観測された異なる時点を選択してください。選択を解除してから選び直してください。",
+  "Requested order (earlier → later)": "指定順序（先の時点 → 後の時点）",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "Wilcoxon検定の補助zは0.5の連続性補正を使用します。continuityCorrectionAppliedはp値の計算を示します。正確なp値はzもこの補正も使用しません。",
+  "Scroll horizontally to read all columns. Values retain full precision.": "全列を読むには横にスクロールしてください。数値は完全な精度を保持しています。",
+  "How to read these statistics": "統計の読み方",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "符号付き効果は副グループから主グループを引いた値です。時点インデックスは選択した時点内で0から始まります。ステップと累積経路長はグループ重心を表します。Holm補正は表の全行を対象とします。置換は個体の履歴全体を入れ替えます。",
+  "Permutation seed": "置換シード"
 }

@@ -1894,5 +1894,13 @@
   "{value} pixels": "{value} পিক্সেল",
   "{value} rows": "{value}টি সারি",
   "{value} times": "{value} গুণ",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "নির্বাচিত সময়পর্বগুলো উল্টো ক্রমে আছে অথবা ফিট করা মডেলে তাদের কালানুক্রমিক সম্পর্ক নেই। নির্বাচন মুছে আগে আগের সময়পর্ব, তারপর ফিট করা ক্রমসমর্থিত পরের সময়পর্ব বেছে নিন।",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "বর্তমান ফিট করা মডেলে পর্যবেক্ষিত পৃথক সময়পর্ব বেছে নিন। নির্বাচন মুছে সময়পর্বগুলো আবার বেছে নিন।",
+  "Requested order (earlier → later)": "অনুরোধের ক্রম (আগে → পরে)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "Wilcoxon পরীক্ষায় সহায়ক z-তে 0.5 ধারাবাহিকতা সংশোধন ব্যবহৃত হয়। continuityCorrectionApplied, p-মান গণনা বোঝায়: সঠিক p-মান z বা এই সংশোধন ব্যবহার করে না।",
+  "Scroll horizontally to read all columns. Values retain full precision.": "সব কলাম পড়তে অনুভূমিকভাবে স্ক্রল করুন। মানগুলোর পূর্ণ নির্ভুলতা বজায় থাকে।",
+  "How to read these statistics": "এই পরিসংখ্যান কীভাবে পড়বেন",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "চিহ্নযুক্ত প্রভাব হলো দ্বিতীয় গোষ্ঠী বিয়োগ প্রধান গোষ্ঠী। নির্বাচিত সময়পর্বের মধ্যে সূচক 0 থেকে শুরু হয়। ধাপ ও সঞ্চিত পথের দৈর্ঘ্য গোষ্ঠীর কেন্দ্রক বোঝায়। Holm সংশোধন এই সারণির সব সারিতে প্রযোজ্য। বিন্যাসে সত্তার সম্পূর্ণ ইতিহাস অদলবদল হয়।",
+  "Permutation seed": "বিন্যাসের বীজ"
 }

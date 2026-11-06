@@ -13658,6 +13658,25 @@ html:has(.open-ena-page) {
 
 
 /* Shared native left-panel controls: Data, Model, Plot Tools, Stats, and AI. */
+.ena-path-statistics-scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+.ena-workspace-controls-v3 .ena-path-statistics-scroll table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+.ena-workspace-controls-v3 .ena-path-statistics-scroll :is(th, td) {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.ena-path-statistics-scroll:focus-visible {
+  outline: 2px solid #287ba6;
+  outline-offset: -2px;
+}
 .ena-workspace-controls-v3 {
   color: #263e4a;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;

@@ -99,6 +99,8 @@ export interface OpenEnaWorkspaceV3Copy {
   readonly cancelPendingImport: string;
   readonly operationFailed: string;
   readonly failures: {
+    readonly trajectoryPeriodOrder: string;
+    readonly trajectoryPeriodSelection: string;
     readonly codedDataTooLarge: (input: { readonly limitMiB: number }) => string;
     readonly codedDataInvalidUtf8: string;
     readonly artifactInvalidUtf8: string; readonly presetInvalidUtf8: string;
@@ -231,6 +233,8 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly analyticUnitMarksHidden: (count: number) => string;
   };
   readonly stats: {
+    readonly selectedPeriodOrder: string;
+    readonly rankZNote: string;
     readonly separation: string; readonly inferenceDesign: string; readonly designs: Readonly<Record<"independent" | "paired" | "repeated", string>>;
     readonly identityConfirmation: string; readonly periodInstructions: string; readonly runInference: string; readonly onaDescriptive: string;
     readonly onaEdges: string; readonly onaAudit: string; readonly exportOnaEdges: string; readonly exportOnaAudit: string; readonly exportNative: string;
@@ -268,6 +272,8 @@ export interface OpenEnaWorkspaceV3Copy {
 }
 
 export type OpenEnaWorkspaceFailureV3 =
+  | { readonly id: "trajectory-period-order" }
+  | { readonly id: "trajectory-period-selection" }
   | { readonly id: "coded-data-too-large"; readonly limitMiB: number }
   | { readonly id: "coded-data-invalid-utf8" }
   | { readonly id: "artifact-invalid-utf8" }
@@ -282,6 +288,8 @@ export type OpenEnaWorkspaceFailureV3 =
 
 export function formatOpenEnaWorkspaceFailureV3(copy: OpenEnaWorkspaceV3Copy, failure: OpenEnaWorkspaceFailureV3): string {
   switch (failure.id) {
+    case "trajectory-period-order": return copy.failures.trajectoryPeriodOrder;
+    case "trajectory-period-selection": return copy.failures.trajectoryPeriodSelection;
     case "coded-data-too-large": return copy.failures.codedDataTooLarge({ limitMiB: failure.limitMiB });
     case "coded-data-invalid-utf8": return copy.failures.codedDataInvalidUtf8;
     case "artifact-invalid-utf8": return copy.failures.artifactInvalidUtf8;
@@ -2433,6 +2441,8 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     startingWorker: t("Starting model worker", "正在啟動模型工作程序", "正在启动模型工作进程"), workerStage: (stageId) => t(`Worker stage: ${stageId}`, `工作程序階段：${stageId}`, `工作进程阶段：${stageId}`), runModel: t("Run model", "執行模型", "运行模型"), cancelRun: t("Cancel run", "取消執行", "取消运行"),
     cancelPendingImport: t("Cancel pending import", "取消待處理匯入", "取消待处理导入"), operationFailed: t("The requested operation failed. Review the current configuration and try again.", "要求的操作失敗。請檢查目前設定後再試。", "请求的操作失败。请检查当前设置后重试。"),
     failures: {
+      trajectoryPeriodOrder: t("The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.", "所選時段順序相反，或缺少已擬合的時間先後關係。請清除選取，先選較早時段，再選已擬合次序支持的較晚時段。", "所选周期顺序相反，或缺少已拟合的时间先后关系。请清除选择，先选较早周期，再选已拟合顺序支持的较晚周期。"),
+      trajectoryPeriodSelection: t("Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.", "請選擇目前已擬合模型中不同的已觀測時段。請清除選取後重新選擇時段。", "请选择当前已拟合模型中不同的已观测周期。请清除选择后重新选择周期。"),
       codedDataTooLarge: ({ limitMiB }) => t(`Coded data exceeds the ${limitMiB} MB limit (${limitMiB} MiB, ${limitMiB} × 1,024 × 1,024 bytes).`, `編碼資料超過 ${limitMiB} MB 上限（${limitMiB} MiB，即 ${limitMiB} × 1,024 × 1,024 位元組）。`, `编码数据超过 ${limitMiB} MB 上限（${limitMiB} MiB，即 ${limitMiB} × 1,024 × 1,024 字节）。`),
       codedDataInvalidUtf8: t("This CSV is not valid UTF-8. Save it as UTF-8 and open it again.", "此 CSV 並非有效的 UTF-8。請另存為 UTF-8 後重新開啟。", "此 CSV 不是有效的 UTF-8。请另存为 UTF-8 后重新打开。"),
       artifactInvalidUtf8: t("This JSON artifact is not valid UTF-8. Save it as UTF-8 and import it again.", "此 JSON 成果並非有效的 UTF-8。請另存為 UTF-8 後重新匯入。", "此 JSON 成果不是有效的 UTF-8。请另存为 UTF-8 后重新导入。"),
@@ -2630,6 +2640,8 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
       analyticUnitMarksHidden: (count) => t(` ${count} analytic-unit mark${count === 1 ? " is" : "s are"} hidden by group or unit display controls.`, `群組或分析單位顯示控制隱藏了 ${count} 個分析單位標記。`, `组或分析单位显示控制隐藏了 ${count} 个分析单位标记。`),
     },
     stats: {
+      selectedPeriodOrder: t("Requested order (earlier → later)", "要求的次序（較早 → 較晚）", "请求顺序（较早 → 较晚）"),
+      rankZNote: t("For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.", "Wilcoxon 檢定的輔助 z 使用 0.5 連續性校正。continuityCorrectionApplied 描述 p 值的計算：精確 p 值不使用 z 或此校正。", "Wilcoxon 检验的辅助 z 使用 0.5 连续性校正。continuityCorrectionApplied 描述 p 值的计算：精确 p 值不使用 z 或此校正。"),
       separation: t("Model bundles contain unavailable statistics. Inference below is an explicit, separate post-model request.", "模型套件包含不可用的統計項目。下方推論是明確且獨立的模型後要求。", "模型包包含不可用的统计项目。下方推断是明确且独立的模型后请求。"), inferenceDesign: t("Trajectory inference design", "軌跡推論設計", "轨迹推断设计"), designs: { independent: t("Independent groups at a period", "單一時段的獨立群組", "单一时段的独立组"), paired: t("Paired periods", "配對時段", "配对时段"), repeated: t("Repeated periods", "重複時段", "重复时段") },
       identityConfirmation: t("I confirm these fitted Units identify the same entities across periods.", "我確認這些擬合單位在各時段識別相同實體。", "我确认这些拟合单位在各时段标识相同实体。"), periodInstructions: t("Select exactly one period for independent, exactly two for paired, or at least three for repeated inference. Select periods in the requested order. The native consumer verifies fitted precedence and rejects incomparable or reversed periods.", "獨立推論需選一個時段，配對推論需選兩個，重複推論需選至少三個。請依要求順序選取；原生消費者會驗證擬合先後並拒絕不可比較或反向時段。", "独立推断需选一个时段，配对推断需选两个，重复推断需选至少三个。请依请求顺序选择；原生消费者会验证拟合先后并拒绝不可比较或反向时段。"), runInference: t("Run confirmed inference", "執行已確認推論", "运行已确认推断"), onaDescriptive: t("ONA remains descriptive only; group and trajectory inference are unavailable.", "ONA 仍僅提供描述；群組及軌跡推論不可用。", "ONA 仍仅提供描述；组及轨迹推断不可用。"),
       onaEdges: t("ONA directed aggregate edges", "ONA 有向彙總邊", "ONA 有向汇总边"), onaAudit: t("Full-run deidentified ordered audit", "完整執行去識別有序稽核", "完整运行去标识有序审计"), exportOnaEdges: t("Export ONA aggregate edges", "匯出 ONA 彙總邊", "导出 ONA 汇总边"), exportOnaAudit: t("Export ONA deidentified audit", "匯出 ONA 去識別稽核", "导出 ONA 去标识审计"), exportNative: t("Export native statistics", "匯出原生統計", "导出原生统计"),

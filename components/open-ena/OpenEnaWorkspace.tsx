@@ -34,7 +34,7 @@ import { useTrajectoryUncertaintyV3 } from "./useTrajectoryUncertaintyV3";
 import { trajectoryCopyV3 } from "@/lib/open-ena/trajectory-copy-v3";
 import { appendTrajectoryLegendToSvg } from "@/lib/open-ena/trajectory-legend-export-v3";
 import { buildTrajectoryPresentationV3 } from "@/lib/open-ena/trajectory-presentation-v3";
-import { buildLongitudinalViewV3, type OpenEnaTrajectoryControlsV3 } from "@/lib/open-ena/longitudinal-bound-v3";
+import { buildLongitudinalViewV3, OpenEnaTrajectoryPeriodErrorV3, type OpenEnaTrajectoryControlsV3 } from "@/lib/open-ena/longitudinal-bound-v3";
 import { runOpenEnaInferenceV3, runOpenEnaTrajectoryInferenceV3, assertOpenEnaTrajectoryInferenceConsumerV3 } from "@/lib/open-ena/inference-v2";
 import type { OpenEnaEndpointControlsV3 } from "@/lib/open-ena/inference-consumers-v3";
 import { aiLocale, buildAiInterpretationReviewV3 } from "@/lib/open-ena/ai-interpretation";
@@ -655,6 +655,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const trajectoryControls: OpenEnaTrajectoryControlsV3 | null = trajectorySelection && (inferenceDesign === "independent" || identityConfirmed)
     ? { axes: [twoDAxes[0], twoDAxes[1]], identityConfirmed, request: trajectorySelection } : null;
   const controls = isTrajectory ? trajectoryControls : endpointControls;
+  const periodSelectionError = error?.id === "trajectory-period-order" || error?.id === "trajectory-period-selection" ? error : null;
   const consumerKey = openEnaConsumerAuthorityKeyV3({
     binding: result?.binding ?? null,
     plan: currentPlan?.header.executionPlanSha256 ?? null,
@@ -811,7 +812,9 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
       setError(null);
       await work();
     } catch (caught) {
-      setError(caught instanceof OpenEnaKnownWorkspaceFailureV3 ? caught.failure : { id: "operation-failed" });
+      setError(caught instanceof OpenEnaKnownWorkspaceFailureV3 ? caught.failure
+        : caught instanceof OpenEnaTrajectoryPeriodErrorV3 ? { id: caught.reason === "unordered" ? "trajectory-period-order" : "trajectory-period-selection" }
+          : { id: "operation-failed" });
     }
   }
   function saveDescriptor(value: ExportFileDescriptorV3) { downloadText(value.filename, new TextDecoder().decode(value.bytes), value.mediaType); }
@@ -1495,7 +1498,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
         </button>}
         {result && !current && <p className="ena-restored-stale-notice" role="status" aria-live="polite">{rebuildCue ? workspaceCopy.result.sourceReplacementNotice : workspaceCopy.resultStatus.stale}</p>}
       </header>
-      {(error || state.error || currentCompilation?.error) && <p role="alert">{error ? formatOpenEnaWorkspaceFailureV3(workspaceCopy, error) : workspaceCopy.operationFailed}</p>}
+      {((error && !periodSelectionError) || state.error || currentCompilation?.error) && <p role="alert">{error && !periodSelectionError ? formatOpenEnaWorkspaceFailureV3(workspaceCopy, error) : workspaceCopy.operationFailed}</p>}
       {controller.importPending && <button type="button" onClick={() => dispatch({ type: "cancel-preview" })}>{workspaceCopy.cancelPendingImport}</button>}
       {state.preview && <OpenEnaImportPreviewV3 preview={state.preview} drafts={modelState.drafts} copy={modelV3Copy.importPreview}
         onCancel={() => dispatch({ type: "cancel-preview" })} onAcceptDraft={() => dispatch({ type: "accept-draft-preview", preview: state.preview! })}
@@ -1599,8 +1602,11 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
         {isTrajectory && <><label>{workspaceCopy.stats.inferenceDesign}<select value={inferenceDesign} onChange={(e) => setInferenceDesign(e.target.value as typeof inferenceDesign)}><option value="independent">{workspaceCopy.stats.designs.independent}</option><option value="paired">{workspaceCopy.stats.designs.paired}</option><option value="repeated">{workspaceCopy.stats.designs.repeated}</option></select></label>
           <label><input type="checkbox" checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />{workspaceCopy.stats.identityConfirmation}</label>
           <p>{workspaceCopy.stats.periodInstructions}</p>
-          {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={selectedPeriods.includes(horizon.token)} onChange={(e) => setSelectedPeriods((values) => e.target.checked ? [...values, horizon.token] : values.filter((value) => value !== horizon.token))} />{horizon.displayLabel}</label>)}</>}
+          <p data-testid="open-ena-selected-period-order" aria-live="polite">{workspaceCopy.stats.selectedPeriodOrder}: {selectedPeriods.map(token => horizons.find(horizon => horizon.token === token)?.displayLabel ?? "—").join(" → ") || "—"}</p>
+          {periodSelectionError && <p id="native-trajectory-period-error" role="alert">{formatOpenEnaWorkspaceFailureV3(workspaceCopy, periodSelectionError)}</p>}
+          {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={selectedPeriods.includes(horizon.token)} aria-invalid={Boolean(periodSelectionError)} aria-describedby={periodSelectionError ? "native-trajectory-period-error" : undefined} onChange={(e) => { setError(null); setSelectedPeriods((values) => e.target.checked ? [...values, horizon.token] : values.filter((value) => value !== horizon.token)); }} />{horizon.displayLabel}</label>)}</>}
         {!endpoint2DStatistics && <button type="button" disabled={!current || !controls || inferenceBusy || completedResultKind === "ona"} onClick={() => void attempt(runInference)}>{workspaceCopy.stats.runInference}</button>}
+        {activeInference?.kind === "open-ena-trajectory-inference" && <p>{workspaceCopy.stats.rankZNote}</p>}
         {completedResultKind === "ona" && <p>{workspaceCopy.stats.onaDescriptive}</p>}
         {onaView && <><p>{workspaceCopy.stats.onaMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={onaView.edges} label={workspaceCopy.stats.onaEdges} />
           <ResearchTableV3 {...researchTableCopy} rows={onaView.auditRows} label={workspaceCopy.stats.onaAudit} /></>}

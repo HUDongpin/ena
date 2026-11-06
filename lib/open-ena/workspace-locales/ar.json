@@ -1894,5 +1894,13 @@
   "{value} pixels": "‏{value} بكسل",
   "{value} rows": "عدد الصفوف: {value}",
   "{value} times": "‏{value} مرة",
-  "—": "—"
+  "—": "—",
+  "The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.": "الفترات المحددة معكوسة أو ليست بينها علاقة زمنية مثبتة في النموذج الملائم. امسح التحديد واختر فترة أسبق ثم فترة لاحقة يدعمها الترتيب الملائم.",
+  "Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.": "اختر فترات مختلفة مرصودة في النموذج الملائم الحالي. امسح التحديد ثم أعد اختيار الفترات.",
+  "Requested order (earlier → later)": "الترتيب المطلوب (الأسبق → اللاحق)",
+  "For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.": "في اختبارات ويلكوكسون، تستخدم z المساعدة تصحيح استمرارية قدره 0.5. يصف continuityCorrectionApplied حساب قيمة p؛ قيم p الدقيقة لا تستخدم z ولا هذا التصحيح.",
+  "Scroll horizontally to read all columns. Values retain full precision.": "مرّر أفقيًا لقراءة جميع الأعمدة. تحتفظ القيم بدقتها الكاملة.",
+  "How to read these statistics": "كيفية قراءة هذه الإحصاءات",
+  "Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.": "الآثار ذات الإشارة هي المجموعة الثانوية ناقص الأساسية. تبدأ فهارس الفترات من 0 ضمن الفترات المحددة. تصف أطوال الخطوة والمسار التراكمي مراكز المجموعات. يشمل تصحيح Holm جميع صفوف الجدول. تبدّل التباديل تواريخ الكيانات كاملة.",
+  "Permutation seed": "بذرة التبديل"
 }
