@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import { expectedLoginPrefetchCancellation } from "./helpers/open-ena-models-v3-browser-custody.mjs";
 import { OwnedSmokeLifecycle, deadlineFromEnvironment } from "./helpers/open-ena-models-v3-lifecycle.mjs";
 import { immutableBuildManifestV3 } from "./helpers/open-ena-build-custody-v3.mjs";
+import { prepareOwnedStaticResponseCaptureV3, readOwnedStaticResponseRecordsV3, verifyBrowserStaticRequestCompletionV3, verifyOriginalStaticResponseV3, STATIC_RESPONSE_CUSTODY_HEADER_V3 } from "./helpers/open-ena-static-response-custody-v3.mjs";
 const require = createRequire(import.meta.url);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = mkdtempSync(join(process.env.OPEN_ENA_MODELS_V3_ARTIFACT_ROOT ?? tmpdir(), "task37-models-v3-"));
@@ -38,6 +39,10 @@ receipt.deadlines = deadlines;
 const lifecycle = new OwnedSmokeLifecycle({ directory, redact, overallMs: deadlines.overall, onUpdate: state => { receipt.lifecycle = state; if (state.reason) { receipt.status = "fail"; receipt.failure = state.reason.message; } json("receipt.json", receipt); } });
 json("receipt.json", receipt);
 const assetReads = [];
+const assetRequests = new WeakMap();
+const staticCapture = prepareOwnedStaticResponseCaptureV3(directory);
+receipt.staticCapture = staticCapture;
+receipt.workers = [];
 receipt.servedAssets = [];
 const loginTiming = {};
 const requestStarts = new WeakMap();
@@ -98,7 +103,13 @@ async function mode(name) { await page.getByRole("navigation", { name: "Analysis
 async function shot(name, fullPage = true) { const path = join(directory, `${name}.png`); await page.screenshot({ path, fullPage }); receipt.screenshots.push({ path, sha256: hash(readFileSync(path)) }); }
 async function journey(id, name, action) { const entry = { id, name, status: "running" }; receipt.journeys.push(entry); console.log(`Journey ${id}: ${name}`); entry.evidence = await action(); entry.status = "pass"; console.log(`Journey ${id}: PASS`); json("receipt.json", receipt); }
 async function dump(name) { writeFileSync(join(directory, `${name}.txt`), await page.locator("body").innerText()); writeFileSync(join(directory, `${name}-aria.txt`), await page.locator("body").ariaSnapshot()); }
-async function current() { await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current", null, { timeout: 60000 }); }
+async function current() {
+    await page.waitForFunction(() => document.querySelector('[data-testid="open-ena-workspace-v3"]')?.getAttribute("data-result-status") === "current", null, { timeout: 60000 });
+    // Model adoption precedes the separately rendered bootstrap intervals. Let
+    // that visible operation settle before the next successful-model scenario
+    // changes its inputs and intentionally cancels a still-loading Worker.
+    await page.waitForFunction(() => !document.querySelector('[data-ena-ci-status="pending"]'), null, { timeout: 35000 });
+}
 async function lastRun() { return page.evaluate(() => { const response = window.__task37WorkerAudit.filter(x => x.direction === "response" && x.message.kind === "result-v3").at(-1); const request = window.__task37WorkerAudit.find(x => x.direction === "request" && x.message.id === response?.message.id); return { request: request?.message, response: response?.message }; }); }
 async function run(label) {
     const before = await page.evaluate(() => window.__task37WorkerAudit.filter(x => x.message.kind === "result-v3").length);
@@ -716,6 +727,7 @@ async function journeys() {
         return evidence;
     });
     await page.waitForLoadState("networkidle");
+    await Promise.all(assetReads);
     await journey(15, "zero unexpected errors and document overflow", async () => { for (const event of failedRequests) {
         if (expectedLoginPrefetchCancellation(event, loginTiming))
             receipt.expectedNavigationCancellations.push({ ...event, reason: "public-shell RSC prefetch started before login and cancelled within login navigation" });
@@ -740,7 +752,7 @@ async function main() {
     const databaseUrl = await startDatabase();
     const serverPort = await port();
     const baseURL = `http://127.0.0.1:${serverPort}`;
-    serverEntry = lifecycle.spawnOwned("server", process.execPath, [join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: databaseUrl, OPEN_ENA_PUBLIC_ORIGIN: baseURL, OPEN_ENA_ALLOWED_ORIGINS: baseURL }, logName: "server.log" });
+    serverEntry = lifecycle.spawnOwned("server", process.execPath, ["--import", join(directory, staticCapture.preload), join(root, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(serverPort)], { cwd: root, env: { ...env, OPEN_ENA_AUTH_DATABASE_URL: databaseUrl, OPEN_ENA_PUBLIC_ORIGIN: baseURL, OPEN_ENA_ALLOWED_ORIGINS: baseURL }, logName: "server.log" });
     receipt.server = { pid: serverEntry.child.pid, parentPid: process.pid, baseURL, ownership: "new direct child and dedicated process group; next start from just-built checkout", stopped: false };
     json("receipt.json", receipt);
     await waitForHttp(baseURL + "/en/open-ena", "server readiness");
@@ -770,16 +782,41 @@ async function main() {
     });
     page = await context.newPage();
     page.setDefaultTimeout(15000);
+    page.on("worker", worker => {
+        const record = { url: worker.url(), createdAt: Date.now() }; receipt.workers.push(record);
+        worker.on("close", () => { record.closedAt = Date.now(); });
+    });
+    page.on("request", request => {
+        if (!new URL(request.url()).pathname.startsWith("/_next/static/")) return;
+        let settle;
+        const completion = new Promise(resolve => { settle = resolve; });
+        assetRequests.set(request, { entry: { requestedAt: new Date().toISOString() }, completion, settle });
+    });
+    page.on("requestfinished", request => { const tracked = assetRequests.get(request); if (tracked) { tracked.entry.requestFinishedAt = new Date().toISOString(); tracked.settle(); } });
+    page.on("requestfailed", request => { const tracked = assetRequests.get(request); if (tracked) { tracked.entry.requestFailedAt = new Date().toISOString(); tracked.entry.requestFailure = request.failure()?.errorText ?? "unknown"; tracked.settle(); } });
     page.on("response", response => {
-        const path = new URL(response.url()).pathname;
-        if (loginTiming.finishedAt && path.startsWith("/_next/static/") && response.ok())
+        const url = new URL(response.url()), path = url.pathname;
+        if (loginTiming.finishedAt && path.startsWith("/_next/static/") && response.ok()) {
+            const tracked = assetRequests.get(response.request());
+            const entry = { path, request: tracked?.entry, status: response.status() };
             assetReads.push((async () => {
-                const bytes = await response.body();
-                const localPath = path.replace("/_next/", "");
-                const digest = hash(bytes);
-                assert.equal(digest, hash(readFileSync(join(root, ".next", localPath))), `served asset differs from built checkout: ${path}`);
-                receipt.servedAssets.push({ path, sha256: digest, bytes: bytes.length });
-            })().catch(error => { receipt.errors.push({ kind: "asset-custody", text: redact(error.message), path }); }));
+                await tracked?.completion;
+                verifyBrowserStaticRequestCompletionV3(entry.request);
+                const built = buildManifest.find(file => file.path === path.replace("/_next/", ""));
+                assert.ok(built, `Static response absent from immutable build: ${path}`);
+                try {
+                    const bytes = await response.body();
+                    entry.sha256 = hash(bytes); entry.bytes = bytes.length; entry.captureSource = "browser-response-body";
+                } catch (error) {
+                    if (!/Target page, context or browser has been closed|No resource with given identifier|Response body is unavailable/u.test(error.message)) throw error;
+                    assert.equal(url.origin, baseURL);
+                    entry.browserBodyReadError = redact(error.message);
+                    entry.originalResponseCapture = verifyOriginalStaticResponseV3({ records: readOwnedStaticResponseRecordsV3(join(directory, staticCapture.journal)), request: entry.request, id: response.headers()[STATIC_RESPONSE_CUSTODY_HEADER_V3], requestTarget: path + url.search, status: response.status(), expectedSha256: built.sha256 });
+                    entry.sha256 = entry.originalResponseCapture.sha256; entry.captureSource = entry.originalResponseCapture.source;
+                }
+                assert.equal(entry.sha256, built.sha256, `served asset differs from built checkout: ${path}`);
+            })().catch(error => { entry.error = redact(error.message); receipt.errors.push({ kind: "asset-custody", text: entry.error, path }); }).finally(() => receipt.servedAssets.push(entry)));
+        }
     });
     page.on("console", message => { if (message.type() === "error")
         receipt.errors.push({ kind: "console", text: redact(message.text()) }); });
