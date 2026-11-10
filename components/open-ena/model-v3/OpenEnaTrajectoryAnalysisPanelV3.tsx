@@ -1,4 +1,5 @@
 "use client";
+import { workspaceMessage } from "@/lib/open-ena/workspace-messages";
 import { csvDownloadBlob, isCsvDownloadMediaType } from "../../../lib/open-ena/csv-download";
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../../../lib/i18n";
@@ -10,7 +11,7 @@ import { buildOpenEnaTrajectoryExportV3, assertOpenEnaTrajectoryExportConsumerV3
 import { wholePathAdmissionEligibilityV3, wholePathPredicateLabelV3, type WholePathAdmissionFactsV3 } from "../../../lib/open-ena/analysis-workflow-eligibility-v3";
 
 export function trajectoryAnalysisCopyV3(locale: Locale) {
-  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : en;
+  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : workspaceMessage(locale, en);
   return {
     title: t("Whole-path comparison and collected analyses", "完整路徑比較與已收集分析", "完整路径比较与已收集分析"),
     independent: t("I confirm that the entity histories in these two Groups are independent.", "我確認這兩個群組中的實體歷程彼此獨立。", "我确认这两个组中的实体历程彼此独立。"),
@@ -39,8 +40,12 @@ export function trajectoryAnalysisCopyV3(locale: Locale) {
     disclosure: t("The default bundle contains aggregate path and collected rank statistics. Its plot describes the complete comparison cohorts, rather than display-filtered available cohorts. Participant identities and traces require explicit opt-in.", "預設套件包含彙總路徑及已收集的秩統計。套件圖形描述完整比較樣本群，並非經顯示篩選的可用樣本群。參與者身分及軌跡須明確選擇納入。", "默认分析包包含汇总路径及已收集的秩统计。包内图形描述完整比较样本群，而非经显示筛选的可用样本群。参与者身份及轨迹须明确选择纳入。"),
     axes: t("Path axes", "路徑軸", "路径轴"),
     table: t("Whole-path statistics", "完整路徑統計", "完整路径统计"),
+    scrollHint: t("Scroll horizontally to read all columns. Values retain full precision.", "可水平捲動以閱讀所有欄位。數值保留完整精度。", "可横向滚动以阅读所有列。数值保留完整精度。"),
+    interpretation: t("How to read these statistics", "如何閱讀這些統計", "如何阅读这些统计"),
+    metricNote: t("Signed effects are secondary Group minus primary Group. Period indexes start at 0 within the selected Horizons. Step and cumulative path lengths describe group centroids. Holm correction covers all rows in this table. Permutations shuffle whole entity histories.", "有方向的效應為次要群組減主要群組。時段索引在所選視域內由 0 開始。單步與累積路徑長度描述群組質心。Holm 校正涵蓋本表所有列。置換會交換完整實體歷程。", "有方向的效应为次要组减主要组。周期索引在所选视域内从 0 开始。单步与累积路径长度描述组质心。Holm 校正涵盖本表所有行。置换会交换完整实体历程。"),
+    seed: t("Permutation seed", "置換種子", "置换种子"),
     headers: [t("Metric", "指標", "指标"), t("Period index", "時段索引", "时段索引"), t("Distance space", "距離空間", "距离空间"), t("Observed", "觀察值", "观测值"), t("Raw p", "原始 p", "原始 p"), t("Holm p", "Holm p", "Holm p"), t("Permutations", "置換次數", "置换次数")],
-    download: (name: string) => t(`Download ${name}`, `下載 ${name}`, `下载 ${name}`),
+    download: (name: string) => locale === "zh-hant" ? `下載 ${name}` : locale === "zh-hans" ? `下载 ${name}` : workspaceMessage(locale, "Download {name}", { name }),
   };
 }
 
@@ -122,7 +127,13 @@ export function OpenEnaTrajectoryAnalysisPanelV3({ locale, hidden, frameKey, res
     <button type="button" disabled={!admitted || busy !== null} aria-describedby={unmetPathItems.length ? "native-path-requirements native-path-unmet" : "native-path-requirements"} onClick={() => void compute()}>{copy.run}</button>
     <OpenEnaUnmetPrerequisiteList id="native-path-unmet" testId="open-ena-whole-path-prerequisites" title={copy.unmetPrerequisites} items={unmetPathItems} />
     <p role="status" aria-live="polite">{busy === "path" ? copy.running : busy === "export" ? copy.exporting : message ? copy[message] : pathCurrent ? copy.ready : path ? copy.stale : ""}</p>
-    {pathCurrent && path && <table data-testid="open-ena-native-trajectory-path-statistics" aria-label={copy.table}><thead><tr>{copy.headers.map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{path.value.inference.tests.map(test => <tr key={test.id}><td>{test.metric}</td><td>{test.timeIndex ?? "—"}</td><td>{test.distanceSpace}</td><td>{test.observed}</td><td>{test.pValue ?? "—"}</td><td>{test.holmAdjustedPValue ?? "—"}</td><td>{test.permutationCount}</td></tr>)}</tbody></table>}
+    {pathCurrent && path && <>
+      <p id="native-path-scroll-hint">{copy.scrollHint}</p>
+      <div className="ena-path-statistics-scroll" role="region" aria-label={copy.table} aria-describedby="native-path-scroll-hint" tabIndex={0}>
+        <table data-testid="open-ena-native-trajectory-path-statistics" aria-label={copy.table}><thead><tr>{copy.headers.map(header => <th scope="col" key={header}>{header}</th>)}</tr></thead><tbody>{path.value.inference.tests.map(test => <tr key={test.id}><td>{test.metric}</td><td>{test.timeIndex ?? "—"}</td><td>{test.distanceSpace}</td><td>{test.observed}</td><td>{test.pValue ?? "—"}</td><td>{test.holmAdjustedPValue ?? "—"}</td><td>{test.permutationCount}</td></tr>)}</tbody></table>
+      </div>
+      <details className="ena-panel-details"><summary>{copy.interpretation}</summary><p>{copy.metricNote}</p><p>{copy.seed}: {path.value.controls.seed}</p></details>
+    </>}
     <p>{copy.collected}: {ranks.map(rank => (rank.value as { inference: { kind: string } }).inference.kind).join(" · ") || "—"}</p>
     <p>{copy.disclosure}</p>
     <label><input type="checkbox" checked={participants} onChange={event => setParticipants(event.target.checked)} />{copy.participants}</label>

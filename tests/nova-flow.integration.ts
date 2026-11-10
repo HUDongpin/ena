@@ -211,6 +211,7 @@ test('Nova flow persists real API/queue/version/expert/ZIP state with synthetic 
       const stale=await api('expert-response',path,{runId:run.id,artifactId:firstArtifactId,response:reply},params,{operator:true});assert.equal(stale.status,409);assert.equal((await stale.json()).code,'stale-expert-request');
       const receipt=randomUUID(),body={runId:run.id,artifactId:secondArtifactId,response:reply};
       const accepted=await api('expert-response',path,body,params,{operator:true,idempotencyKey:receipt});assert.equal(accepted.status,200);
+      assert.deepEqual(await accepted.json(),{accepted:true});
       const continuation=await store.claimNextRun();assert.ok(continuation);assert.equal(continuation.run.id,run.id);assert.equal(continuation.checkpoint?.messages.length,0);assert.equal(continuation.checkpoint?.files.find(file=>file.path==='src/plugin.ts')?.content,SOURCE_V2);
       const responses=[tool('v3-read','read_file',{path:'src/plugin.ts'}),tool('v3-plugin','write_file',{path:'src/plugin.ts',content:SOURCE_V3}),tool('v3-check','check_plugin',{}),tool('v3-complete','complete_draft',{summary:'Synthetic presentation-only continuation is ready.'})];
       await runNovaClaim(continuation,store,{provider:deterministicProvider(responses,(options,index)=>{
@@ -219,6 +220,7 @@ test('Nova flow persists real API/queue/version/expert/ZIP state with synthetic 
       }),sandbox:syntheticSandbox(SOURCE_V3,output(3))});
       saved=await session(id);assert.equal(saved.runs.at(-1)?.id,run.id);assert.equal(saved.runs.at(-1)?.status,'ready');assert.deepEqual(saved.artifacts.map(artifact=>artifact.version),[1,2,3]);assert.equal(saved.artifacts[2].runId,run.id);assert.equal(saved.expertRequests.at(-1)?.response,reply);
       const replay=await api('expert-response',path,body,params,{operator:true,idempotencyKey:receipt});assert.equal(replay.status,200);
+      assert.deepEqual(await replay.json(),{accepted:true});
       const afterReplay=await session(id);assert.equal(afterReplay.artifacts.length,3);assert.equal(afterReplay.runs.length,4);assert.equal(afterReplay.messages.filter(message=>message.role==='expert'&&message.content===reply).length,1);
       assert.equal((await db.query('SELECT count(*)::int AS n FROM ena_nova_notifications WHERE request_id=$1',[request.id])).rows[0].n,1,'No real mail is sent and replay cannot duplicate the outbox');
     });

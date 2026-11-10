@@ -1,4 +1,6 @@
-import type { Locale } from "./i18n";
+import { locales, type Locale } from "./i18n";
+import { localizeWorkspaceCopy, workspaceMessage } from "./open-ena/workspace-messages";
+import { formatWorkspaceCopy } from "./open-ena/workspace-formatters";
 import type {
   OpenEnaInferenceIntegrityCodeV2,
   OpenEnaInferenceReasonCodeV2,
@@ -97,6 +99,8 @@ export interface OpenEnaWorkspaceV3Copy {
   readonly cancelPendingImport: string;
   readonly operationFailed: string;
   readonly failures: {
+    readonly trajectoryPeriodOrder: string;
+    readonly trajectoryPeriodSelection: string;
     readonly codedDataTooLarge: (input: { readonly limitMiB: number }) => string;
     readonly codedDataInvalidUtf8: string;
     readonly artifactInvalidUtf8: string; readonly presetInvalidUtf8: string;
@@ -229,6 +233,8 @@ export interface OpenEnaWorkspaceV3Copy {
     readonly analyticUnitMarksHidden: (count: number) => string;
   };
   readonly stats: {
+    readonly selectedPeriodOrder: string;
+    readonly rankZNote: string;
     readonly separation: string; readonly inferenceDesign: string; readonly designs: Readonly<Record<"independent" | "paired" | "repeated", string>>;
     readonly identityConfirmation: string; readonly periodInstructions: string; readonly runInference: string; readonly onaDescriptive: string;
     readonly onaEdges: string; readonly onaAudit: string; readonly exportOnaEdges: string; readonly exportOnaAudit: string; readonly exportNative: string;
@@ -266,6 +272,8 @@ export interface OpenEnaWorkspaceV3Copy {
 }
 
 export type OpenEnaWorkspaceFailureV3 =
+  | { readonly id: "trajectory-period-order" }
+  | { readonly id: "trajectory-period-selection" }
   | { readonly id: "coded-data-too-large"; readonly limitMiB: number }
   | { readonly id: "coded-data-invalid-utf8" }
   | { readonly id: "artifact-invalid-utf8" }
@@ -280,6 +288,8 @@ export type OpenEnaWorkspaceFailureV3 =
 
 export function formatOpenEnaWorkspaceFailureV3(copy: OpenEnaWorkspaceV3Copy, failure: OpenEnaWorkspaceFailureV3): string {
   switch (failure.id) {
+    case "trajectory-period-order": return copy.failures.trajectoryPeriodOrder;
+    case "trajectory-period-selection": return copy.failures.trajectoryPeriodSelection;
     case "coded-data-too-large": return copy.failures.codedDataTooLarge({ limitMiB: failure.limitMiB });
     case "coded-data-invalid-utf8": return copy.failures.codedDataInvalidUtf8;
     case "artifact-invalid-utf8": return copy.failures.artifactInvalidUtf8;
@@ -2314,19 +2324,29 @@ const DIAGNOSTIC_GUIDANCE_V3: Readonly<Record<OpenEnaModelDiagnosticIdV3, readon
   ONA_RESOURCE_BUDGET_EXCEEDED: ["A hard cap blocks execution and never authorizes truncating the ordered source or directed matrix.", "硬性上限會阻止執行，且絕不授權截斷有序來源或有向矩陣。", "硬性上限会阻止运行，且绝不授权截断有序来源或有向矩阵。"],
 };
 
-function diagnosticMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3Copy["diagnosticMessages"] {
-  return Object.fromEntries(MODEL_DIAGNOSTIC_IDS_ALL_V3.map((id) => [id, {
-    summary: () => DIAGNOSTIC_SUMMARIES_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2],
-    detail: (input: OpenEnaModelDiagnosticLocalizationInputV3) => {
-      const field = input.fieldPath ?? input.scope;
-      const count = input.evidence?.totalCount;
-      const summary = DIAGNOSTIC_SUMMARIES_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2];
-      const guidance = DIAGNOSTIC_GUIDANCE_V3[id][locale === "en" ? 0 : locale === "zh-hant" ? 1 : 2];
-      if (locale === "en") return `${summary}. Inspect ${field}${count === undefined ? "" : `; ${count} affected items are reported`}. ${guidance}`;
-      return locale === "zh-hant" ? `${summary}。請檢視 ${field}${count === undefined ? "" : `；目前報告 ${count} 個受影響項目`}。${guidance}`
-        : `${summary}。请查看 ${field}${count === undefined ? "" : `；当前报告 ${count} 个受影响项目`}。${guidance}`;
-    },
-  }])) as unknown as OpenEnaModelV3Copy["diagnosticMessages"];
+function diagnosticMessagesV3(locale: Locale, scopeLabels?: OpenEnaModelV3Copy["tabs"]["diagnostics"]["scopeLabels"]): OpenEnaModelV3Copy["diagnosticMessages"] {
+  const text = (phrases: readonly [string, string, string]) => {
+    if (locale === "zh-hant") return phrases[1];
+    if (locale === "zh-hans") return phrases[2];
+    return locale === "en" ? phrases[0] : workspaceMessage(locale, phrases[0]);
+  };
+  return Object.fromEntries(MODEL_DIAGNOSTIC_IDS_ALL_V3.map((id) => {
+    const summary = text(DIAGNOSTIC_SUMMARIES_V3[id]);
+    const guidance = text(DIAGNOSTIC_GUIDANCE_V3[id]);
+    return [id, {
+      summary: () => summary,
+      detail: (input: OpenEnaModelDiagnosticLocalizationInputV3) => {
+        const field = input.fieldPath ?? scopeLabels?.[input.scope] ?? input.scope;
+        const count = input.evidence?.totalCount;
+        if (locale === "en") return `${summary}. Inspect ${field}${count === undefined ? "" : `; ${count} affected items are reported`}. ${guidance}`;
+        if (locale === "zh-hant") return `${summary}。請檢視 ${field}${count === undefined ? "" : `；目前報告 ${count} 個受影響項目`}。${guidance}`;
+        if (locale === "zh-hans") return `${summary}。请查看 ${field}${count === undefined ? "" : `；当前报告 ${count} 个受影响项目`}。${guidance}`;
+        return count === undefined
+          ? workspaceMessage(locale, "{summary}. Inspect {field}. {guidance}", { summary, field, guidance })
+          : workspaceMessage(locale, "{summary}. Inspect {field}; {count} affected items are reported. {guidance}", { summary, field, count, guidance });
+      },
+    }];
+  })) as unknown as OpenEnaModelV3Copy["diagnosticMessages"];
 }
 
 function actionIdentityV3(input: ModelSuggestedActionLocalizationInputV3): string {
@@ -2340,12 +2360,12 @@ function actionIdentityV3(input: ModelSuggestedActionLocalizationInputV3): strin
   }
 }
 
-function suggestedActionMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3Copy["suggestedActions"] {
+function suggestedActionMessagesV3(locale: Locale): OpenEnaModelV3Copy["suggestedActions"] {
   return Object.fromEntries(MODEL_SUGGESTED_ACTION_IDS_V3.map((id) => [id, {
     label: (input: ModelSuggestedActionLocalizationInputV3) => {
       const identity = actionIdentityV3(input);
       const enLabels: Record<ModelSuggestedActionIdV3, string> = {
-        "exclude-code": `Exclude ${identity} Code`, "replace-row-order": "Use suggested row order",
+        "exclude-code": "Exclude {identity} Code", "replace-row-order": "Use suggested row order",
         "replace-horizon-order": "Use suggested Horizon order", "select-endpoint": "Select End Point",
         "select-svd": "Select SVD", "select-reference": "Select Reference", "clear-group": "Clear Group selection",
       };
@@ -2359,9 +2379,16 @@ function suggestedActionMessagesV3(locale: NativeModelLocaleV3): OpenEnaModelV3C
         "replace-horizon-order": "使用建议的视域顺序", "select-endpoint": "选择端点模型",
         "select-svd": "选择 SVD", "select-reference": "选择参考", "clear-group": "清除组选择",
       };
-      return locale === "en" ? enLabels[id] : locale === "zh-hant" ? zhHantLabels[id] : zhHansLabels[id];
+      if (locale === "zh-hant") return zhHantLabels[id];
+      if (locale === "zh-hans") return zhHansLabels[id];
+      return workspaceMessage(locale, enLabels[id], { identity });
     },
-    confirmation: (input: ModelSuggestedActionLocalizationInputV3) => locale === "en" ? `Confirm this scientific configuration change: ${actionIdentityV3(input)}.` : locale === "zh-hant" ? `確認套用此科學設定變更：${actionIdentityV3(input)}。` : `确认应用此科学设置更改：${actionIdentityV3(input)}。`,
+    confirmation: (input: ModelSuggestedActionLocalizationInputV3) => {
+      const identity = actionIdentityV3(input);
+      if (locale === "zh-hant") return `確認套用此科學設定變更：${identity}。`;
+      if (locale === "zh-hans") return `确认应用此科学设置更改：${identity}。`;
+      return workspaceMessage(locale, "Confirm this scientific configuration change: {identity}.", { identity });
+    },
   }])) as OpenEnaModelV3Copy["suggestedActions"];
 }
 
@@ -2414,6 +2441,8 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
     startingWorker: t("Starting model worker", "正在啟動模型工作程序", "正在启动模型工作进程"), workerStage: (stageId) => t(`Worker stage: ${stageId}`, `工作程序階段：${stageId}`, `工作进程阶段：${stageId}`), runModel: t("Run model", "執行模型", "运行模型"), cancelRun: t("Cancel run", "取消執行", "取消运行"),
     cancelPendingImport: t("Cancel pending import", "取消待處理匯入", "取消待处理导入"), operationFailed: t("The requested operation failed. Review the current configuration and try again.", "要求的操作失敗。請檢查目前設定後再試。", "请求的操作失败。请检查当前设置后重试。"),
     failures: {
+      trajectoryPeriodOrder: t("The selected periods are reversed or have no fitted chronological relationship. Clear the selection and choose an earlier period, then a later period supported by the fitted order.", "所選時段順序相反，或缺少已擬合的時間先後關係。請清除選取，先選較早時段，再選已擬合次序支持的較晚時段。", "所选周期顺序相反，或缺少已拟合的时间先后关系。请清除选择，先选较早周期，再选已拟合顺序支持的较晚周期。"),
+      trajectoryPeriodSelection: t("Choose distinct periods observed in the current fitted model. Clear the selection and select the periods again.", "請選擇目前已擬合模型中不同的已觀測時段。請清除選取後重新選擇時段。", "请选择当前已拟合模型中不同的已观测周期。请清除选择后重新选择周期。"),
       codedDataTooLarge: ({ limitMiB }) => t(`Coded data exceeds the ${limitMiB} MB limit (${limitMiB} MiB, ${limitMiB} × 1,024 × 1,024 bytes).`, `編碼資料超過 ${limitMiB} MB 上限（${limitMiB} MiB，即 ${limitMiB} × 1,024 × 1,024 位元組）。`, `编码数据超过 ${limitMiB} MB 上限（${limitMiB} MiB，即 ${limitMiB} × 1,024 × 1,024 字节）。`),
       codedDataInvalidUtf8: t("This CSV is not valid UTF-8. Save it as UTF-8 and open it again.", "此 CSV 並非有效的 UTF-8。請另存為 UTF-8 後重新開啟。", "此 CSV 不是有效的 UTF-8。请另存为 UTF-8 后重新打开。"),
       artifactInvalidUtf8: t("This JSON artifact is not valid UTF-8. Save it as UTF-8 and import it again.", "此 JSON 成果並非有效的 UTF-8。請另存為 UTF-8 後重新匯入。", "此 JSON 成果不是有效的 UTF-8。请另存为 UTF-8 后重新导入。"),
@@ -2611,6 +2640,8 @@ function createWorkspaceCopyV3(locale: NativeModelLocaleV3): OpenEnaWorkspaceV3C
       analyticUnitMarksHidden: (count) => t(` ${count} analytic-unit mark${count === 1 ? " is" : "s are"} hidden by group or unit display controls.`, `群組或分析單位顯示控制隱藏了 ${count} 個分析單位標記。`, `组或分析单位显示控制隐藏了 ${count} 个分析单位标记。`),
     },
     stats: {
+      selectedPeriodOrder: t("Requested order (earlier → later)", "要求的次序（較早 → 較晚）", "请求顺序（较早 → 较晚）"),
+      rankZNote: t("For Wilcoxon tests, auxiliary z uses a 0.5 continuity correction. continuityCorrectionApplied describes the p-value calculation: exact p-values do not use z or this correction.", "Wilcoxon 檢定的輔助 z 使用 0.5 連續性校正。continuityCorrectionApplied 描述 p 值的計算：精確 p 值不使用 z 或此校正。", "Wilcoxon 检验的辅助 z 使用 0.5 连续性校正。continuityCorrectionApplied 描述 p 值的计算：精确 p 值不使用 z 或此校正。"),
       separation: t("Model bundles contain unavailable statistics. Inference below is an explicit, separate post-model request.", "模型套件包含不可用的統計項目。下方推論是明確且獨立的模型後要求。", "模型包包含不可用的统计项目。下方推断是明确且独立的模型后请求。"), inferenceDesign: t("Trajectory inference design", "軌跡推論設計", "轨迹推断设计"), designs: { independent: t("Independent groups at a period", "單一時段的獨立群組", "单一时段的独立组"), paired: t("Paired periods", "配對時段", "配对时段"), repeated: t("Repeated periods", "重複時段", "重复时段") },
       identityConfirmation: t("I confirm these fitted Units identify the same entities across periods.", "我確認這些擬合單位在各時段識別相同實體。", "我确认这些拟合单位在各时段标识相同实体。"), periodInstructions: t("Select exactly one period for independent, exactly two for paired, or at least three for repeated inference. Select periods in the requested order. The native consumer verifies fitted precedence and rejects incomparable or reversed periods.", "獨立推論需選一個時段，配對推論需選兩個，重複推論需選至少三個。請依要求順序選取；原生消費者會驗證擬合先後並拒絕不可比較或反向時段。", "独立推断需选一个时段，配对推断需选两个，重复推断需选至少三个。请依请求顺序选择；原生消费者会验证拟合先后并拒绝不可比较或反向时段。"), runInference: t("Run confirmed inference", "執行已確認推論", "运行已确认推断"), onaDescriptive: t("ONA remains descriptive only; group and trajectory inference are unavailable.", "ONA 仍僅提供描述；群組及軌跡推論不可用。", "ONA 仍仅提供描述；组及轨迹推断不可用。"),
       onaEdges: t("ONA directed aggregate edges", "ONA 有向彙總邊", "ONA 有向汇总边"), onaAudit: t("Full-run deidentified ordered audit", "完整執行去識別有序稽核", "完整运行去标识有序审计"), exportOnaEdges: t("Export ONA aggregate edges", "匯出 ONA 彙總邊", "导出 ONA 汇总边"), exportOnaAudit: t("Export ONA deidentified audit", "匯出 ONA 去識別稽核", "导出 ONA 去标识审计"), exportNative: t("Export native statistics", "匯出原生統計", "导出原生统计"),
@@ -2756,6 +2787,15 @@ export function localizeModelSuggestedActionV3(copy: OpenEnaModelV3Copy, input: 
   const message = copy.suggestedActions[input.id];
   if (message === undefined) throw new Error(`Unknown Models v3 suggested action ID: ${input.id}`);
   return { label: message.label(input), confirmation: message.confirmation(input) };
+}
+
+function withWorkspaceFormatters(locale: Locale, copy: OpenEnaCopy): OpenEnaCopy {
+  const messages = { diagnosticMessages: diagnosticMessagesV3(locale, copy.modelV3.tabs.diagnostics.scopeLabels), suggestedActions: suggestedActionMessagesV3(locale) };
+  const model = { ...copy.modelV3, ...messages };
+  return formatWorkspaceCopy(locale, copy, messages, {
+    localize: input => localizeModelDiagnosticV3(model, input),
+    suggestedAction: input => localizeModelSuggestedActionV3(model, input),
+  });
 }
 
 const modelV3En = createModelV3Copy("en");
@@ -4360,44 +4400,20 @@ const navLabels: Record<Locale, string> = {
   bn: "Open ENA",
 };
 
-export const openEnaLocalizedLocales = ["en", "zh-hant", "zh-hans"] as const;
-
-export function isOpenEnaLocalizedLocale(
-  locale: Locale,
-): locale is (typeof openEnaLocalizedLocales)[number] {
-  return (openEnaLocalizedLocales as readonly Locale[]).includes(locale);
-}
-
-const openEnaFallbackNotices = {
-  en: null,
-  "zh-hant": null,
-  "zh-hans": null,
-  es: "Open ENA aún no está traducido para la ruta es. El espacio de trabajo permanece en inglés mientras se conservan esta ruta y este idioma.",
-  fr: "Open ENA n'est pas encore traduit pour la route fr. L'espace de travail reste en anglais, tandis que cette route et cette langue sont conservées.",
-  pt: "O Open ENA ainda não está traduzido para a rota pt. A área de trabalho permanece em inglês enquanto esta rota e este idioma são mantidos.",
-  de: "Open ENA ist für die Route de noch nicht übersetzt. Die Arbeitsfläche bleibt auf Englisch, während diese Route und diese Sprache beibehalten werden.",
-  ar: "Open ENA غير مترجم بعد لمسار ar. تبقى مساحة العمل بالإنجليزية ومن اليسار إلى اليمين، مع الإبقاء على هذا المسار وهذه اللغة.",
-  ko: "Open ENA는 ko 경로에 아직 번역되어 있지 않습니다. 이 경로와 로케일은 유지되며 작업 공간은 영어로 표시됩니다.",
-  ja: "Open ENA は ja ルート向けにまだ翻訳されていません。このルートとロケールは保持されたまま、ワークベンチは英語で表示されます。",
-  hi: "Open ENA अभी hi रूट के लिए अनुवादित नहीं है। यह रूट और लोकेल बनाए रखते हुए कार्यक्षेत्र अंग्रेज़ी में दिखाया जाता है।",
-  ru: "Open ENA пока не переведён для маршрута ru. Рабочая область остаётся на английском, при этом этот маршрут и язык сохраняются.",
-  id: "Open ENA belum diterjemahkan untuk rute id. Area kerja tetap berbahasa Inggris sementara rute dan locale ini tetap dipertahankan.",
-  bn: "Open ENA এখনও bn রুটের জন্য অনুবাদ করা হয়নি। এই রুট ও লোকেল বজায় রেখে ওয়ার্কবেঞ্চ ইংরেজিতে দেখানো হয়।",
-} as const satisfies Record<Locale, string | null>;
-
-export function getOpenEnaFallbackNotice(locale: Locale) {
-  return openEnaFallbackNotices[locale];
-}
+export const openEnaLocalizedLocales = locales;
+const localizedCopies = new Map<Locale, OpenEnaCopy>();
 
 export function getOpenEnaCopy(locale: Locale): OpenEnaCopy {
   if (locale === "zh-hant") return zhHant;
   if (locale === "zh-hans") return zhHans;
   if (locale === "en") return en;
-  return {
-    ...en,
-    eyebrow: `${navLabels[locale]} · English workspace interface`,
-    navLabel: navLabels[locale],
-  };
+  let copy = localizedCopies.get(locale);
+  if (!copy) {
+    copy = withWorkspaceFormatters(locale, localizeWorkspaceCopy(locale, en));
+    copy.navLabel = navLabels[locale];
+    localizedCopies.set(locale, copy);
+  }
+  return copy;
 }
 
 export function getOpenEnaNavLabel(locale: Locale) {
@@ -4407,7 +4423,7 @@ export function getOpenEnaNavLabel(locale: Locale) {
 /** Current-provider consent copy is separate from the provider stored on earlier records. */
 export function getOpenEnaAiProviderCopy(locale: Locale, descriptor: { provider: string; model: string }, base: OpenEnaAiInterpretationCopy = getOpenEnaCopy(locale).aiInterpretation): OpenEnaAiInterpretationCopy {
   if (descriptor.provider !== "qwen") return base;
-  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : en;
+  const t = (en: string, hant: string, hans: string) => locale === "zh-hant" ? hant : locale === "zh-hans" ? hans : workspaceMessage(locale, en);
   return {
     ...base,
     consentLabel: t(

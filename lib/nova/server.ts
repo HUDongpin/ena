@@ -46,7 +46,7 @@ export function createNovaApiHandler(operation: Operation, dependencies: NovaDep
   const environment = dependencies.environment ?? process.env;
   return async (request: Request, params: Params = {}): Promise<Response> => {
     const post = request.method === "POST";
-    if (!(operation === "sessions" ? ["GET", "POST"] : ["messages", "run", "restore", "expert", "expert-response"].includes(operation) ? ["POST"] : ["GET"]).includes(request.method)) return workflowError("method-not-allowed", 405);
+    if (!(["sessions", "session"].includes(operation) ? ["GET", "POST"] : ["messages", "run", "restore", "expert", "expert-response"].includes(operation) ? ["POST"] : ["GET"]).includes(request.method)) return workflowError("method-not-allowed", 405);
     if (post && !resolveOpenEnaRequestOrigin(request.headers, new URL(request.url).origin, environment)) return workflowError("invalid-origin", 403);
     try {
       if (operation === "models") {
@@ -100,6 +100,10 @@ export function createNovaApiHandler(operation: Operation, dependencies: NovaDep
         if (!onlyKeys(body, ["locale", "title"]) || !isLocale(body.locale as string) || body.title !== undefined && !validText(body.title, 120)) return workflowError("invalid-request", 400);
         return workflowJson({session: await store.createSession({...mutation, locale: body.locale as string, ...(typeof body.title === "string" ? {title: body.title.trim()} : {})})}, 201);
       }
+      if (operation === "session") {
+        if (!onlyKeys(body, ["title"]) || !validText(body.title, 120) || /[\r\n\t\u2028\u2029]/u.test(body.title)) return workflowError("invalid-request", 400);
+        return workflowJson({session: await store.renameSession({...input, title: body.title.trim()})});
+      }
       if (operation === "messages") {
         if (!onlyKeys(body, ["content", "modelKey", "effort"]) || !validText(body.content, 12_000) || !isNovaModelKey(body.modelKey) || !isNovaEffort(body.effort)) return workflowError("invalid-request", 400);
         const model = resolveNovaModel(body.modelKey, environment); if (!model.available) return workflowError(model.unavailableReason ?? "model-unavailable", 503);
@@ -126,7 +130,10 @@ export function createNovaApiHandler(operation: Operation, dependencies: NovaDep
       }
       if (operation === "expert-response") {
         if (!onlyKeys(body, ["runId", "artifactId", "response"]) || !isId(body.runId) || !(body.artifactId === null || isId(body.artifactId)) || !validText(body.response, 6_000)) return workflowError("invalid-request", 400);
-        return workflowJson({session: await store.respondExpert({...input, requestId: params.requestId!, runId: body.runId, artifactId: body.artifactId as string | null, response: body.response.trim(), actorRef: actorRef!})});
+        await store.respondExpert({...input, requestId: params.requestId!, runId: body.runId, artifactId: body.artifactId as string | null, response: body.response.trim(), actorRef: actorRef!});
+        // The operator refreshes its scoped inbox after success. Returning the
+        // owner's whole session would also disclose unrelated chat and drafts.
+        return workflowJson({accepted: true});
       }
       return workflowError("not-found", 404);
     } catch (error) { return failure(error); }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import type { Locale } from "../lib/i18n";
+import { locales, type Locale } from "../lib/i18n";
 import { getOpenEnaCopy, openEnaLocalizedLocales } from "../lib/open-ena-i18n";
 
 const projectRoot = process.cwd();
@@ -148,7 +148,7 @@ test("the only AI network request is a POST inside the explicit Generate handler
 
 test("AI generation requires the exact current native review and full local scientific identity", () => {
 
-  assert.match(v3, /disabled=\{!activeAiReview \|\| activeAiReview.request.locale !== locale \|\| !current\}/);
+  assert.match(v3, /disabled=\{!activeAiReview \|\| activeAiReview.request.locale !== aiLocale\(locale\) \|\| !current\}/);
   assert.match(v3, /localScientificIdentity=\{openEnaAiLocalScientificIdentityV3\(activeAiReview\)\}/);
   assert.match(v3, /aiReview\.inference === activeInference/, "an earlier AI preview must not authorize a newly confirmed statistics object");
   assert.match(aiComponent, /openEnaAiReviewedRequestIdentityV3/);
@@ -432,12 +432,8 @@ test("provider output is rendered as React text and never injected as HTML", () 
   );
 });
 
-test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful privacy copy", () => {
-  assert.deepEqual(
-    openEnaLocalizedLocales,
-    ["en", "zh-hant", "zh-hans"],
-    "the three reviewed Open ENA locales must remain en, zh-Hant, and zh-Hans",
-  );
+test("all languages provide complete AI UI, disclosure, and privacy copy", () => {
+  assert.deepEqual(openEnaLocalizedLocales, locales);
   const requiredKeys = [
     "title",
     "description",
@@ -473,7 +469,8 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
     "zh-hans": aiCopy("zh-hans"),
   };
 
-  for (const [locale, copy] of Object.entries(copies)) {
+  for (const locale of locales) {
+    const copy = aiCopy(locale);
     for (const key of requiredKeys) {
       assert.equal(typeof copy[key], "string", `${locale} aiInterpretation.${key} must be a string`);
       assert.ok(copy[key].trim().length > 0, `${locale} aiInterpretation.${key} must not be blank`);
@@ -510,7 +507,7 @@ test("en, zh-Hant, and zh-Hans provide complete AI UI, disclosure, and truthful 
     assert.match(copies[locale].privacyExternal, /同意|生成|請求|请求/u);
   }
 
-  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
+  for (const locale of locales) {
     const modeKeys = Object.keys(getOpenEnaCopy(locale).modes);
     assert.deepEqual(modeKeys, ["data", "model", "plot", "stats", "ai"], `${locale} must expose AI after Stats`);
   }

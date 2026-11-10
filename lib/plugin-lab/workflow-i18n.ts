@@ -165,8 +165,14 @@ export function getPluginWorkflowCopy(locale: Locale) {
   return { ...base, ...getPluginProposalStatusCopy(locale), ...(locale === "zh-hans" ? zhHans : locale === "zh-hant" ? zhHant : en) };
 }
 
-export function pluginWorkflowError(code: unknown, locale: Locale) {
-  const copy = getPluginWorkflowCopy(locale);
+export type EmailVerificationCopy = Pick<ReturnType<typeof getPluginWorkflowCopy>,
+  "email" | "sendCode" | "sendingCode" | "resendCode" | "resendIn" | "codeLabel" |
+  "verifyEmail" | "verifying" | "codeSent" | "codeExpires" | "codeExpired" |
+  "verified" | "checkingSession" | "verifyHint" | "sessionExpired" | "emailInvalid" |
+  "codeInvalid" | "rateLimited" | "emailUnavailable" | "unavailable" | "requestFailed">;
+
+export function pluginWorkflowError(code: unknown, locale: Locale, verificationCopy?: EmailVerificationCopy) {
+  const copy = { ...getPluginWorkflowCopy(locale), ...verificationCopy };
   const errors: Record<string, string> = {
     "invalid-email": copy.emailInvalid, "invalid-code": copy.codeInvalid, "invalid-access": copy.legacyInvalid,
     "rate-limited": copy.rateLimited, "email-unavailable": copy.emailUnavailable, "service-unavailable": copy.unavailable,

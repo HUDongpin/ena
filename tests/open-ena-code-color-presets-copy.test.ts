@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { locales } from "../lib/i18n";
-import { getOpenEnaCopy, openEnaLocalizedLocales } from "../lib/open-ena-i18n";
+import { getOpenEnaCopy } from "../lib/open-ena-i18n";
 
 const formatterInputs = ["goal", 7, "#123456", "#abcdef"] as const;
 
@@ -33,18 +33,19 @@ test("every locale exposes complete Open ENA code color picker copy", () => {
   assert.equal(Object.isFrozen(getOpenEnaCopy("zh-hant").model.codeColorPicker), true);
   assert.equal(Object.isFrozen(getOpenEnaCopy("zh-hans").model.codeColorPicker), true);
 
-  const fallback = getOpenEnaCopy("es");
+  const spanish = getOpenEnaCopy("es");
+  const spanishConfirm = spanish.model.codeColorPicker.confirm;
   assert.throws(
     () => {
-      (fallback.model.codeColorPicker as unknown as { confirm: string }).confirm = "mutated";
+      (spanish.model.codeColorPicker as unknown as { confirm: string }).confirm = "mutated";
     },
     TypeError,
   );
   assert.equal(getOpenEnaCopy("en").model.codeColorPicker.confirm, "OK");
-  assert.equal(fallback.model.codeColorPicker.confirm, "OK");
+  assert.equal(spanish.model.codeColorPicker.confirm, spanishConfirm);
 });
 
-test("localized and fallback Open ENA code color picker copy stays exact", () => {
+test("Open ENA color picker formatters preserve preset values in each language", () => {
   const expected = {
     en: {
       static: ["Color Presets:", "Custom Color:", "Primary", "Complementary", "Cancel", "OK", "Saturation and brightness", "Saturation", "Brightness", "Hue", "Enter a six-digit hexadecimal color such as #cc423a."],
@@ -60,16 +61,16 @@ test("localized and fallback Open ENA code color picker copy stays exact", () =>
     },
   } as const;
 
-  for (const locale of openEnaLocalizedLocales) {
+  for (const locale of ["en", "zh-hant", "zh-hans"] as const) {
     const picker = getOpenEnaCopy(locale).model.codeColorPicker;
     assert.deepEqual([picker.colorPresets, picker.customColor, picker.primary, picker.complementary, picker.cancel, picker.confirm, picker.saturationValue, picker.saturation, picker.brightness, picker.hue, picker.invalidHex], expected[locale].static);
     assert.deepEqual([picker.chooseColor(formatterInputs[0]), picker.dialogTitle(formatterInputs[0]), picker.presetLabel(formatterInputs[1], formatterInputs[2], formatterInputs[3]), picker.saturationBrightnessValue(37, 64)], expected[locale].formatted);
   }
 
   for (const locale of locales) {
-    if ((openEnaLocalizedLocales as readonly string[]).includes(locale)) continue;
     const picker = getOpenEnaCopy(locale).model.codeColorPicker;
-    assert.deepEqual([picker.colorPresets, picker.customColor, picker.primary, picker.complementary, picker.cancel, picker.confirm, picker.saturationValue, picker.saturation, picker.brightness, picker.hue, picker.invalidHex], expected.en.static);
-    assert.deepEqual([picker.chooseColor(formatterInputs[0]), picker.dialogTitle(formatterInputs[0]), picker.presetLabel(formatterInputs[1], formatterInputs[2], formatterInputs[3]), picker.saturationBrightnessValue(37, 64)], expected.en.formatted);
+    const label = picker.presetLabel(7, "#123456", "#abcdef");
+    for (const literal of ["7", "#123456", "#abcdef"]) assert.ok(label.includes(literal), locale);
+    if (locale !== "en") assert.notEqual(picker.invalidHex, getOpenEnaCopy("en").model.codeColorPicker.invalidHex, locale);
   }
 });

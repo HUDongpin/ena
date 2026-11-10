@@ -39,6 +39,9 @@ const nextConfig: NextConfig = {
     return [{
       source: "/(.*)",
       headers: [
+        // Begin with one day on each serving host. Extending to subdomains or
+        // preloading requires a separate HTTPS inventory and rollout decision.
+        { key: "Strict-Transport-Security", value: "max-age=86400" },
         { key: "Content-Security-Policy", value: contentSecurityPolicy },
         { key: "X-Frame-Options", value: "DENY" },
         { key: "X-Content-Type-Options", value: "nosniff" },
@@ -98,6 +101,7 @@ const nextConfig: NextConfig = {
       { source: "/plugin-lab", destination: "/en/plugins", permanent: false },
       { source: "/plugin-lab/:slug*", destination: "/en/plugins/:slug*", permanent: false },
       // Restrict legacy aliases to real locales: :locale must never match `api`.
+      { source: "/:locale(en|zh-hant|zh-hans|es|fr|pt|de|ar|ko|ja|hi|ru|id|bn)/plugin", destination: "/:locale/plugins", permanent: false },
       { source: "/:locale(en|zh-hant|zh-hans|es|fr|pt|de|ar|ko|ja|hi|ru|id|bn)/plugin-lab", destination: "/:locale/plugins", permanent: false },
       { source: "/:locale(en|zh-hant|zh-hans|es|fr|pt|de|ar|ko|ja|hi|ru|id|bn)/plugin-lab/:slug*", destination: "/:locale/plugins/:slug*", permanent: false },
       { source: "/news", destination: "/en/news", permanent: false },

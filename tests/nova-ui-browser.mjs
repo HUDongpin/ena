@@ -5,6 +5,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium } from "playwright";
 import { tsImport } from "tsx/esm/api";
+const { locales, localeMeta } = await tsImport("../lib/i18n.ts", import.meta.url);
+const { getNovaCopy } = await tsImport("../components/nova/copy.ts", import.meta.url);
 const { NOVA_SYNTHETIC_CONTEXT } = await tsImport("../lib/nova/sdk.ts", import.meta.url);
 const { novaIdentityTag } = await tsImport("../lib/nova/identity.ts", import.meta.url);
 
@@ -66,6 +68,10 @@ async function installFixtures(page) {
       state.session.expertRequests.push({ id: "fixture-expert", runId: data.runId, artifactId: data.artifactId, question: data.question, context: "Synthetic test", status: "requested", notificationStatus: "pending", createdAt: now });
       return respond(route, { session: state.session }, 202);
     }
+    if (state.session && path === `/api/nova/sessions/${state.session.id}` && request.method() === "POST") {
+      state.session.title = request.postDataJSON().title;
+      return respond(route, { session: state.session });
+    }
     if (state.failSessionReads > 0) { state.failSessionReads--; state.failedSessionReads++; return respond(route, { code: "service-unavailable" }, 503); }
     if (!state.session || !path.includes(state.session.id)) return respond(route, { code: "not-found" }, 404);
     return respond(route, { session: state.session });
@@ -73,11 +79,52 @@ async function installFixtures(page) {
   return state;
 }
 const browser = await chromium.launch({ headless: true });
+async function verifyColdPicker(locale, viewport) {
+  const page = await browser.newPage({ viewport });
+  const blockedScripts = [];
+  let resume;
+  const gate = new Promise((resolve) => { resume = resolve; });
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (request.resourceType() === "script" && new URL(request.url()).pathname.startsWith("/_next/")) {
+      blockedScripts.push(request.url());
+      await gate;
+    }
+    await route.continue().catch(() => {}); // The test page can close with a request in flight.
+  });
+  try {
+    await page.goto(`${base.origin}/${locale}/plugins`, { waitUntil: "commit" });
+    const trigger = page.getByRole("button", { name: getNovaCopy(locale).chooseModel, exact: true });
+    const menu = page.locator(".nova-model-popover");
+    await trigger.click();
+    await menu.waitFor({ state: "visible" });
+    assert.ok(blockedScripts.length > 0, "the menu must open with hydration scripts still blocked");
+    const box = await menu.boundingBox(), button = await trigger.boundingBox();
+    assert.ok(box && button && box.x >= 0 && box.x + box.width <= viewport.width + 1);
+    assert.ok(box.y >= 0 && Math.abs(button.y - box.y - box.height - 14) < 2, "menu anchored above the button");
+    await menu.locator("strong").click();
+    assert.equal(await menu.isVisible(), true, "a click inside the menu keeps it open");
+    await page.locator(".nova-header").click({ position: { x: Math.floor(viewport.width / 2), y: 30 } });
+    await menu.waitFor({ state: "hidden" });
+    await trigger.press("Space");
+    await menu.waitFor({ state: "visible" });
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    assert.ok(await trigger.evaluate((element) => element === document.activeElement));
+  } finally {
+    resume();
+    await page.close();
+  }
+}
+
 try {
+  await verifyColdPicker("en", { width: 1440, height: 1000 });
+  await verifyColdPicker("ar", { width: 390, height: 844 });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = []; page.on("pageerror", (error) => errors.push(error.message));
   const state = await installFixtures(page);
-  await page.goto(`${base.origin}/en/plugins`, { waitUntil: "networkidle" });
+  await page.goto(`${base.origin}/en/plugin`, { waitUntil: "networkidle" });
+  assert.equal(new URL(page.url()).pathname, "/en/plugins");
   await page.getByRole("heading", { name: "What would you like to build?" }).waitFor();
   if (await page.locator(".nova-workbench").evaluate((element) => element.classList.contains("nova-web-fonts"))) {
     const faces = await page.evaluate(async () => {
@@ -109,6 +156,15 @@ try {
   await page.getByLabel("Choose model").click();
   await page.screenshot({ path: `${output}/model-menu-desktop.png`, fullPage: true, animations: "disabled" });
   assert.equal(await page.locator('.nova-model-popover input[type="radio"]').count(), 4);
+  await page.locator(".nova-model-popover strong").click();
+  assert.equal(await page.locator(".nova-model-popover").isVisible(), true);
+  await page.locator(".nova-header").click({ position: { x: 450, y: 20 } });
+  assert.equal(await page.locator(".nova-model-popover").isVisible(), false);
+  await page.getByLabel("Choose model").click();
+  await page.getByLabel("Choose model").press("Escape");
+  assert.equal(await page.locator(".nova-model-popover").isVisible(), false);
+  assert.equal(await page.locator(".nova-header").getByText("Code", { exact: true }).count(), 0);
+  await page.getByLabel("Choose model").click();
   await page.getByLabel("DeepSeek V4.1 Flash 1017", { exact: true }).check();
   await page.getByLabel("Effort", { exact: true }).selectOption("high");
   await page.getByRole("button", { name: "Add context", exact: true }).click();
@@ -138,7 +194,22 @@ try {
   assert.equal(retried.body.modelKey, "deepseek-flash"); assert.equal(retried.body.effort, "high");
   assert.equal(await page.locator("#nova-prompt").inputValue(), "");
   assert.equal(new URL(page.url()).searchParams.get("session"), state.session.id);
+  await page.getByRole("button", { name: "New session", exact: true }).click();
+  await page.locator("#nova-prompt").fill("Unsent draft");
+  const recent = page.locator(".nova-recent");
+  await recent.getByRole("button", { name: state.session.title }).click({ button: "right" });
+  const rename = page.getByRole("dialog", { name: "Rename session" });
+  assert.equal(await rename.getByRole("textbox").inputValue(), state.session.title);
+  await rename.getByRole("textbox").fill("   ");
+  assert.equal(await rename.getByRole("button", { name: "Save", exact: true }).isDisabled(), true);
+  await rename.getByRole("textbox").fill("  Renamed fixture  ");
+  await rename.getByRole("textbox").press("Enter");
+  await rename.waitFor({ state: "detached" });
+  assert.equal(new URL(page.url()).searchParams.has("session"), false);
+  assert.equal(await page.locator("#nova-prompt").inputValue(), "Unsent draft");
+  await recent.getByRole("button", { name: "Renamed fixture" }).click();
   await page.reload({ waitUntil: "networkidle" });
+  await page.getByRole("heading", { level: 1, name: "Renamed fixture", exact: true }).waitFor();
   await page.getByText("The synthetic test fixture is ready for preview.", { exact: true }).waitFor();
   assert.equal(new URL(page.url()).searchParams.get("session"), state.session.id, "full reload restores the selected owned task");
   assert.equal(await page.locator(".nova-preview-frame").getAttribute("sandbox"), "allow-scripts");
@@ -208,9 +279,16 @@ try {
   await page.keyboard.press("Escape");
   await page.goto(`${base.origin}/zh-hans/plugins`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "你想构建什么？" }).waitFor();
-  await page.goto(`${base.origin}/fr/plugins`, { waitUntil: "networkidle" });
-  await page.locator(".nova-language-note").waitFor();
-  assert.equal(await page.locator(".nova-workbench").getAttribute("lang"), "en");
+  for (const locale of locales) {
+    await page.locator(".nova-language summary").click();
+    await page.locator(`.nova-language a[hreflang="${localeMeta[locale].htmlLang}"]`).click();
+    await page.waitForURL(`${base.origin}/${locale}/plugins`);
+    const copy = getNovaCopy(locale);
+    await page.getByRole("heading", { name: copy.greeting, exact: true }).waitFor();
+    assert.equal(await page.getByRole("textbox", { name: copy.placeholder }).getAttribute("placeholder"), copy.placeholder);
+    assert.equal(await page.locator(".nova-workbench").getAttribute("dir"), localeMeta[locale].dir);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `mobile overflow in ${locale}`);
+  }
   assert.deepEqual(errors, []);
   assert.ok(state.privateRequests.every((request) => /^[a-f0-9]{64}$/.test(request.identityTag || "")), "all private reads and writes carry a captured account digest");
 

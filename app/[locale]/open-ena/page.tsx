@@ -17,7 +17,6 @@ import { openEnaAiOperationOwnerKey } from "@/lib/open-ena/ai-operation-owner";
 import { getOpenEnaAiProviderDescriptor } from "@/lib/open-ena/ai-provider";
 import {
   getOpenEnaCopy,
-  isOpenEnaLocalizedLocale,
   openEnaLocalizedLocales,
 } from "@/lib/open-ena-i18n";
 import { openEnaLoginNotice } from "@/lib/open-ena-auth-copy";
@@ -39,11 +38,10 @@ export const runtime = "nodejs";
 export async function generateMetadata({ params }: OpenEnaPageProps): Promise<Metadata> {
   const { locale } = await params;
   const typedLocale = isLocale(locale) ? locale : "en";
-  const metadataLocale = isOpenEnaLocalizedLocale(typedLocale) ? typedLocale : "en";
-  const copy = getOpenEnaCopy(metadataLocale);
-  const canonical = `/${metadataLocale}${siteConfig.openEnaPath}`;
+  const copy = getOpenEnaCopy(typedLocale);
+  const canonical = `/${typedLocale}${siteConfig.openEnaPath}`;
   const metadata = pageMetadata({
-    locale: metadataLocale,
+    locale: typedLocale,
     path: siteConfig.openEnaPath,
     title: copy.title,
     description: copy.intro,
@@ -64,9 +62,8 @@ export async function generateMetadata({ params }: OpenEnaPageProps): Promise<Me
       title: `${copy.title} | ${siteConfig.brandName}`,
       description: copy.intro,
       url: canonical,
-      locale: getLocaleMeta(metadataLocale).htmlLang,
+      locale: getLocaleMeta(typedLocale).htmlLang,
     },
-    robots: isOpenEnaLocalizedLocale(typedLocale) ? undefined : { index: false, follow: true },
   };
 }
 
@@ -96,15 +93,14 @@ export default async function OpenEnaPage({ params, searchParams }: OpenEnaPageP
 
   const copy = getOpenEnaCopy(typedLocale);
   const providerDescriptor = getOpenEnaAiProviderDescriptor(process.env);
-  const canonicalLocale = isOpenEnaLocalizedLocale(typedLocale) ? typedLocale : "en";
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     name: "Open ENA",
     applicationCategory: "ResearchApplication",
     operatingSystem: "Web browser",
-    url: `${siteConfig.url}/${canonicalLocale}${siteConfig.openEnaPath}`,
-    inLanguage: getLocaleMeta(canonicalLocale).htmlLang,
+    url: `${siteConfig.url}/${typedLocale}${siteConfig.openEnaPath}`,
+    inLanguage: getLocaleMeta(typedLocale).htmlLang,
     description: copy.intro,
     softwareVersion: "0.1",
     isAccessibleForFree: true,

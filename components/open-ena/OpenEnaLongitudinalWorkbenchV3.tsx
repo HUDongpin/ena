@@ -1,4 +1,5 @@
 "use client";
+import { localizeWorkspaceCopy, workspaceMessage } from "@/lib/open-ena/workspace-messages";
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import {
@@ -708,8 +709,19 @@ const zhHant: typeof english = {
   runStateRemoteRecovery: "持久計算未能完成",
 };
 
+const localizedCopy = new Map<Locale, typeof english>();
 export function getOpenEnaLongitudinalV3Copy(locale: Locale): typeof english {
-  return locale === "zh-hans" ? zhHans : locale === "zh-hant" ? zhHant : english;
+  if (locale === "en") return english;
+  if (locale === "zh-hant") return zhHant;
+  if (locale === "zh-hans") return zhHans;
+  const cached = localizedCopy.get(locale);
+  if (cached) return cached;
+  const localized = {
+    ...localizeWorkspaceCopy(locale, english),
+    remoteRateLimitedWait: (seconds: number) => workspaceMessage(locale, "Persistent compute is rate limited. Wait {seconds} seconds before trying the remote task again.", { seconds }),
+  };
+  localizedCopy.set(locale, localized);
+  return localized;
 }
 
 const WORKBENCH_STATUS_LABELS = {
@@ -884,7 +896,8 @@ export function OpenEnaTrajectoryPlotShellV3({
   );
 }
 
-function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
+function TrajectoryPlotlyPresenterV3({ locale, spec, cameraPreset, labels }: {
+  locale: Locale;
   spec: TrajectoryPlotlySpecV2;
   cameraPreset: CameraPreset;
   labels: typeof english;
@@ -1177,9 +1190,9 @@ function TrajectoryPlotlyPresenterV3({ spec, cameraPreset, labels }: {
         className="ena-longitudinal-v3-plot"
         data-testid="open-ena-longitudinal-v3-plot"
         role="img"
-        aria-label={`${labels.plotTitle}. ${spec.data.length} Plotly traces. Result ${spec.resultHash.slice(0, 12)}.`}
+        aria-label={workspaceMessage(locale, "{title}. {count} Plotly traces. Result {hash}.", { title: labels.plotTitle, count: spec.data.length, hash: spec.resultHash.slice(0, 12) })}
       />
-      <p className="sr-only" aria-live="polite">{status === "ready" ? `${labels.summary}: ${spec.data.length} traces.` : status}</p>
+      <p className="sr-only" aria-live="polite">{status === "ready" ? workspaceMessage(locale, "{summary}: {count} traces.", { summary: labels.summary, count: spec.data.length }) : status === "loading" ? labels.initializing : labels.runStateError}</p>
     </OpenEnaTrajectoryPlotShellV3>
   );
 }
@@ -1669,7 +1682,7 @@ export default function OpenEnaLongitudinalWorkbenchV3({
 
         <main className="ena-longitudinal-v3-output">
           <header className="ena-longitudinal-v3-output-header"><div><p>{copy.kicker}</p><h2>{copy.plotTitle}</h2><span>{headerDimensions.join(" × ")} · {bundle?.identity.resultHash.slice(0, 12) ?? copy.notRun}</span></div><div><label><span>{copy.camera}</span><select value={display.cameraPreset} disabled={display.projection !== "3d"} onChange={(event) => setDisplay((current) => ({ ...current, cameraPreset: event.target.value as CameraPreset }))}>{(["isometric", "xy", "xz", "yz", "yx", "zx", "zy"] as CameraPreset[]).map((preset) => <option key={preset} value={preset}>{preset.toUpperCase()}</option>)}</select></label></div></header>
-          {!bundle || !plotlySpec ? <div className="ena-longitudinal-v3-empty"><strong>{status === "initializing" ? copy.initializing : copy.noResult}</strong><p>jENA {result.set.modelType} · {result.set.rotation.rotationColumns.length} {copy.emptyPlotSummary} · {dataset.rows.length} {copy.sourceRowsWord}</p></div> : <><div data-stale={stale ? "true" : "false"} className="ena-longitudinal-v3-presenter"><TrajectoryPlotlyPresenterV3 spec={plotlySpec} cameraPreset={display.cameraPreset} labels={copy} />{stale ? <p className="ena-longitudinal-v3-stale-overlay">{copy.staleOverlay}</p> : null}</div><AuditCards profile={profile} settings={settings} bundle={bundle} copy={copy} /><ResultsTablesV3 bundle={bundle} copy={copy} /></>}
+          {!bundle || !plotlySpec ? <div className="ena-longitudinal-v3-empty"><strong>{status === "initializing" ? copy.initializing : copy.noResult}</strong><p>jENA {result.set.modelType} · {result.set.rotation.rotationColumns.length} {copy.emptyPlotSummary} · {dataset.rows.length} {copy.sourceRowsWord}</p></div> : <><div data-stale={stale ? "true" : "false"} className="ena-longitudinal-v3-presenter"><TrajectoryPlotlyPresenterV3 locale={locale} spec={plotlySpec} cameraPreset={display.cameraPreset} labels={copy} />{stale ? <p className="ena-longitudinal-v3-stale-overlay">{copy.staleOverlay}</p> : null}</div><AuditCards profile={profile} settings={settings} bundle={bundle} copy={copy} /><ResultsTablesV3 bundle={bundle} copy={copy} /></>}
         </main>
       </div>
     </section>

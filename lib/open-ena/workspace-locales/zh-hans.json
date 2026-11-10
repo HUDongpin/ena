@@ -1,0 +1,21 @@
+{
+  "Group colors identify filled square centroids and confidence intervals. Small hollow circles show Code nodes. Main centroid paths and direction arrows are black.": "组别颜色标示实心方形质心及其置信区间。小空心圆代表编码节点。主要质心路径和方向箭头以黑色显示。",
+  "Group encodings: {encodings}.": "组别标记：{encodings}。",
+  "Individual points are hidden.": "个体观测点已隐藏。",
+  "Larger group-colored squares show observed individual points.": "较大的组别色方形代表个体观测点。",
+  "Projected into fixed reference: {id}. {name}. {caveat}": "已投影至固定参考基底：{id}。{name}。{caveat}",
+  "Reference: {name}": "参考：{name}",
+  "TP labels identify periods.": "TP 标签标示各时期。",
+  "Variance shares describe current data in this fixed basis, not reference-fit explained variance.": "方差比例描述当前数据在此固定基底中的变异，并非参考模型拟合时的解释方差。",
+  "declared analyzed-table SHA-256 {hash}…": "所声明的分析数据表 SHA-256 为 {hash}…",
+  "{count} projected points": "{count} 个投影点",
+  "{edge}. Solid network edge.": "{edge}。此网络连线以实线显示。",
+  "{from} → {to}; {count} observed shared contributors. Available-population centroids; not a matched change estimate.": "{from} → {to}，两期均观测到 {count} 位参与者。质心按各期有观测数据的群体计算，并非配对变化估计。",
+  "{group} mean: square centroid marker": "{group} 的均值：方形质心标记",
+  "{group}: {shape} marker": "{group}：{shape}标记",
+  "{name}. Scroll horizontally on small screens.": "{name}。小屏幕可横向滚动。",
+  "{source} ↔ {target}: {group} mean weight {weight}": "{source} ↔ {target}：{group} 的平均权重为 {weight}",
+  "{source} ↔ {target}: {group} stronger by {weight}": "{source} ↔ {target}：{group} 的权重高出 {weight}",
+  "{summary}: {count} traces.": "{summary}：{count} 条绘图轨迹。",
+  "{title}. {count} Plotly traces. Result {hash}.": "{title}。共有 {count} 条 Plotly 绘图轨迹。结果 {hash}。"
+}

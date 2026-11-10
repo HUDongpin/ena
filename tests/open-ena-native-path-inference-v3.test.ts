@@ -27,6 +27,29 @@ async function api() {
   return mod as typeof import("../lib/open-ena/trajectory-path-inference-v3");
 }
 
+test("rank inference reports actionable period errors without accepting reversed or incomparable chronology", async () => {
+  const { runOpenEnaTrajectoryInferenceV3 } = await import("../lib/open-ena/inference-v2");
+  const f = await nativePathFixture();
+  const controls = {
+    axes: f.controls.axes.slice(0, 2) as [string, string], identityConfirmed: true,
+    request: { kind: "trajectory-paired-periods" as const, group: f.controls.primaryGroup,
+      earlierPeriod: f.controls.horizons[0], laterPeriod: f.controls.horizons[2], cohortPolicy: "pairwise-complete" as const },
+  };
+  const run = (request: typeof controls.request, fixture = f) => runOpenEnaTrajectoryInferenceV3(fixture.result, fixture.plan, { ...controls, request });
+  assert.equal((await run(controls.request)).inference.kind, "trajectory-paired-periods");
+  await assert.rejects(run({ ...controls.request, earlierPeriod: controls.request.laterPeriod, laterPeriod: controls.request.earlierPeriod }),
+    { name: "OpenEnaTrajectoryPeriodErrorV3", reason: "unordered" });
+  await assert.rejects(run({ ...controls.request, laterPeriod: controls.request.earlierPeriod }),
+    { name: "OpenEnaTrajectoryPeriodErrorV3", reason: "duplicate" });
+  await assert.rejects(run({ ...controls.request, laterPeriod: [{ column: "horizon", value: { type: "string", value: "absent" } }] }),
+    { name: "OpenEnaTrajectoryPeriodErrorV3", reason: "unknown" });
+  const diamond = await nativePathFixture((_draft, data) => {
+    data.rows = data.rows.filter(row => row.horizon === "h1" || (Number(String(row.unit).split("-").at(-1)) % 2 ? row.horizon === "h2" : row.horizon === "h3"));
+  });
+  await assert.rejects(run({ ...controls.request, earlierPeriod: f.controls.horizons[1] }, diamond),
+    { name: "OpenEnaTrajectoryPeriodErrorV3", reason: "unordered" });
+});
+
 test("native path preserves pinned independent 500/2026 whole-history algorithm and finite Holm family", async () => {
   const a = await api(), f = await nativePathFixture();
   const { compareTrajectoryPaths, getTrajectoryPermutationUnits, holmAdjust } = await import("../lib/open-ena/trajectory-path-statistics-v3");

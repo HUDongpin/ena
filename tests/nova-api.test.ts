@@ -47,6 +47,26 @@ test("Nova API uses verified researcher identity and bounded authenticated mutat
   await t.test("valid session creation uses owner identity", async () => {
     assert.equal((await createNovaApiHandler("sessions", deps)(request("/api/nova/sessions", {locale: "en", title: "Test"}))).status, 201); assert.equal(calls, 1);
   });
+  await t.test("session renames accept only a bounded, single-line title and use the verified owner", async () => {
+    let renames = 0;
+    const renameStore: NovaStore = { ...store, renameSession: async input => {
+      renames++;
+      assert.equal(input.ownerRef, owner);
+      assert.equal(input.sessionId, id);
+      assert.equal(input.title, "改名");
+      return { id, title: input.title } as Awaited<ReturnType<NovaStore["renameSession"]>>;
+    }};
+    const handle = createNovaApiHandler("session", { ...deps, novaStoreFactory: async () => renameStore });
+    const path = `/api/nova/sessions/${id}`;
+    for (const body of [{}, { title: "   " }, { title: "a\nb" }, { title: "x".repeat(121) }, { title: "ok", ownerRef: "other" }]) {
+      assert.equal((await handle(request(path, body), { id })).status, 400);
+    }
+    assert.equal(renames, 0);
+    const response = await handle(request(path, { title: "  改名 " }), { id });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { session: { id, title: "改名" } });
+    assert.equal(renames, 1);
+  });
   await t.test("unconfigured models and unavailable sandbox fail explicitly", async () => {
     const body = {content: "Build a presenter", modelKey: "qwen-max", effort: "medium"};
     const response = await createNovaApiHandler("messages", {...deps, environment: {...env, ENA_NOVA_QWEN_API_KEY: ""}})(request(`/api/nova/sessions/${id}/messages`, body), {id});

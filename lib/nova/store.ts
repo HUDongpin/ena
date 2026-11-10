@@ -10,7 +10,7 @@ import type { NovaSession, NovaSessionSummary, NovaRun, NovaModel, NovaEffort, N
 export class NovaStoreError extends Error { constructor(public readonly code: string) { super(code); this.name = "NovaStoreError"; } }
 export interface NovaMutation { ownerRef: string; idempotencyKey: string; requestHash: string; now?: Date }
 interface SessionMutation extends NovaMutation { sessionId: string }
-export interface NovaExpertItem { sessionId: string; title: string; locale: string; request: NovaExpertRequest; artifact: NovaArtifactVersion | null; draftFiles: NovaFile[]; draftChecks: NovaCheck[]; draftUpdatedAt: string | null }
+export interface NovaExpertItem { sessionId: string; title: string; locale: string; request: NovaExpertRequest; artifact: NovaArtifactVersion | null; draftFiles: NovaFile[]; draftChecks: NovaCheck[]; draftUpdatedAt: string | null; runStatus: NovaRun["status"] | null; latestArtifact: Pick<NovaArtifactVersion, "id" | "version" | "createdAt"> | null }
 export interface NovaExpertQuery { view?: "pending" | "history"; after?: number; limit?: number }
 export interface NovaExpertPage { requests: NovaExpertItem[]; nextCursor: number | null; view: "pending" | "history" }
 export interface NovaNotification { id: string; sessionId: string; requestId: string; locale: string; claimToken: string; attempts: number }
@@ -18,6 +18,7 @@ export interface NovaStore {
   createSession(input: NovaMutation & { locale: string; title?: string }): Promise<NovaSession>;
   listSessions(ownerRef: string): Promise<NovaSessionSummary[]>;
   readSession(sessionId: string, ownerRef: string): Promise<NovaSession | null>;
+  renameSession(input: SessionMutation & { title: string }): Promise<NovaSession>;
   appendMessage(input: SessionMutation & { content: string; model: NovaModel; effort: NovaEffort }): Promise<{ session: NovaSession; run: NovaRun }>;
   controlRun(input: SessionMutation & { runId: string; action: "cancel" | "resume" | "retry" }): Promise<NovaSession>;
   restoreArtifact(input: SessionMutation & { artifactId: string }): Promise<NovaSession>;
@@ -139,6 +140,15 @@ export function createNovaStore(pool: Pool, configuration: PluginLabConfiguratio
       const s = open<NovaSession>(row.document_cipher, `nova-session:${row.session_id}`); return { id: s.id, title: s.title, createdAt: s.createdAt, updatedAt: s.updatedAt, status: s.runs.at(-1)?.status ?? null };
     })); },
     async readSession(id, ownerRef) { return tx(async client => (await read(client, id, ownerRef))?.session ?? null); },
+    async renameSession(input) { return tx(async client => {
+      const previous = await replay(client, input, "rename-session", input.sessionId);
+      const session = await owned(client, input);
+      if (previous) return session;
+      session.title = input.title;
+      await save(client, session, instant(input.now));
+      await receipt(client, input, "rename-session", input.sessionId, session.id);
+      return session;
+    }); },
     async appendMessage(input) { return tx(async client => {
       const previous = await replay(client, input, "message", input.sessionId); const session = await owned(client, input);
       if (previous) return { session, run: findRun(session, previous.run_id) };
@@ -287,8 +297,10 @@ export function createNovaStore(pool: Pool, configuration: PluginLabConfiguratio
         const s=open<NovaSession>(row.document_cipher,`nova-session:${row.session_id}`);
         const request=s.expertRequests.find(item=>item.id===row.request_id)??fail("store-unavailable");
         const run=s.runs.find(item=>item.id===request.runId);
+        const latest=s.artifacts.filter(artifact=>artifact.runId===request.runId).reduce<NovaArtifactVersion|null>((found,artifact)=>!found||artifact.version>found.version?artifact:found,null);
         return {sessionId:s.id,title:s.title,locale:s.locale,request,artifact:s.artifacts.find(artifact=>artifact.id===request.artifactId)??null,
-          draftFiles:run?.draftFiles??[],draftChecks:run?.draftChecks??[],draftUpdatedAt:run?.updatedAt??null};
+          draftFiles:run?.draftFiles??[],draftChecks:run?.draftChecks??[],draftUpdatedAt:run?.updatedAt??null,
+          runStatus:run?.status??null,latestArtifact:latest?{id:latest.id,version:latest.version,createdAt:latest.createdAt}:null};
       });
       return {requests,view,nextCursor:rows.length>limit?Number(rows[limit-1].request_cursor):null};
     }); },

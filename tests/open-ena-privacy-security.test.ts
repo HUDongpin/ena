@@ -499,6 +499,7 @@ test("Next applies strict security headers and keeps unsafe-eval development-onl
   const global = configured.find((entry) => entry.source === "/(.*)");
   assert.ok(global);
   const headers = new Map(global.headers.map((header) => [header.key.toLowerCase(), header.value]));
+  assert.equal(headers.get("strict-transport-security"), "max-age=86400");
   const csp = headers.get("content-security-policy") ?? "";
   assert.match(csp, /default-src 'self'/u);
   assert.match(csp, /script-src 'self' 'unsafe-inline'/u);

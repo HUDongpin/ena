@@ -1,13 +1,13 @@
 "use client";
+import { workspaceMessage } from "@/lib/open-ena/workspace-messages";
 
 import { restoredWorkbenchCopy } from "./workbench-restoration-copy";
 import { buildUnitDisplayLabelIndexV3, hiddenUnitLabelsV3 } from "../../lib/open-ena/hidden-unit-display-v3";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode, type MutableRefObject } from "react";
 import { submitOpenEnaLogoutAsDocumentRequest } from "@/lib/open-ena-logout-navigation";
 import type { Row } from "jena-js";
-import type { Locale } from "@/lib/i18n";
+import { getDictionary, localeMeta, locales, isLocale, type Locale } from "@/lib/i18n";
 import { getOpenEnaAuthCopy } from "@/lib/open-ena-auth-copy";
-import OpenEnaFallbackNotice from "./OpenEnaFallbackNotice";
 import OpenEnaSiteNavigation from "./OpenEnaSiteNavigation";
 import OpenEnaDisclaimer from "./OpenEnaDisclaimer";
 import OpenEnaPersistentPlotTools, { scheduleOpenEnaDomFocusRestore } from "./OpenEnaPersistentPlotTools";
@@ -34,10 +34,10 @@ import { useTrajectoryUncertaintyV3 } from "./useTrajectoryUncertaintyV3";
 import { trajectoryCopyV3 } from "@/lib/open-ena/trajectory-copy-v3";
 import { appendTrajectoryLegendToSvg } from "@/lib/open-ena/trajectory-legend-export-v3";
 import { buildTrajectoryPresentationV3 } from "@/lib/open-ena/trajectory-presentation-v3";
-import { buildLongitudinalViewV3, type OpenEnaTrajectoryControlsV3 } from "@/lib/open-ena/longitudinal-bound-v3";
+import { buildLongitudinalViewV3, OpenEnaTrajectoryPeriodErrorV3, type OpenEnaTrajectoryControlsV3 } from "@/lib/open-ena/longitudinal-bound-v3";
 import { runOpenEnaInferenceV3, runOpenEnaTrajectoryInferenceV3, assertOpenEnaTrajectoryInferenceConsumerV3 } from "@/lib/open-ena/inference-v2";
 import type { OpenEnaEndpointControlsV3 } from "@/lib/open-ena/inference-consumers-v3";
-import { buildAiInterpretationReviewV3 } from "@/lib/open-ena/ai-interpretation";
+import { aiLocale, buildAiInterpretationReviewV3 } from "@/lib/open-ena/ai-interpretation";
 import { buildHistoricalOnaViewV3, buildOnaBoundViewV3 } from "@/lib/open-ena/ona-bound-view-v3";
 import { exportNativeStatisticsV3, type NativeInferenceV3 } from "@/lib/open-ena/native-statistics-export-v3";
 import { buildMethodsReportV3 } from "@/lib/open-ena/methods-v3";
@@ -655,6 +655,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const trajectoryControls: OpenEnaTrajectoryControlsV3 | null = trajectorySelection && (inferenceDesign === "independent" || identityConfirmed)
     ? { axes: [twoDAxes[0], twoDAxes[1]], identityConfirmed, request: trajectorySelection } : null;
   const controls = isTrajectory ? trajectoryControls : endpointControls;
+  const periodSelectionError = error?.id === "trajectory-period-order" || error?.id === "trajectory-period-selection" ? error : null;
   const consumerKey = openEnaConsumerAuthorityKeyV3({
     binding: result?.binding ?? null,
     plan: currentPlan?.header.executionPlanSha256 ?? null,
@@ -811,7 +812,9 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
       setError(null);
       await work();
     } catch (caught) {
-      setError(caught instanceof OpenEnaKnownWorkspaceFailureV3 ? caught.failure : { id: "operation-failed" });
+      setError(caught instanceof OpenEnaKnownWorkspaceFailureV3 ? caught.failure
+        : caught instanceof OpenEnaTrajectoryPeriodErrorV3 ? { id: caught.reason === "unordered" ? "trajectory-period-order" : "trajectory-period-selection" }
+          : { id: "operation-failed" });
     }
   }
   function saveDescriptor(value: ExportFileDescriptorV3) { downloadText(value.filename, new TextDecoder().decode(value.bytes), value.mediaType); }
@@ -1483,7 +1486,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
   const referenceNoteId = exportNoteId("reference");
   const contrastJsonNoteId = exportNoteId("contrast-json");
   const contrastEdgesNoteId = exportNoteId("contrast-edges");
-  const analysisPanel = <div className={`ena-control-content ena-workspace-controls-v3 ena-restored-workbench${mode === "model" ? " ena-model-control-content" : ""}`} data-mode={mode} lang={locale} dir="ltr">
+  const analysisPanel = <div className={`ena-control-content ena-workspace-controls-v3 ena-restored-workbench${mode === "model" ? " ena-model-control-content" : ""}`} data-mode={mode} lang={localeMeta[locale].htmlLang} dir={localeMeta[locale].dir}>
       <header className="ena-panel-heading">
         <p className="ena-panel-kicker">{panelHeading.kicker}</p>
         <h1>{panelHeading.title}</h1>
@@ -1495,7 +1498,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
         </button>}
         {result && !current && <p className="ena-restored-stale-notice" role="status" aria-live="polite">{rebuildCue ? workspaceCopy.result.sourceReplacementNotice : workspaceCopy.resultStatus.stale}</p>}
       </header>
-      {(error || state.error || currentCompilation?.error) && <p role="alert">{error ? formatOpenEnaWorkspaceFailureV3(workspaceCopy, error) : workspaceCopy.operationFailed}</p>}
+      {((error && !periodSelectionError) || state.error || currentCompilation?.error) && <p role="alert">{error && !periodSelectionError ? formatOpenEnaWorkspaceFailureV3(workspaceCopy, error) : workspaceCopy.operationFailed}</p>}
       {controller.importPending && <button type="button" onClick={() => dispatch({ type: "cancel-preview" })}>{workspaceCopy.cancelPendingImport}</button>}
       {state.preview && <OpenEnaImportPreviewV3 preview={state.preview} drafts={modelState.drafts} copy={modelV3Copy.importPreview}
         onCancel={() => dispatch({ type: "cancel-preview" })} onAcceptDraft={() => dispatch({ type: "accept-draft-preview", preview: state.preview! })}
@@ -1599,8 +1602,11 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
         {isTrajectory && <><label>{workspaceCopy.stats.inferenceDesign}<select value={inferenceDesign} onChange={(e) => setInferenceDesign(e.target.value as typeof inferenceDesign)}><option value="independent">{workspaceCopy.stats.designs.independent}</option><option value="paired">{workspaceCopy.stats.designs.paired}</option><option value="repeated">{workspaceCopy.stats.designs.repeated}</option></select></label>
           <label><input type="checkbox" checked={identityConfirmed} onChange={(e) => setIdentityConfirmed(e.target.checked)} />{workspaceCopy.stats.identityConfirmation}</label>
           <p>{workspaceCopy.stats.periodInstructions}</p>
-          {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={selectedPeriods.includes(horizon.token)} onChange={(e) => setSelectedPeriods((values) => e.target.checked ? [...values, horizon.token] : values.filter((value) => value !== horizon.token))} />{horizon.displayLabel}</label>)}</>}
+          <p data-testid="open-ena-selected-period-order" aria-live="polite">{workspaceCopy.stats.selectedPeriodOrder}: {selectedPeriods.map(token => horizons.find(horizon => horizon.token === token)?.displayLabel ?? "—").join(" → ") || "—"}</p>
+          {periodSelectionError && <p id="native-trajectory-period-error" role="alert">{formatOpenEnaWorkspaceFailureV3(workspaceCopy, periodSelectionError)}</p>}
+          {horizons.map((horizon) => <label key={horizon.token}><input type="checkbox" checked={selectedPeriods.includes(horizon.token)} aria-invalid={Boolean(periodSelectionError)} aria-describedby={periodSelectionError ? "native-trajectory-period-error" : undefined} onChange={(e) => { setError(null); setSelectedPeriods((values) => e.target.checked ? [...values, horizon.token] : values.filter((value) => value !== horizon.token)); }} />{horizon.displayLabel}</label>)}</>}
         {!endpoint2DStatistics && <button type="button" disabled={!current || !controls || inferenceBusy || completedResultKind === "ona"} onClick={() => void attempt(runInference)}>{workspaceCopy.stats.runInference}</button>}
+        {activeInference?.kind === "open-ena-trajectory-inference" && <p>{workspaceCopy.stats.rankZNote}</p>}
         {completedResultKind === "ona" && <p>{workspaceCopy.stats.onaDescriptive}</p>}
         {onaView && <><p>{workspaceCopy.stats.onaMeaning}</p><ResearchTableV3 {...researchTableCopy} rows={onaView.edges} label={workspaceCopy.stats.onaEdges} />
           <ResearchTableV3 {...researchTableCopy} rows={onaView.auditRows} label={workspaceCopy.stats.onaAudit} /></>}
@@ -1687,7 +1693,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
         onLocalWorkChange={setAiBusy} onInterpretationChange={setSavedAiInterpretation}
         savedInterpretation={savedAiInterpretation} savedInterpretationNote={copy.aiInterpretation.recordHistorical}
         localScientificIdentity={openEnaAiLocalScientificIdentityV3(activeAiReview)} historicalEvidenceInvalidated={historicalEvidenceInvalidated}
-        copy={copy.aiInterpretation} disabled={!activeAiReview || activeAiReview.request.locale !== locale || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
+        copy={copy.aiInterpretation} disabled={!activeAiReview || activeAiReview.request.locale !== aiLocale(locale) || !current} disabledReason={aiLimitation ? workspaceCopy.operationFailed : workspaceCopy.ai.disabled} providerDescriptor={providerDescriptor} />
         {activeAiReview && <details className="ena-panel-details"><summary>{restoredCopy.aiEvidenceScope}</summary><p>{workspaceCopy.ai.wireLimitations}</p></details>}{aiLimitation && <p role="status">{workspaceCopy.operationFailed}</p>}</div>
 </div>;
   const nativeDataView = dataViewPresentation && <>
@@ -1700,8 +1706,7 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
           </>;
   const imageExportNoteId = `${workspaceId}-image-export-note`;
   const imageExportNote = centerSurface === "data" && view === "2d" ? workspaceCopy.toolbar.returnToPlotForImageExport : null;
-  return <div className="open-ena-page" lang={locale} data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
-    <OpenEnaFallbackNotice locale={locale} />
+  return <div className="open-ena-page" lang={localeMeta[locale].htmlLang} dir={localeMeta[locale].dir} data-testid="open-ena-workspace-v3" data-result-status={modelState.resultStatus} data-run-status={modelState.runStatus} data-ena-rebuild-cue={rebuildCue?.reason}>
     {cloudControls}
     <section id="open-ena-workspace" tabIndex={-1} className="open-ena-workbench" aria-label={workspaceCopy.shell.workspaceAria} data-skip-label={workspaceCopy.landmarks.skipToWorkspace} aria-busy={sourceBusy || modelState.runStatus === "running"}>
       <div className="ena-workbench-grid">
@@ -1718,9 +1723,9 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
           <span className="sr-only">{cloudBridge ? cloudCopy.runtimePrivacy.replace("{version}", JENA_RUNTIME_VERSION) : workspaceCopy.shell.runtimePrivacy(JENA_RUNTIME_VERSION)}</span>
         </nav>
         <aside className="ena-control-panel" data-ena-workbench-region="controls" data-ena-rail-panel={mode} role="region" aria-label={workspaceCopy.landmarks[mode]} onKeyDown={onRailPanelKeyDown}>
-          {onLocaleChange && <label className="ena-workspace-language"><span>{locale === "zh-hans" ? "语言" : locale === "zh-hant" ? "語言" : "Language"}</span>
-            <select data-testid="open-ena-workspace-language" value={locale} onChange={(event) => onLocaleChange(event.currentTarget.value as Locale)}>
-              <option value="en">English</option><option value="zh-hans">简体中文</option><option value="zh-hant">繁體中文</option>
+          {onLocaleChange && <label className="ena-workspace-language"><span>{getDictionary(locale).nav.language}</span>
+            <select data-testid="open-ena-workspace-language" value={locale} onChange={(event) => { const next = event.currentTarget.value; if (isLocale(next)) onLocaleChange(next); }}>
+              {locales.map(item => <option key={item} value={item} lang={localeMeta[item].htmlLang}>{localeMeta[item].label}</option>)}
             </select>
           </label>}
           <OpenEnaPersistentRailPanels mode={mode} analysisPanel={analysisPanel} aiPanel={aiPanel} /></aside>
@@ -1735,8 +1740,8 @@ export default function OpenEnaWorkspace({ locale, onLocaleChange, providerDescr
           {imageExportNote && <p id={imageExportNoteId} className="ena-export-applicability ena-image-export-note" role="note">{imageExportNote}</p>}
           <div className="ena-visual-results">
       {presentation && result && <section aria-label={workspaceCopy.result.plotAria} data-ena-workbench-region="center">{modelState.resultStatus === "stale" && rebuildCue ? <div className="ena-stale-rebuild-callout" data-testid="open-ena-stale-rebuild" data-ena-rebuild-cue={rebuildCue.reason}><p role="status" aria-live="polite">{workspaceCopy.result.sourceReplacementNotice}</p><button type="button" ref={staleRebuildRef} className="ena-action-button ena-action-primary ena-stale-rebuild-button" data-testid="open-ena-stale-rebuild-run" aria-label={workspaceCopy.result.rebuildNowAria} aria-describedby={mode === "model" ? rebuildBlockingDescribedBy : undefined} disabled={sourceBusy || sourcePreview !== null || modelState.runStatus === "running"} onClick={requestRebuildAfterSourceReplacement}>{workspaceCopy.result.rebuildNow}<span aria-hidden="true">→</span></button></div> : <p>{modelState.resultStatus === "stale" ? workspaceCopy.result.historicalGeometry : workspaceCopy.result.boundGeometry}</p>}
-        {endpointFrame2D.status === "pending" && <p role="status" data-ena-2d-frame-status="pending">{locale === "zh-hans" ? "正在准备 2D 图形比例…" : locale === "zh-hant" ? "正在準備 2D 圖形比例…" : "Preparing the 2D plot scale…"}</p>}
-        {endpointFrame2D.status === "unavailable" && <p role="status" data-ena-2d-frame-status="unavailable">{locale === "zh-hans" ? "此模型暂无可用的 R 兼容 2D 图形比例，目前显示原生比例。" : locale === "zh-hant" ? "此模型暫無可用的 R 相容 2D 圖形比例，目前顯示原生比例。" : "The R-compatible 2D plot scale is unavailable for this model. The plot uses its native scale."}</p>}
+        {endpointFrame2D.status === "pending" && <p role="status" data-ena-2d-frame-status="pending">{locale === "zh-hans" ? "正在准备 2D 图形比例…" : locale === "zh-hant" ? "正在準備 2D 圖形比例…" : workspaceMessage(locale, "Preparing the 2D plot scale…")}</p>}
+        {endpointFrame2D.status === "unavailable" && <p role="status" data-ena-2d-frame-status="unavailable">{locale === "zh-hans" ? "此模型暂无可用的 R 兼容 2D 图形比例，目前显示原生比例。" : locale === "zh-hant" ? "此模型暫無可用的 R 相容 2D 圖形比例，目前顯示原生比例。" : workspaceMessage(locale, "The R-compatible 2D plot scale is unavailable for this model. The plot uses its native scale.")}</p>}
         {view === "3d" && completedResultKind === "standard" && !genericThreeDAvailable ? <p role="status">{copy.plot.threeDUnavailable}</p> : selectedAxes.length < 2 ? <><p>{workspaceCopy.result.oneAxis}</p><ResearchTableV3 {...researchTableCopy} rows={result.set.points} label={workspaceCopy.result.fittedCoordinates} /></>
           : completedResultKind === "ona" ? view === "3d" && threeDDimensions
             ? <OpenEna3DOrderedResultLayout {...plotProps} sharedCamera={camera} onCameraChange={setCamera} sharedAspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} result={plotResult!} config={presentation.config} primaryGroupName={primary?.displayLabel ?? null} secondaryGroupName={secondary?.displayLabel ?? null} centerMode={centerSurface} dataView={nativeDataView} rightTools={persistentPlotTools} />

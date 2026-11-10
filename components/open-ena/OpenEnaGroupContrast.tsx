@@ -1,3 +1,5 @@
+import type { Locale } from "@/lib/i18n";
+import { workspaceMessage } from "@/lib/open-ena/workspace-messages";
 import {
   useCallback,
   useEffect,
@@ -42,6 +44,7 @@ import OpenEnaSvgDraggableNode from "./OpenEnaSvgDraggableNode";
 import { groupFigureName2D, paddedLabelBox2D, placeGroupLabels2D, type LabelBox2D } from "@/lib/open-ena/group-label-layout-2d";
 
 export interface OpenEnaGroupContrastProps extends OpenEnaCodeGraphPresentation {
+  locale?: Locale;
   contrast: OpenEnaContrastPresentation;
   codeColors?: OpenEnaCodeColors;
   edgeThreshold: number;
@@ -1187,6 +1190,7 @@ function PlotPanelActionToolbar({
 }
 
 function ContrastSvg({
+  locale = "en",
   contrast,
   codeColors,
   kind,
@@ -1427,13 +1431,13 @@ function ContrastSvg({
   const referenceName = reference ? safeFigureLabel(reference.name, 72) : null;
   const sourceHash = reference?.source.normalizedUtf8TextSha256;
   const referenceToken = referenceId
-    ? `ID ${referenceId}${sourceHash ? ` · declared analyzed-table SHA-256 ${sourceHash.slice(0, 12)}…` : ""}`
+    ? `ID ${referenceId}${sourceHash ? " · " + workspaceMessage(locale, "declared analyzed-table SHA-256 {hash}…", { hash: sourceHash.slice(0, 12) }) : ""}`
     : null;
   const referenceCaveat = reference
-    ? "Variance shares describe current data in this fixed basis, not reference-fit explained variance."
+    ? workspaceMessage(locale, "Variance shares describe current data in this fixed basis, not reference-fit explained variance.")
     : null;
   const referenceDescription = referenceToken && referenceName && referenceCaveat
-    ? ` Projected into fixed reference: ${referenceToken}. Reference: ${referenceName}. ${referenceCaveat}`
+    ? " " + workspaceMessage(locale, "Projected into fixed reference: {id}. {name}. {caveat}", { id: referenceToken, name: workspaceMessage(locale, "Reference: {name}", { name: referenceName }), caveat: referenceCaveat })
     : "";
   const plottedEdgeMagnitude = (edge: ContrastEdge) => signedComparison
     ? Math.abs(
@@ -1891,7 +1895,7 @@ function ContrastSvg({
         <g className="ena-reference-figure-provenance" role="note" aria-label={referenceDescription.trim()}>
           <rect x="18" y="514" width="884" height="64" rx="8" fill="#f1f7f6" stroke="#c7dbd7" />
           <text x="30" y="532" fill="#334b52" fontSize="11.5" fontWeight="700">{referenceToken}</text>
-          <text x="30" y="551" fill="#334b52" fontSize="11.5" fontWeight="700">Reference: {referenceName}</text>
+          <text x="30" y="551" fill="#334b52" fontSize="11.5" fontWeight="700">{workspaceMessage(locale, "Reference: {name}", { name: referenceName })}</text>
           <text x="30" y="570" fill="#334b52" fontSize="11.5" fontWeight="700">{referenceCaveat}</text>
         </g>
       ) : null}

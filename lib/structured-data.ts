@@ -1,3 +1,5 @@
+import { pluginCreditParties } from "@/lib/open-ena/plugins/credits";
+import type { OpenEnaPluginManifestV1 } from "@/lib/open-ena/plugins/types";
 import { siteConfig } from "./site";
 
 export function personJsonLd(input: {
@@ -136,6 +138,8 @@ export function pluginSoftwareApplicationJsonLd(input: {
   description: string;
 }) {
   const { plugin } = input;
+  const authors = [...new Set(plugin.authors.map((author) => author.name))].flatMap(pluginCreditParties);
+  const maintainers = pluginCreditParties(plugin.maintainer.name);
   const contentLocale = input.locale === "zh-hant" || input.locale === "zh-hans" ? input.locale : "en";
   const url = `${siteConfig.url}/${encodeURIComponent(input.locale)}/plugins/${plugin.slug}`;
   return {
@@ -157,8 +161,8 @@ export function pluginSoftwareApplicationJsonLd(input: {
     license: plugin.licenses.code === "GPL-3.0-only"
       ? "https://spdx.org/licenses/GPL-3.0-only.html"
       : plugin.licenses.code,
-    author: plugin.authors.map((author) => ({ "@type": "Person", name: author.name })),
-    maintainer: { "@type": "Person", name: plugin.maintainer.name },
+    ...(authors.length ? { author: authors } : {}),
+    ...(maintainers.length ? { maintainer: maintainers } : {}),
     featureList: plugin.scientificBoundary.claims,
     softwareRequirements: [
       `Open ENA Core API ${plugin.compatibility.coreApi}`,
@@ -168,4 +172,3 @@ export function pluginSoftwareApplicationJsonLd(input: {
     citation: plugin.citation,
   };
 }
-import type { OpenEnaPluginManifestV1 } from "@/lib/open-ena/plugins/types";
