@@ -29,7 +29,8 @@ export default function OpenEnaAccountForm({ locale, initialMode, enabled, regis
     return () => window.removeEventListener("hashchange", consumeLink);
   }, [copy.invalidToken]);
   const complete = mode === "verify" || mode === "reset-password";
-  const available = complete ? enabled && Boolean(token) : mode === "register" ? registrationAvailable : recoveryAvailable;
+  const registrationMode = mode === "register" || mode === "verify";
+  const available = mode === "verify" ? registrationAvailable && Boolean(token) : mode === "reset-password" ? enabled && Boolean(token) : mode === "register" ? registrationAvailable : recoveryAvailable;
   const title = mode === "register" ? copy.registerTitle : mode === "verify" ? copy.verifyTitle : copy.resetTitle;
   const intro = mode === "register" ? copy.registerIntro : mode === "verify" ? copy.verifyIntro : mode === "reset-password" ? copy.resetLinkIntro : copy.resetIntro;
   const submitLabel = mode === "register" ? copy.sendVerification : mode === "forgot-password" ? copy.sendReset : mode === "verify" ? copy.finishRegistration : copy.finishReset;
@@ -61,7 +62,7 @@ export default function OpenEnaAccountForm({ locale, initialMode, enabled, regis
   return <div className="open-ena-account-page" lang={getLocaleMeta(locale).htmlLang} dir={getLocaleMeta(locale).dir}>
     <section className="open-ena-account-card" aria-labelledby={`${id}-title`}>
       <Link href={`/${locale}`}><Image src="/logo-open-ena.svg" alt="Open ENA" width={210} height={68} priority /></Link>
-      <h1 id={`${id}-title`}>{title}</h1><p>{intro}</p>
+      <h1 id={`${id}-title`}>{title}</h1><p>{registrationMode && !registrationAvailable ? copy.registrationClosed : intro}</p>
       {success ? <div className="open-ena-account-success" role="status">{success}</div> : <form onSubmit={submit} className="open-ena-login-form">
         {!complete ? <><label htmlFor={`${id}-email`}>{copy.email}</label><input id={`${id}-email`} name="email" type="email" autoComplete="email" maxLength={254}
           value={email} onChange={(event) => setEmail(event.target.value)} required disabled={busy || !available} aria-describedby={`${id}-email-hint`} />
@@ -71,7 +72,7 @@ export default function OpenEnaAccountForm({ locale, initialMode, enabled, regis
             <p id={`${id}-password-hint`} className="open-ena-account-hint">{copy.passwordHelp}</p>
             <label htmlFor={`${id}-confirmation`}>{copy.confirmPassword}</label><input id={`${id}-confirmation`} name="confirmation" type="password" autoComplete="new-password"
               minLength={15} maxLength={128} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} required disabled={busy || !available} /></>}
-        {!available && !error ? <p role="status">{copy.unavailable}</p> : null}
+        {!available && !error && !(registrationMode && !registrationAvailable) ? <p role="status">{copy.unavailable}</p> : null}
         <button className="open-ena-login-submit" type="submit" disabled={busy || !available}>{busy ? copy.working : submitLabel}</button>
       </form>}
       {error ? <p className="open-ena-login-error" role="alert">{error}</p> : null}

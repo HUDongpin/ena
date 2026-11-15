@@ -10,6 +10,7 @@ export function createPluginLabEmailRequestHandler(dependencies: WorkflowDepende
   const environment = dependencies.environment ?? process.env;
   return async (request: Request): Promise<Response> => {
     if (!resolveOpenEnaRequestOrigin(request.headers, new URL(request.url).origin, environment)) return workflowError("invalid-origin", 403);
+    if (environment.OPEN_ENA_REGISTRATION_ENABLED === "false") return workflowError("registration-paused", 503);
     let body: Record<string, unknown>;
     try { body = await workflowBody(request, 2048); } catch { return workflowError("invalid-request", 400); }
     const email = normalizePluginLabEmail(body.email);
@@ -47,6 +48,7 @@ export function createPluginLabEmailVerifyHandler(dependencies: WorkflowDependen
   const environment = dependencies.environment ?? process.env;
   return async (request: Request): Promise<Response> => {
     if (!resolveOpenEnaRequestOrigin(request.headers, new URL(request.url).origin, environment)) return workflowError("invalid-origin", 403);
+    if (environment.OPEN_ENA_REGISTRATION_ENABLED === "false") return workflowError("registration-paused", 503);
     let body: Record<string, unknown>;
     try { body = await workflowBody(request, 2048); } catch { return workflowError("invalid-code", 400); }
     if (!onlyKeys(body, ["challengeId", "code"]) || !isPluginLabOpaqueToken(body.challengeId) || typeof body.code !== "string" || !/^\d{6}$/u.test(body.code)) return workflowError("invalid-code", 400);

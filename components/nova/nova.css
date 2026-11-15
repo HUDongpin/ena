@@ -47,3 +47,5 @@
     position-try-fallbacks: flip-block;
   }
 }
+.nova-registration-notice,.nova-collaboration{max-width:680px;margin:0 auto 20px;padding:0 16px;text-align:center;font-size:13px;line-height:1.7;color:var(--nova-muted)}
+.nova-collaboration{margin-top:18px;margin-bottom:0}.nova-collaboration a{color:var(--nova-blue);text-decoration:underline;text-underline-offset:3px}

@@ -1,6 +1,7 @@
 import type { Locale } from "@/lib/i18n";
 import type { PluginProposalState } from "./proposal";
 import { getPluginProposalFormCopy, getPluginProposalStatusCopy } from "./i18n";
+import { getOpenEnaCloudCopy } from "@/lib/open-ena/cloud-copy";
 
 const en = {
   yourIdea: "Your idea", contact: "Contact", extras: "Extra details (optional)",
@@ -172,6 +173,7 @@ export type EmailVerificationCopy = Pick<ReturnType<typeof getPluginWorkflowCopy
   "codeInvalid" | "rateLimited" | "emailUnavailable" | "unavailable" | "requestFailed">;
 
 export function pluginWorkflowError(code: unknown, locale: Locale, verificationCopy?: EmailVerificationCopy) {
+  if (code === "registration-paused") return getOpenEnaCloudCopy(locale).emailVerificationPaused;
   const copy = { ...getPluginWorkflowCopy(locale), ...verificationCopy };
   const errors: Record<string, string> = {
     "invalid-email": copy.emailInvalid, "invalid-code": copy.codeInvalid, "invalid-access": copy.legacyInvalid,

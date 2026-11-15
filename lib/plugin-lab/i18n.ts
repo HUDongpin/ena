@@ -44,7 +44,8 @@ export interface PluginLabCopy {
   coCreateEyebrow: string;
   missionPrinciples: readonly Readonly<{ title: string; text: string }>[];
   loginInvitation: string;
-  loginProposalLink: string;
+  loginCollaborationPrefix: string;
+  loginCollaborationJoiner: string;
   automatedTests: string;
   browserRuntime: string;
   securityPrivacy: string;
@@ -121,8 +122,9 @@ const en: PluginLabCopy = {
     { title: "Evidence stays explicit", text: "Product availability, scientific evidence, and engineering assurance are reported independently for every exact plugin version." },
     { title: "High-risk work is independently reviewed", text: "A plugin that changes analysis semantics or sends analysis data to an external service requires review beyond its proposer and primary implementer." },
   ],
-  loginInvitation: "Have an idea for a new ENA method, visualization, or workflow?",
-  loginProposalLink: "Propose it with Dr. Peter Hu",
+  loginInvitation: "Have an idea for a new ENA method, visualization, or workflow and want to build it easily for academic research?",
+  loginCollaborationPrefix: "Work together with",
+  loginCollaborationJoiner: "and",
   automatedTests: "Automated tests",
   browserRuntime: "Browser runtime",
   securityPrivacy: "Security/privacy",
@@ -199,8 +201,9 @@ const zhHant: PluginLabCopy = {
     { title: "證據保持明確", text: "每個精確插件版本分開報告產品可用性、科學證據和工程保證。" },
     { title: "高風險工作接受獨立審查", text: "改變分析語義或把分析資料傳送到外部服務的插件，必須由提案者和主要實作者以外的人員審查。" },
   ],
-  loginInvitation: "對新的 ENA 方法、視覺化或工作流程有構想？",
-  loginProposalLink: "與 Dr. Peter Hu 一起提出提案",
+  loginInvitation: "對新的 ENA 方法、視覺化或工作流程有構想，並希望輕鬆將其實現於學術研究？",
+  loginCollaborationPrefix: "歡迎攜手合作：",
+  loginCollaborationJoiner: "與",
   automatedTests: "自動化測試",
   browserRuntime: "瀏覽器執行",
   securityPrivacy: "安全與隱私",
@@ -277,8 +280,9 @@ const zhHans: PluginLabCopy = {
     { title: "证据保持明确", text: "每个精确插件版本分别报告产品可用性、科学证据和工程保证。" },
     { title: "高风险工作接受独立审查", text: "改变分析语义或把分析数据发送到外部服务的插件，必须由提案者和主要实现者以外的人员审查。" },
   ],
-  loginInvitation: "对新的 ENA 方法、可视化或工作流程有构想？",
-  loginProposalLink: "与 Dr. Peter Hu 一起提出提案",
+  loginInvitation: "对新的 ENA 方法、可视化或工作流程有构想，并希望轻松将其实现于学术研究？",
+  loginCollaborationPrefix: "欢迎携手合作：",
+  loginCollaborationJoiner: "与",
   automatedTests: "自动化测试",
   browserRuntime: "浏览器运行",
   securityPrivacy: "安全与隐私",

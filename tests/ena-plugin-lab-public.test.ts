@@ -136,9 +136,8 @@ test("navigation and sitemap include only public plugin routes", () => {
 test("Plugin Lab invitations and mixed-language public pages retain explicit content-language decisions", () => {
   const mission = readFileSync(join(projectRoot, "app", "[locale]", "mission", "page.tsx"), "utf8");
   assert.match(mission, /lang=\{pluginCopy\.contentFallback \? "en" : undefined\}/u);
-  const login = readFileSync(join(projectRoot, "components", "open-ena", "OpenEnaLogin.tsx"), "utf8");
-  assert.match(login, /workspaceMessage\(locale, pluginCopy\.loginInvitation\)/u);
-  assert.match(login, /workspaceMessage\(locale, pluginCopy\.loginProposalLink\)/u);
+  const invitation = readFileSync(join(projectRoot, "components", "plugin-lab", "PluginCollaborationNotice.tsx"), "utf8");
+  assert.match(invitation, /copy\.contentFallback \? workspaceMessage\(locale, text\) : text/u);
   for (const path of [
     ["components", "home-source", "UnifiedHome.tsx"],
     ["components", "about", "open-ena", "AboutContent.tsx"],

@@ -19,7 +19,7 @@ export function createOpenEnaAccountPostHandler(action: OpenEnaAccountAction, de
     const origin = resolveOpenEnaRequestOrigin(request.headers, new URL(request.url).origin, environment);
     if (!origin) return openEnaCloudJson({ error: "invalid-origin" }, 403);
     try {
-      if (!openEnaCloudEnabled(environment) || (action === "register" && environment.OPEN_ENA_REGISTRATION_ENABLED !== "true")) throw new OpenEnaCloudError("unavailable");
+      if (!openEnaCloudEnabled(environment) || ((action === "register" || action === "verify") && environment.OPEN_ENA_REGISTRATION_ENABLED !== "true")) throw new OpenEnaCloudError("unavailable");
       const body = await readOpenEnaCloudJson(request, 4096);
       if (action === "register" || action === "forgot-password") {
         assertOpenEnaCloudFields(body, ["email", "locale"], ["email"]);
