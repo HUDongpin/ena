@@ -12,5 +12,5 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
 }
 export default async function PluginLabPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params; if (!isLocale(locale)) notFound();
-  return <NovaWorkbench locale={locale} copy={getNovaCopy(locale)} useWebFonts={novaWebFontsEnabled()}/>;
+  return <NovaWorkbench locale={locale} copy={getNovaCopy(locale)} useWebFonts={novaWebFontsEnabled()} registrationPaused={process.env.OPEN_ENA_REGISTRATION_ENABLED === "false"}/>;
 }

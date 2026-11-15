@@ -49,6 +49,16 @@ class RecoveryTests(unittest.TestCase):
         self.snapshot_fixture()
         with self.assertRaisesRegex(RuntimeError,'WEB_INACTIVE'): self.m.snapshot()
 
+    def test_registration_pause_is_a_valid_release_runtime_state(self):
+        self.snapshot_fixture()
+        self.m.ENV.write_text(self.m.ENV.read_text().replace('OPEN_ENA_REGISTRATION_ENABLED=true', 'OPEN_ENA_REGISTRATION_ENABLED=false'))
+        self.assertEqual(self.m.snapshot(require_web_health=False)['currentRelease'], TARGET)
+
+    def test_invalid_registration_flag_is_rejected(self):
+        self.snapshot_fixture()
+        self.m.ENV.write_text(self.m.ENV.read_text().replace('OPEN_ENA_REGISTRATION_ENABLED=true', 'OPEN_ENA_REGISTRATION_ENABLED=invalid'))
+        with self.assertRaisesRegex(RuntimeError, 'ACCOUNT_FLAGS_CHANGED'): self.m.snapshot(require_web_health=False)
+
     def test_inactive_web_with_remaining_pid_rejected(self):
         self.snapshot_fixture(state='inactive',pid='41')
         with self.assertRaisesRegex(RuntimeError,'INACTIVE_WEB_PROCESS_REMAINS'): self.m.snapshot(require_web_health=False)

@@ -61,6 +61,38 @@ test("mail outages and provider responses cannot leak credentials into account r
   assert.equal(response.status, 503); assert.deepEqual(await response.json(), { error: "unavailable" });
 });
 
+test("pausing registration rejects new and previously issued verification links before accessing accounts", async () => {
+  const { createOpenEnaAccountPostHandler } = await import("../lib/server/open-ena-account-routes");
+  const paused = { ...environment, OPEN_ENA_REGISTRATION_ENABLED: "false" };
+  let calls = 0;
+  const dependencies = { environment: paused, users: {
+    issueAction: async () => { calls++; return { kind: "verify", email: "one@example.org" }; },
+    completeAction: async () => { calls++; return { id: "unused" }; },
+  } as never, sendMail: async () => { calls++; } };
+  for (const origin of ["https://www.ena.hk", "https://www.open-ena.com"]) {
+    for (const action of ["register", "verify"] as const) {
+      const body = action === "register" ? { email: "one@example.org" } : { token: "a".repeat(43), password: "synthetic strong passphrase" };
+      const response = await createOpenEnaAccountPostHandler(action, dependencies)(request(action, body, origin));
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { error: "unavailable" });
+      assert.equal(response.headers.get("set-cookie"), null);
+    }
+  }
+  assert.equal(calls, 0, "a registration pause must not send mail or create an account");
+});
+
+test("password recovery remains available while registration is paused", async () => {
+  const { createOpenEnaAccountPostHandler } = await import("../lib/server/open-ena-account-routes");
+  const actions: string[] = [];
+  const dependencies = { environment: { ...environment, OPEN_ENA_REGISTRATION_ENABLED: "false" }, users: {
+    issueAction: async (input: { purpose: string }) => { actions.push(input.purpose); return { kind: "reset", email: "one@example.org" }; },
+    completeAction: async (input: { purpose: string }) => { actions.push(input.purpose); return { id: "existing" }; },
+  } as never, sendMail: async () => {} };
+  assert.equal((await createOpenEnaAccountPostHandler("forgot-password", dependencies)(request("forgot-password", { email: "one@example.org" }))).status, 202);
+  assert.equal((await createOpenEnaAccountPostHandler("reset-password", dependencies)(request("reset-password", { token: "a".repeat(43), password: "synthetic strong passphrase" }))).status, 200);
+  assert.deepEqual(actions, ["reset", "reset"]);
+});
+
 test("Resend delivery is restricted to the configured sender and uses an idempotency key", async () => {
   assert.ok(existsSync(new URL("../lib/server/open-ena-account-mail.ts", import.meta.url)));
   const { sendOpenEnaAccountMail } = await import("../lib/server/open-ena-account-mail");

@@ -155,7 +155,7 @@ def snapshot(require_web_health=True):
     require(run(['/opt/node/bin/node', '--version']).startswith('v22.'), 'NODE_MAJOR')
     env = environment()
     require(env.get('ENA_NOVA_ENABLED') == 'true' and env.get('ENA_NOVA_WORKER_ENABLED') == 'false', 'ENABLED_WEB_NOVA_FLAGS_CHANGED')
-    require(env.get('OPEN_ENA_CLOUD_PROJECTS_ENABLED') == 'true' and env.get('OPEN_ENA_REGISTRATION_ENABLED') == 'true', 'ACCOUNT_FLAGS_CHANGED')
+    require(env.get('OPEN_ENA_CLOUD_PROJECTS_ENABLED') == 'true' and env.get('OPEN_ENA_REGISTRATION_ENABLED') in ('true', 'false'), 'ACCOUNT_FLAGS_CHANGED')
     require(all(env.get(name) for name in ['OPEN_ENA_PROJECT_ENCRYPTION_KEY', 'ENA_PLUGIN_LAB_ENCRYPTION_KEY_V1', 'ENA_PLUGIN_LAB_SECRET']), 'RUNTIME_KEYS_MISSING')
     if web_state == 'active':
         pid = assert_process_environment(env)

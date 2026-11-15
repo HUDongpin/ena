@@ -160,6 +160,13 @@ artifact and its download receipt separately under the binding's artifact
 location; this renderer does not download artifacts or transport credentials.
 Retain the rendered packet and manifest as immutable evidence for that release.
 
+`OPEN_ENA_REGISTRATION_ENABLED` may be explicitly `true` or `false`; deployment
+and rollback preserve the captured environment hash in either state. Set it to
+`false` to pause Open ENA registration (including issued verification links) and
+Plugin Lab email-code requests and verification during the ICQE2026 upgrade.
+Existing Open ENA login, password recovery, cloud projects and active Plugin Lab
+sessions remain available. Never change this flag midway through a release packet.
+
 Before a future rollback, use the new packet's deployment/preflight/backup receipts,
 which already bind this policy. Do not silently rebase a historical receipt's unit
 hash to bypass a mismatch. Rolling back a deployment that predates the managed
