@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { getLocaleMeta, type Locale } from "@/lib/i18n";
-import { workspaceMessage } from "@/lib/open-ena/workspace-messages";
 import {
   getOpenEnaAuthCopy,
   openEnaLoginNoticeText,
@@ -10,7 +9,7 @@ import {
   type OpenEnaLoginNotice,
 } from "@/lib/open-ena-auth-copy";
 import OpenEnaPasswordInput from "./OpenEnaPasswordInput";
-import { getPluginLabCopy } from "@/lib/plugin-lab/i18n";
+import PluginCollaborationNotice from "@/components/plugin-lab/PluginCollaborationNotice";
 import { getOpenEnaCloudCopy } from "@/lib/open-ena/cloud-copy";
 
 interface OpenEnaLoginProps {
@@ -55,7 +54,6 @@ export default function OpenEnaLogin({ locale, notice, configurationReady, cloud
   const cloudCopy = getOpenEnaCloudCopy(locale);
   const invalidCredentials = notice.kind === "invalid";
   const alertText = openEnaLoginNoticeText(copy, notice);
-  const pluginCopy = getPluginLabCopy(locale);
   const [noticeBeforeEmail, noticeAfterEmail = ""] = copy.collaborationNotice.split(
     OPEN_ENA_CONTACT_EMAIL,
   );
@@ -167,10 +165,7 @@ export default function OpenEnaLogin({ locale, notice, configurationReady, cloud
               <a href="mailto:sandy0692@gmail.com">{OPEN_ENA_CONTACT_EMAIL}</a>
               {noticeAfterEmail}
             </p>}
-            <p className="open-ena-login-collaboration">
-              {pluginCopy.contentFallback ? workspaceMessage(locale, pluginCopy.loginInvitation) : pluginCopy.loginInvitation}{" "}
-              <Link href={`/${locale}/plugins/propose`} prefetch={false}>{pluginCopy.contentFallback ? workspaceMessage(locale, pluginCopy.loginProposalLink) : pluginCopy.loginProposalLink}</Link>.
-            </p>
+            <PluginCollaborationNotice locale={locale} className="open-ena-login-collaboration" />
             <p className="open-ena-login-privacy">
               <span aria-hidden="true">●</span>
               {cloudEnabled ? cloudCopy.cloudPrivacy : copy.privacyNote}

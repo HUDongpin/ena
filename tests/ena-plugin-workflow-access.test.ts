@@ -27,6 +27,22 @@ function request(body: unknown, path = "request", origin = "https://www.ena.hk")
   return new Request(`https://www.ena.hk/api/plugin-lab/email-code/${path}`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body) });
 }
 
+test("the shared registration pause stops Plugin Lab code issuance and verification without store or mail work", async () => {
+  let calls = 0;
+  const dependencies = { environment: { ...environment, OPEN_ENA_REGISTRATION_ENABLED: "false" },
+    storeFactory: async () => { calls++; return null; }, sendCode: async () => { calls++; } };
+  for (const [path, factory, body] of [
+    ["request", createPluginLabEmailRequestHandler, { email, locale: "en" }],
+    ["verify", createPluginLabEmailVerifyHandler, { challengeId: "A".repeat(43), code: "012345" }],
+  ] as const) {
+    const response = await factory(dependencies)(request(body, path));
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { code: "registration-paused" });
+    assert.equal(response.headers.get("set-cookie"), null);
+  }
+  assert.equal(calls, 0);
+});
+
 test("requesting a code saves a hash, sends a localized email, and never submits a proposal", async () => {
   let challenge: Parameters<WorkflowStore["putChallenge"]>[0] | undefined;
   let sent: { email: string; code: string; locale: string } | undefined;

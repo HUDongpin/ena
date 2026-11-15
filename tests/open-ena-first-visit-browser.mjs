@@ -35,7 +35,9 @@ try {
     assert.equal(await page.locator(`[data-ena-first-visit="${registrationAvailable?'registration':'registration-unavailable'}"]`).count(),1);
     assert.equal(await page.getByRole('link',{name:copy.register,exact:true}).count(),registrationAvailable?1:0);
     if(registrationAvailable) assert.equal(await page.getByRole('link',{name:copy.register,exact:true}).getAttribute('href'),`/${locale}/open-ena/account`);
-    else assert.equal(await page.locator(`a[href="mailto:${contact}"]`).count(),1);
+    else assert.equal(await page.locator(`.open-ena-account-links a[href="mailto:${contact}"]`).count(),1);
+    assert.equal(await page.getByRole('link',{name:'Dr. Peter Hu',exact:true}).getAttribute('href'),'mailto:hudongpin@126.com');
+    assert.equal(await page.getByRole('link',{name:'Dr. Sandy Tu',exact:true}).getAttribute('href'),'mailto:sandy0692@gmail.com');
     assert.equal(await page.getByRole('link',{name:copy.recover,exact:true}).getAttribute('href'),`/${locale}/open-ena/account?mode=reset`);
     assert.equal(await page.locator('.open-ena-login-form').getAttribute('action'),'/api/open-ena/login');
     const text=await page.locator('.open-ena-login-panel').innerText();
